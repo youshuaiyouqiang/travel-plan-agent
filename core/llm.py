@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -61,6 +62,38 @@ class OpenAILLM:
             )
 
         return content
+
+    async def stream_complete(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+    ) -> AsyncGenerator[str, None]:
+        """流式输出，逐 token yield 文本片段。"""
+        start = time.monotonic()
+        full_content = ""
+        stream = await self._client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": system}, *messages],
+            stream=True,
+        )
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                full_content += delta.content
+                yield delta.content
+        duration_ms = int((time.monotonic() - start) * 1000)
+        if self._audit_logger:
+            self._audit_logger.log_llm_call(
+                session_id=getattr(self, "_audit_session_id", ""),
+                user_id=getattr(self, "_audit_user_id", ""),
+                model=self.model,
+                system_prompt=system,
+                messages=messages,
+                response=full_content,
+                duration_ms=duration_ms,
+                tool_calls_mode=False,
+            )
 
     async def complete_with_tools(
         self,

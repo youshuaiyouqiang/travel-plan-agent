@@ -1,13 +1,14 @@
 import { useRef, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Message } from '../hooks/useChatStore'
-import { Bot, User, AlertTriangle, MapPin, TrendingUp, RefreshCw, Eye, ThumbsUp, Pencil, Map } from 'lucide-react'
+import { Message, ThinkingStep } from '../hooks/useChatStore'
+import { Bot, User, AlertTriangle, MapPin, TrendingUp, RefreshCw, Eye, ThumbsUp, Map, Loader2, Check } from 'lucide-react'
 import { getTrending, TrendingItem } from '../utils/api'
 
 interface Props {
   messages: Message[]
   isLoading: boolean
   isEscalated: boolean
+  thinkingSteps: ThinkingStep[]
   onQuickSend?: (text: string) => void
 }
 
@@ -48,10 +49,12 @@ function _extractItineraryId(content: string): string | null {
 }
 
 function _isItineraryConfirmPrompt(content: string): boolean {
-  return content.includes('满意') && (content.includes('行程概览') || content.includes('概览卡片'))
+  // 只要包含行程安排内容，就显示"满意，生成概览"按钮
+  const hasItinerary = /第[1-9]天|第[一二三四五六七八九]天|Day\s*[1-9]|行程安排|每日行程/.test(content)
+  return hasItinerary
 }
 
-export function ChatWindow({ messages, isLoading, isEscalated, onQuickSend }: Props) {
+export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, onQuickSend }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
@@ -62,6 +65,11 @@ export function ChatWindow({ messages, isLoading, isEscalated, onQuickSend }: Pr
   const handleViewItinerary = (itineraryId: string) => {
     navigate(`/itinerary/${itineraryId}`)
   }
+
+  // 一旦已生成行程概览，禁用所有版本的"满意"按钮，防止重复生成
+  const hasConfirmedItinerary = messages.some(
+    (m) => m.role === 'assistant' && _extractItineraryId(m.content)
+  )
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-6 space-y-4">
@@ -88,6 +96,9 @@ export function ChatWindow({ messages, isLoading, isEscalated, onQuickSend }: Pr
               }`}
             >
               {_renderContent(msg.content, msg.role === 'user')}
+              {msg.isStreaming && (
+                <span className="inline-block w-[2px] h-[1em] bg-sky-500 ml-0.5 align-middle animate-blink" />
+              )}
             </div>
             {msg.status === 'escalated' && (
               <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
@@ -95,25 +106,23 @@ export function ChatWindow({ messages, isLoading, isEscalated, onQuickSend }: Pr
                 已转接旅行顾问
               </div>
             )}
-            {msg.role === 'assistant' && _isItineraryConfirmPrompt(msg.content) && (
+            {msg.role === 'assistant' && !msg.isStreaming && _isItineraryConfirmPrompt(msg.content) && (
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={() => onQuickSend?.('满意，请生成行程概览')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-xl text-sm font-medium hover:from-emerald-600 hover:to-green-600 transition-all shadow-md shadow-emerald-200 active:scale-[0.98]"
+                  disabled={hasConfirmedItinerary}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98] ${
+                    hasConfirmedItinerary
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-md shadow-emerald-200'
+                  }`}
                 >
                   <ThumbsUp size={15} />
-                  满意，生成概览
-                </button>
-                <button
-                  onClick={() => onQuickSend?.('我不太满意，需要调整行程')}
-                  className="flex items-center gap-1.5 px-4 py-2.5 bg-white text-slate-600 rounded-xl text-sm font-medium border border-slate-200 hover:border-sky-300 hover:text-sky-600 hover:bg-sky-50 transition-all active:scale-[0.98]"
-                >
-                  <Pencil size={15} />
-                  需要调整
+                  {hasConfirmedItinerary ? '已生成概览' : '满意，生成概览'}
                 </button>
               </div>
             )}
-            {msg.role === 'assistant' && _extractItineraryId(msg.content) && (
+            {msg.role === 'assistant' && !msg.isStreaming && _extractItineraryId(msg.content) && (
               <button
                 onClick={() => handleViewItinerary(_extractItineraryId(msg.content)!)}
                 className="mt-3 flex items-center gap-3 px-5 py-3.5 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-2xl text-sm font-medium hover:from-sky-600 hover:to-blue-700 transition-all shadow-lg shadow-sky-200/60 active:scale-[0.97] w-fit"
@@ -132,7 +141,9 @@ export function ChatWindow({ messages, isLoading, isEscalated, onQuickSend }: Pr
         </div>
       ))}
 
-      {isLoading && <TypingIndicator />}
+      {isLoading && !messages.some((m) => m.isStreaming) && thinkingSteps.length === 0 && <TypingIndicator />}
+
+      {isLoading && thinkingSteps.length > 0 && <ThinkingStepsIndicator steps={thinkingSteps} />}
 
       {isEscalated && !isLoading && messages.length > 0 && (
         <div className="max-w-3xl mx-auto">
@@ -315,6 +326,32 @@ function TypingIndicator() {
           <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />
           <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />
           <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ThinkingStepsIndicator({ steps }: { steps: ThinkingStep[] }) {
+  return (
+    <div className="animate-fade-in-up flex gap-3 max-w-3xl mx-auto">
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-400 to-blue-500 flex items-center justify-center flex-shrink-0 shadow-sm">
+        <MapPin size={16} className="text-white" />
+      </div>
+      <div className="bg-white rounded-2xl rounded-bl-md px-5 py-4 shadow-sm border border-slate-100 min-w-[180px]">
+        <div className="space-y-2">
+          {steps.map((step) => (
+            <div key={step.id} className="flex items-center gap-2 text-sm">
+              {step.status === 'active' ? (
+                <Loader2 size={14} className="text-sky-500 animate-spin flex-shrink-0" />
+              ) : (
+                <Check size={14} className="text-emerald-500 flex-shrink-0" />
+              )}
+              <span className={step.status === 'active' ? 'text-sky-600 font-medium' : 'text-slate-400'}>
+                {step.text}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     </div>

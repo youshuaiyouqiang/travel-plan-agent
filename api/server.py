@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json as json_mod
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import logging
 from app import build_agent
@@ -161,6 +162,37 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     )
     logger.info("API /chat response: session_id=%s user_id=%s", req.session_id, effective_user_id)
     return ChatResponse(status=result["status"], reply=result["reply"])
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
+    auth_user_id = getattr(request.state, "user_id", None)
+    effective_user_id = auth_user_id or req.user_id
+    logger.info("API /chat/stream request: session_id=%s user_id=%s", req.session_id, effective_user_id)
+
+    async def event_generator():
+        try:
+            async for event in agent.chat_stream(
+                session_id=req.session_id,
+                user_id=effective_user_id,
+                message=req.message,
+            ):
+                data = json_mod.dumps(event, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+        except Exception as e:
+            logger.error("Stream error: %s", e, exc_info=True)
+            error_event = json_mod.dumps({"type": "error", "data": str(e)}, ensure_ascii=False)
+            yield f"data: {error_event}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/sessions")

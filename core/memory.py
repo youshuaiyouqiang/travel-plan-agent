@@ -270,6 +270,8 @@ class DualLayerMemoryManager:
                 if mem.category == "experience" and mem.experience_tag:
                     tag_label = "✓" if mem.experience_tag == "success" else "✗"
                     text = f"[{tag_label}] {text}"
+                if mem.category == "fact":
+                    text = f"[待确认] {text}"
                 grouped.setdefault(label, []).append(text)
 
             ltm_lines: list[str] = []
@@ -296,6 +298,8 @@ class DualLayerMemoryManager:
                 if mem.category == "experience" and mem.experience_tag:
                     tag_label = "✓" if mem.experience_tag == "success" else "✗"
                     text = f"[{tag_label}] {text}"
+                if mem.category == "fact":
+                    text = f"[待确认] {text}"
                 stm_lines.append(f"  {label}: {text}")
             parts.append("【近期记忆】\n" + "\n".join(stm_lines))
 

@@ -1,11 +1,18 @@
 import { create } from 'zustand'
 
+export interface ThinkingStep {
+  id: string
+  text: string
+  status: 'active' | 'done'
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   status?: string
   timestamp: number
+  isStreaming?: boolean
 }
 
 interface ChatState {
@@ -14,11 +21,16 @@ interface ChatState {
   sessionId: string
   userId: string
   isEscalated: boolean
+  thinkingSteps: ThinkingStep[]
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void
+  appendToLastMessage: (chunk: string) => void
+  finishLastMessage: () => void
   setLoading: (loading: boolean) => void
   setSessionId: (id: string) => void
   setUserId: (id: string) => void
   setEscalated: (v: boolean) => void
+  addThinkingStep: (text: string) => void
+  clearThinkingSteps: () => void
   clearMessages: () => void
   loadMessages: (msgs: Array<{ role: string; content: string; created_at?: string }>) => void
   resetSession: () => void
@@ -30,6 +42,7 @@ export const useChatStore = create<ChatState>((set) => ({
   sessionId: '',
   userId: '',
   isEscalated: false,
+  thinkingSteps: [],
   addMessage: (msg) =>
     set((state) => ({
       messages: [
@@ -37,11 +50,47 @@ export const useChatStore = create<ChatState>((set) => ({
         { ...msg, id: generateId(), timestamp: Date.now() },
       ],
     })),
+  appendToLastMessage: (chunk: string) =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === 'assistant') {
+        messages[messages.length - 1] = {
+          ...last,
+          content: last.content + chunk,
+          isStreaming: true,
+        }
+      }
+      return { messages }
+    }),
+  finishLastMessage: () =>
+    set((state) => {
+      const messages = [...state.messages]
+      const last = messages[messages.length - 1]
+      if (last && last.role === 'assistant') {
+        messages[messages.length - 1] = {
+          ...last,
+          isStreaming: false,
+        }
+      }
+      return { messages }
+    }),
   setLoading: (loading) => set({ isLoading: loading }),
   setSessionId: (id) => set({ sessionId: id }),
   setUserId: (id) => set({ userId: id }),
   setEscalated: (v) => set({ isEscalated: v }),
-  clearMessages: () => set({ messages: [], isEscalated: false, sessionId: generateId() }),
+  addThinkingStep: (text: string) =>
+    set((state) => {
+      const steps = [...state.thinkingSteps]
+      // 将上一步标记为完成
+      if (steps.length > 0) {
+        steps[steps.length - 1] = { ...steps[steps.length - 1], status: 'done' }
+      }
+      steps.push({ id: generateId(), text, status: 'active' })
+      return { thinkingSteps: steps }
+    }),
+  clearThinkingSteps: () => set({ thinkingSteps: [] }),
+  clearMessages: () => set({ messages: [], isEscalated: false, sessionId: generateId(), thinkingSteps: [] }),
   loadMessages: (msgs) =>
     set({
       messages: msgs.map((m, i) => ({
@@ -51,7 +100,7 @@ export const useChatStore = create<ChatState>((set) => ({
         timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
       })),
     }),
-  resetSession: () => set({ messages: [], isEscalated: false, sessionId: generateId() }),
+  resetSession: () => set({ messages: [], isEscalated: false, sessionId: generateId(), thinkingSteps: [] }),
 }))
 
 function generateId(): string {

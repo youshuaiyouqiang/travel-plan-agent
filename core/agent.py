@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -395,6 +396,211 @@ class Agent:
             )
         await self._post_chat_memory_processing(session, session_id, memory_scope, user_id)
         return {"status": status, "reply": reply}
+
+    async def chat_stream(
+        self,
+        *,
+        session_id: str,
+        message: str,
+        user_id: str | None = None,
+    ) -> AsyncGenerator[dict[str, str], None]:
+        """流式聊天：工具调用阶段同步执行，最终回复阶段逐 token 流式输出。
+
+        yield 的 dict 格式：
+          {"type": "status", "data": "thinking"}       — 正在思考/工具调用中
+          {"type": "tool_status", "data": "状态文本"}   — 工具执行状态（搜索机票、搜索酒店等）
+          {"type": "chunk", "data": "文本片段"}          — 流式文本片段
+          {"type": "done", "data": "completed"}         — 流式结束
+          {"type": "error", "data": "错误信息"}          — 出错
+        """
+        memory_scope = str(user_id or session_id)
+        logger.info("Agent chat_stream start: session_id=%s user_id=%s", session_id, user_id or session_id)
+        self._llm.set_audit_context(session_id=session_id, user_id=memory_scope)
+        self._reasoning.set_audit_context(session_id=session_id, user_id=memory_scope)
+        self._tool_executor.set_audit_context(session_id=session_id, user_id=memory_scope)
+        session = self._session_store.get(session_id)
+        task = self._task_store.get(session_id, user_id=memory_scope)
+        session.append("user", message)
+        self._memory_manager.maybe_learn_from_message(message, scope_id=memory_scope)
+
+        # 直接从运行时事实回答
+        direct_runtime_answer = answer_date_or_time_query(message)
+        if direct_runtime_answer:
+            session.append("assistant", direct_runtime_answer)
+            self._memory.refresh_summary(session)
+            self._session_store.save(session)
+            task.mark_finished(status=TaskStatus.COMPLETED, reply=direct_runtime_answer)
+            self._task_store.save(task)
+            yield {"type": "chunk", "data": direct_runtime_answer}
+            yield {"type": "done", "data": "completed"}
+            return
+
+        # 意图识别
+        ops_result: TravelIntentResult | None = None
+        if self._ops_classifier:
+            ops_result = await self._ops_classifier.classify(message)
+            intent = self._ops_classifier.to_intent_result(ops_result)
+        else:
+            from core.types import IntentResult
+            intent = IntentResult(
+                intent=IntentType.TASK,
+                goal=message[:100],
+                fast_reply=False,
+                force_tool=True,
+                tool_hints=[],
+            )
+
+        # 情绪检测
+        emotion_result: EmotionResult | None = None
+        if self._emotion_detector:
+            emotion_result = await self._emotion_detector.detect(message)
+
+        # 紧急关键词
+        emergency_reply = self._check_emergency_keywords(message)
+        if emergency_reply:
+            session.append("assistant", emergency_reply)
+            self._memory.refresh_summary(session)
+            self._session_store.save(session)
+            yield {"type": "chunk", "data": emergency_reply}
+            yield {"type": "done", "data": "completed"}
+            return
+
+        task.mark_in_progress(goal=intent.goal, latest_user_message=message)
+        self._handle_cache_invalidation(task, message, ops_result)
+        self._task_store.save(task)
+
+        yield {"type": "status", "data": "thinking"}
+
+        # 快速回复路径
+        if intent.fast_reply and intent.intent in {IntentType.CHAT, IntentType.QUERY}:
+            system = self._prompt_builder.build_fast_reply_system(intent)
+            reply = ""
+            async for chunk in self._llm.stream_complete(system=system, messages=[{"role": "user", "content": message}]):
+                reply += chunk
+                yield {"type": "chunk", "data": chunk}
+            session.append("assistant", reply)
+            self._memory.refresh_summary(session)
+            task.mark_finished(status=TaskStatus.COMPLETED, reply=reply)
+            self._task_store.save(task)
+            self._session_store.save(session)
+            yield {"type": "done", "data": "completed"}
+            return
+
+        # 行程确认路径
+        from core.intent.travel_schema import TravelIntentType
+        if ops_result and ops_result.intent == TravelIntentType.ITINERARY_CONFIRM:
+            reply = await self._direct_generate_itinerary(
+                session=session, session_id=session_id, user_id=memory_scope, ops_result=ops_result,
+            )
+            session.append("assistant", reply)
+            self._memory.refresh_summary(session)
+            self._session_store.save(session)
+            task.mark_finished(status=TaskStatus.COMPLETED, reply=reply)
+            self._task_store.save(task)
+            await self._post_chat_memory_processing(session, session_id, memory_scope, user_id)
+            yield {"type": "chunk", "data": reply}
+            yield {"type": "done", "data": "completed"}
+            return
+
+        # 构建上下文（与 chat 相同）
+        base_tools = self._tool_registry.list_names(intent.tool_hints, exclude_categories=["MCP"])
+        context = self._context_manager.prepare(session, current_message=message)
+        memory_context = self._memory_manager.build_context(message, scope_id=memory_scope)
+        dual_memory_context = ""
+        if user_id:
+            dual_memory_context = self._dual_memory.build_full_context(user_id, query=message)
+        selected_mcp_tools = self._mcp_catalog.select_tool_refs(message, limit=4)
+        connected_mcp_tools = [
+            ref for ref in selected_mcp_tools
+            if self._mcp_runtime and self._mcp_runtime.adapter_available(ref.proxy_name)
+        ]
+        tools = list(dict.fromkeys(base_tools + [ref.proxy_name for ref in connected_mcp_tools]))
+        mcp_context = self._mcp_catalog.build_prompt_block(tool_refs=connected_mcp_tools)
+
+        urgency_context = ""
+        if emotion_result and emotion_result.response_style != "neutral":
+            strategy = EMOTION_STRATEGIES.get(emotion_result.emotion, {})
+            urgency_context = strategy.get("system_prompt_suffix", "")
+
+        if self._profile_manager and user_id:
+            self._profile_manager.update(
+                memory_scope,
+                intent=intent.intent.value,
+                emotion=emotion_result.emotion.value if emotion_result else None,
+                category=ops_result.rag_keywords[0] if ops_result and ops_result.rag_keywords else None,
+            )
+        profile_context = self._profile_manager.build_context(memory_scope) if self._profile_manager else ""
+
+        cached_tool_context = self._build_cached_tool_context(task)
+        missing_info_context = self._build_missing_info_context(ops_result, dual_memory_context, user_id)
+        itinerary_confirm_context = self._build_itinerary_confirm_context(
+            ops_result, session, user_id=memory_scope, session_id=session_id
+        )
+        prompt_context = PromptContext(
+            prepared_context=context,
+            intent=intent,
+            tools=tools,
+            travel_intent=ops_result.intent.value if ops_result else "",
+            memory_context=memory_context,
+            mcp_context=mcp_context,
+            emotion_context=urgency_context,
+            profile_context=profile_context,
+            cached_tool_context=cached_tool_context,
+            dual_memory_context=dual_memory_context,
+            missing_info_context=missing_info_context,
+            itinerary_confirm_context=itinerary_confirm_context,
+        )
+        system = self._prompt_builder.build_react_system(prompt_context)
+
+        status = "completed"
+        try:
+            full_reply = ""
+            async for chunk in self._reasoning.run_stream(
+                system_prompt=system,
+                user_message=message,
+                force_tool=intent.force_tool,
+            ):
+                if chunk.startswith("__status__:"):
+                    # 状态通知，转为 tool_status 事件，不写入回复文本
+                    yield {"type": "tool_status", "data": chunk[len("__status__:"):]}
+                else:
+                    full_reply += chunk
+                    yield {"type": "chunk", "data": chunk}
+        except AskUserNeeded as exc:
+            full_reply = exc.question
+            status = "needs_user_input"
+            task.mark_waiting(status=TaskStatus.NEEDS_USER_INPUT, prompt=exc.question, reply=full_reply)
+            yield {"type": "chunk", "data": full_reply}
+        except ConfirmationNeeded as exc:
+            full_reply = exc.prompt
+            status = "needs_confirmation"
+            task.mark_waiting(status=TaskStatus.NEEDS_CONFIRMATION, prompt=exc.prompt, reply=full_reply)
+            yield {"type": "chunk", "data": full_reply}
+
+        session.append("assistant", full_reply)
+        self._memory.refresh_summary(session)
+        self._session_store.save(session)
+        if status == "completed":
+            task.mark_finished(status=TaskStatus.COMPLETED, reply=full_reply)
+        self._cache_tool_results_from_trace(task)
+        task.trace_summary = self._summarize_trace()
+        self._task_store.save(task)
+        self._trace_store.put(
+            RunTrace(
+                session_id=session_id,
+                user_id=memory_scope,
+                user_message=message,
+                reply=full_reply,
+                intent=intent.intent.value,
+                goal=intent.goal,
+                tools=tools,
+                memory_context=memory_context,
+                trace_steps=list(self._reasoning.last_trace),
+                events=[{"kind": "stream_result", "message": "Stream run finished", "payload": {"status": status}}],
+            )
+        )
+        await self._post_chat_memory_processing(session, session_id, memory_scope, user_id)
+        yield {"type": "done", "data": status}
 
     def latest_trace(self, session_id: str) -> dict | None:
         trace = self._trace_store.latest(session_id)

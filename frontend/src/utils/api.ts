@@ -59,6 +59,69 @@ export async function sendMessage(req: ChatRequest, signal?: AbortSignal): Promi
   return res.json()
 }
 
+export interface StreamEvent {
+  type: 'status' | 'chunk' | 'done' | 'error' | 'tool_status'
+  data: string
+}
+
+export async function* sendMessageStream(
+  req: ChatRequest,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(req),
+    signal,
+  })
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error('AUTH_EXPIRED')
+    }
+    throw new Error(`请求失败 (${res.status})`)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('无法读取流式响应')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || !trimmed.startsWith('data: ')) continue
+      const jsonStr = trimmed.slice(6)
+      try {
+        const event: StreamEvent = JSON.parse(jsonStr)
+        yield event
+      } catch {
+        // 忽略解析失败的行
+      }
+    }
+  }
+
+  // 处理剩余 buffer
+  if (buffer.trim()) {
+    const trimmed = buffer.trim()
+    if (trimmed.startsWith('data: ')) {
+      try {
+        const event: StreamEvent = JSON.parse(trimmed.slice(6))
+        yield event
+      } catch {
+        // 忽略
+      }
+    }
+  }
+}
+
 export async function register(username: string, password: string): Promise<AuthResponse> {
   let res: Response
   try {

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from core.prompt_context import PromptContext
 from core.types import IntentResult
 
 class PromptBuilder:
     def build_fast_reply_system(self, intent: IntentResult) -> str:
+        now = datetime.now().astimezone()
+        weekday_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+        weekday = weekday_map[now.weekday()]
+        current_date = f"今天是{now.year}年{now.month}月{now.day}日，{weekday}。"
         if intent.intent.value == "chat":
             return (
-                "你是克劳（Claw），一名智能旅行规划助手。\n\n"
+                f"你是一名智能旅行规划助手。\n\n"
+                f"📅 {current_date}\n\n"
                 "当前是简短的社交对话，请用自然友好的语言回复。\n"
                 "可以适当引导用户描述旅行需求，比如问他们想去哪里、什么时候出发。\n"
                 "不要编造你没有的工具或功能。\n\n"
@@ -20,7 +27,8 @@ class PromptBuilder:
                 "引导要自然，不要生硬，像朋友聊天一样。"
             )
         return (
-            "你是克劳（Claw），一名智能旅行规划助手。\n\n"
+            f"你是一名智能旅行规划助手。\n\n"
+            f"📅 {current_date}\n\n"
             "用户询问的是旅行常识、美食推荐、攻略点评等知识性问题，请直接用你的知识回答。\n"
             "回答要丰富、有深度，可以包含具体推荐、实用建议和注意事项。\n"
             "如果用户后续需要查询机票、酒店、天气等实时数据，再引导他们提供具体信息。\n"
@@ -46,14 +54,25 @@ class PromptBuilder:
         return "\n\n".join(section for section in sections if section.strip())
 
     def _build_identity_section(self) -> str:
+        now = datetime.now().astimezone()
+        weekday_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+        weekday = weekday_map[now.weekday()]
+        current_date = f"今天是{now.year}年{now.month}月{now.day}日，{weekday}。"
         return "\n".join(
             [
                 "## Identity",
-                "你是克劳（Claw），一名智能旅行方案优化师。",
+                "你是一名智能旅行方案优化师。",
                 "你不只是搜索信息——你的核心价值是为用户生成**最优旅行方案**。",
                 "最优方案意味着：在用户的时间、预算、偏好约束下，做出最佳取舍。",
                 "你有高德地图（POI搜索、路线规划、天气）和飞猪（机票、高铁、酒店）两个数据源。",
                 "始终以用户的需求和偏好为中心，提供个性化、有理有据的方案。",
+                "",
+                f"📅 {current_date}",
+                "⚠️【日期推算规则 - 必须严格遵守！】所有搜索工具的日期参数必须是YYYY-MM-DD格式的具体日期，不接受相对日期。",
+                "当用户使用相对日期（如「明天」「后天」「下周一」「这周末」等），你必须根据上面的当前日期推算出具体日期后再调用工具。",
+                "绝对不能因为用户说了相对日期就反问用户具体日期！你应该自己推算并直接使用。",
+                f"例如：今天是{now.month}月{now.day}日，用户说「明天出发」→ 出发日期为{now.month}月{now.day+1}日；"
+                f"用户说「下周一出发」→ 根据今天是{weekday}推算下周一的具体日期。",
             ]
         )
 
@@ -85,6 +104,12 @@ class PromptBuilder:
                 "- 计算总预算并给出分项明细：交通/住宿/餐饮/门票/其他",
                 "- 如果总预算超限，优先砍掉低性价比项目，保留核心体验",
                 "- 给出省钱建议但不牺牲核心体验",
+                "",
+                "### 工具容错",
+                "- 如果某个工具调用失败或返回错误，不要放弃整个规划！用成功的工具结果继续生成行程",
+                "- 例如：景点搜索失败但机票酒店成功 → 用你的知识补充景点推荐，生成完整行程",
+                "- 例如：天气查询失败 → 提醒用户出行前查看天气，但继续规划行程",
+                "- 绝对不能因为部分工具失败就说「搜索遇到技术问题」或「无法规划」，必须尽力给出方案",
             ]
         )
 
@@ -93,7 +118,14 @@ class PromptBuilder:
             [
                 "## Execution Rules",
                 "规划行程时，严格按以下步骤执行：",
-                "1. **检查已有信息**：查看用户消息中是否已包含出发地、目的地、日期、人数、预算、偏好。如果已包含，直接进入第2步，禁止调用 ask_user",
+                "1. **检查已有信息**：查看用户消息中是否已包含出发地、目的地、日期、人数、预算、偏好。如果已包含，直接进入第2步，禁止调用 ask_user。"
+                "⚠️如果用户使用相对日期（如「明天」「后天」「下周一」），你必须根据当前日期自行推算为具体日期（YYYY-MM-DD），绝对不能反问用户具体日期！",
+                "1.5. **记忆确认（严格遵守！）**：记忆中标记为[待确认]的事实信息（如出发地、人数、预算、同行人员等），"
+                "如果用户本次对话中未明确提及，你绝对不能直接使用这些参数进行搜索！"
+                "必须先向用户确认，例如「我注意到您之前都是从南昌出发，这次出发地点还是南昌吗？」"
+                "用户确认后，该参数等同于用户本次明确提供，直接用于搜索和规划，无需再次询问；"
+                "用户否认后，询问新的参数值再搜索。"
+                "偏好和经验类记忆（无[待确认]标记）可直接参考，无需确认。",
                 "2. **搜索交通**：同时调用 fliggy_search_flight 和 fliggy_search_train，对比后推荐",
                 "3. **搜索住宿**：调用 fliggy_search_hotel，根据行程安排筛选位置",
                 "4. **搜索景点**：调用 amap_search_poi 获取目的地景点，用 amap_plan_route 计算路线",
@@ -196,10 +228,23 @@ class PromptBuilder:
                 "用户记忆（请务必参考这些记忆来调整你的回答和推荐，"
                 "如果记忆中有偏好信息，请据此调整推荐内容；"
                 "如果有经验信息，请避免重蹈覆辙）:\n"
-                f"{ctx.dual_memory_context}"
+                f"{ctx.dual_memory_context}\n\n"
+                "⚠️【记忆确认规则 - 必须严格遵守！】\n"
+                "- 记忆中标记为[待确认]的事实信息（出发地、人数、预算、同行人员等），如果用户本次对话中未明确提及，"
+                "你绝对不能直接用于搜索工具的参数！必须先向用户确认，"
+                "例如「我注意到您之前都是从南昌出发，这次出发地点还是南昌吗？」\n"
+                "- 用户确认后，该参数等同于用户本次明确提供，直接用于搜索和规划，无需再次询问\n"
+                "- 用户否认后，询问新的参数值，再进行搜索\n"
+                "- 偏好类信息（如喜欢海边、偏好辣味）和经验类信息（无[待确认]标记）可以直接参考，无需确认"
             )
         elif ctx.memory_context:
-            lines.append(f"相关记忆:\n{ctx.memory_context}")
+            lines.append(
+                f"相关记忆:\n{ctx.memory_context}\n\n"
+                "⚠️【记忆确认规则】记忆中的关键行程参数（出行人数、预算、出发地、同行人员等）"
+                "如果用户本次未明确提及，需先确认后再使用。"
+                "用户确认后等同于本次明确提供，直接用于搜索。"
+                "偏好和经验类信息可直接参考，无需确认。"
+            )
         if ctx.missing_info_context:
             lines.append(f"信息补全引导:\n{ctx.missing_info_context}")
         if ctx.itinerary_confirm_context:

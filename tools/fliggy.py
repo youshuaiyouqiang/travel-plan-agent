@@ -126,7 +126,7 @@ def get_fliggy_specs() -> list[ToolSpec]:
                 "properties": {
                     "origin": {"type": "string", "description": "出发城市"},
                     "destination": {"type": "string", "description": "目的城市"},
-                    "date": {"type": "string", "description": "出发日期,格式YYYY-MM-DD"},
+                    "date": {"type": "string", "description": "出发日期,格式YYYY-MM-DD。如果用户说'明天''下周一'等相对日期,请根据当前日期推算为具体日期,不要反问用户"},
                 },
                 "required": ["origin", "destination", "date"],
             },
@@ -140,7 +140,7 @@ def get_fliggy_specs() -> list[ToolSpec]:
                 "properties": {
                     "origin": {"type": "string", "description": "出发城市"},
                     "destination": {"type": "string", "description": "目的城市"},
-                    "date": {"type": "string", "description": "出发日期,格式YYYY-MM-DD"},
+                    "date": {"type": "string", "description": "出发日期,格式YYYY-MM-DD。如果用户说'明天''下周一'等相对日期,请根据当前日期推算为具体日期,不要反问用户"},
                 },
                 "required": ["origin", "destination", "date"],
             },
@@ -153,8 +153,8 @@ def get_fliggy_specs() -> list[ToolSpec]:
                 "type": "object",
                 "properties": {
                     "destination": {"type": "string", "description": "目的城市"},
-                    "check_in": {"type": "string", "description": "入住日期,格式YYYY-MM-DD"},
-                    "check_out": {"type": "string", "description": "退房日期,格式YYYY-MM-DD"},
+                    "check_in": {"type": "string", "description": "入住日期,格式YYYY-MM-DD。如果用户说'明天'等相对日期,请根据当前日期推算为具体日期,不要反问用户"},
+                    "check_out": {"type": "string", "description": "退房日期,格式YYYY-MM-DD。根据入住日期和游玩天数推算,不要反问用户"},
                 },
                 "required": ["destination", "check_in", "check_out"],
             },

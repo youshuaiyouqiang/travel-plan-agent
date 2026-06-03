@@ -49,12 +49,13 @@ _TRAVEL_PATTERNS: dict[TravelIntentType, list[str]] = {
     ],
     TravelIntentType.ITINERARY_ADJUST: [
         "改行程", "换计划", "调整", "取消", "延期",
-        "改签", "退订",
+        "改签", "退订", "不满意", "不太满意", "换个方案",
+        "重新规划", "重新安排", "换一个", "不好",
     ],
     TravelIntentType.ITINERARY_CONFIRM: [
-        "满意", "可以", "就这样", "确认", "没问题",
+        "满意", "就这样", "确认", "没问题",
         "好的就这样", "ok", "OK", "确认行程",
-        "生成概览", "生成行程概览", "好的", "是的", "没错",
+        "生成概览", "生成行程概览",
     ],
     TravelIntentType.VISA_INFO: [
         "签证", "护照", "入境", "免签", "落地签",
@@ -112,7 +113,9 @@ _TRAVEL_CLASSIFY_SYSTEM = """你是智能旅行规划助手的意图分类器。
 - 明确问机票/航班 → flight_search
 - 问去哪玩/推荐 → destination_search
 - 用户对已生成的行程表示满意、确认、肯定 → itinerary_confirm
+- ⚠️【极其重要】用户只是在回答问题或确认某个参数（如"是的，从南昌出发""对，3个人""好的，6月5号"），不是在确认行程方案！这些应归类为 trip_planning，绝对不能归类为 itinerary_confirm！只有当助手已经生成了完整的文字行程方案并询问"您满意吗"之后，用户回复"满意""可以""就这样"等，才是 itinerary_confirm
 - 用户想修改行程 → itinerary_adjust
+- ⚠️【极其重要】用户表示不满意、需要调整、想换方案（如"不满意""不太满意""需要调整""换个方案""重新规划"），应归类为 itinerary_adjust，绝对不能归类为 budget_calc 或其他意图！
 - 仅输出 JSON"""
 
 
@@ -206,8 +209,8 @@ class TravelIntentClassifier:
             raw_output=text,
         )
 
-    _CONFIRM_KEYWORDS = {"满意", "可以", "就这样", "确认", "没问题", "好的", "是的", "没错", "ok", "OK"}
-    _CONFIRM_EXACT = {"行"}
+    _CONFIRM_KEYWORDS = {"满意", "就这样", "确认", "没问题", "好的就这样", "ok", "OK", "确认行程"}
+    _CONFIRM_EXACT = {"行", "可以", "好的", "是的", "没错"}
     _NEGATION_WORDS = {"不太满意", "不满意", "不好", "不行", "不可以", "不太行", "不够好"}
 
     def _keyword_classify(self, message: str) -> TravelIntentResult | None:

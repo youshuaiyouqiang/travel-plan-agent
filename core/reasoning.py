@@ -1,7 +1,9 @@
 from __future__ import annotations
+import asyncio
 import json
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
 from config import settings
@@ -184,6 +186,51 @@ class ReasoningEngine:
         self._tools_schema = schema
         return schema
 
+    def _try_parse_tool_calls_from_text(self, text: str) -> list[ToolCall] | None:
+        """尝试从模型输出的文本中解析出 tool_calls。
+
+        某些模型（如通义千问）在需要调用工具时，不通过 API 的 tool_calls 字段返回，
+        而是直接在 content 中输出 tool call JSON，例如：
+        {"tool_calls": [{"name": "fliggy_search_flight", "args": {...}}]}
+        """
+        stripped = text.strip()
+        if not stripped:
+            return None
+        # 快速判断：如果文本中不包含 tool_calls 关键字，直接跳过
+        if '"tool_calls"' not in stripped and "'tool_calls'" not in stripped:
+            return None
+        try:
+            data = _extract_json_object(stripped)
+        except Exception:
+            return None
+        raw_calls = data.get("tool_calls")
+        if not raw_calls or not isinstance(raw_calls, list):
+            return None
+        # 验证是否是合法的 tool call 结构
+        valid_calls: list[ToolCall] = []
+        known_tools = set(self._tool_executor._handlers.keys()) if self._tool_executor else set()
+        for item in raw_calls:
+            if not isinstance(item, dict):
+                return None
+            name = item.get("name") or item.get("function", {}).get("name")
+            if not name:
+                return None
+            # 如果已知工具列表不为空，检查是否是已知工具
+            if known_tools and name not in known_tools:
+                return None
+            args = item.get("arguments") or item.get("args") or item.get("function", {}).get("arguments") or {}
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    args = {}
+            if not isinstance(args, dict):
+                return None
+            valid_calls.append(
+                ToolCall(name=str(name), arguments=args, call_id=str(item.get("id", uuid.uuid4())))
+            )
+        return valid_calls if valid_calls else None
+
     def _llm_response_to_decision(self, llm_resp: LLMResponse) -> Decision:
         if llm_resp.has_tool_calls and llm_resp.tool_calls:
             tool_calls = [
@@ -200,6 +247,15 @@ class ReasoningEngine:
                 tool_calls=tool_calls,
             )
         content = llm_resp.content or ""
+        # 某些模型不通过 tool_calls 字段返回，而是在 content 中直接输出 tool call JSON
+        # 尝试从 content 中解析出 tool_calls
+        parsed = self._try_parse_tool_calls_from_text(content)
+        if parsed:
+            return Decision(
+                decision_type=DecisionType.TOOL_CALLS,
+                text="",
+                tool_calls=parsed,
+            )
         if content.strip():
             return Decision(
                 decision_type=DecisionType.FINAL_ANSWER,
@@ -492,6 +548,218 @@ class ReasoningEngine:
             logger.info("Reasoning: returning best collected text (len=%d)", len(best_text))
             return self._clean_final_answer(best_text.strip())
         return "Stopped after reaching the maximum iteration limit."
+
+    # 工具名称到中文友好提示的映射
+    _TOOL_STATUS_MAP: dict[str, str] = {
+        "fliggy_search_flight": "正在搜索机票...",
+        "fliggy_search_train": "正在搜索火车票...",
+        "fliggy_search_hotel": "正在搜索酒店...",
+        "amap_search_poi": "正在搜索景点...",
+        "amap_get_weather": "正在查询天气...",
+        "amap_route_plan": "正在规划路线...",
+        "save_itinerary": "正在保存行程...",
+        "generate_itinerary_overview": "正在生成行程概览...",
+        "ask_user": "需要更多信息",
+    }
+
+    @staticmethod
+    def _tool_status_text(name: str) -> str:
+        return ReasoningEngine._TOOL_STATUS_MAP.get(name, f"正在执行 {name}...")
+
+    async def run_stream(
+        self, *, system_prompt: str, user_message: str, force_tool: bool
+    ) -> AsyncGenerator[str, None]:
+        """流式推理：工具调用阶段同步执行，最终回复阶段逐 token 流式输出。
+
+        yield 的字符串中，以 ``__status__:`` 开头的是状态通知（非文本内容），
+        上层 agent 应将其转为 tool_status SSE 事件，不写入最终回复文本。
+        """
+        working_messages: list[dict[str, str]] = [{"role": "user", "content": user_message}]
+        self.last_trace = []
+        no_tool_rounds = 0
+        best_text = ""
+        tools_executed = False
+        seen_signatures: dict[str, int] = {}
+        use_native = getattr(settings, "use_native_tool_calling", True)
+        tools_schema = self._build_tools_schema() if use_native else None
+
+        for iteration in range(1, settings.max_iterations + 1):
+            logger.info("===== Reasoning stream iteration %s/%s =====", iteration, settings.max_iterations)
+            near_limit = iteration >= settings.max_iterations - 2
+
+            yield f"__status__:thinking_round_{iteration}"
+
+            # 非流式阶段：正常调用 complete_with_tools，让模型自己决定是否调用工具
+            if use_native and tools_schema:
+                llm_resp = await self._llm.complete_with_tools(
+                    system=system_prompt,
+                    messages=working_messages,
+                    tools=tools_schema if not near_limit else None,
+                )
+                decision = self._llm_response_to_decision(llm_resp)
+                if not decision.text and not decision.tool_calls:
+                    decision = self._parse_decision(llm_resp.content or "")
+            else:
+                response = await self._llm.complete(
+                    system=system_prompt + "\n\n" + REACT_SYSTEM_SUFFIX,
+                    messages=working_messages,
+                )
+                decision = self._parse_decision(response)
+
+            logger.info(
+                "Stream Decision: type=%s tool_calls=%s",
+                decision.decision_type.value,
+                [call.name for call in decision.tool_calls],
+            )
+            trace = TraceStep(
+                iteration=iteration,
+                decision_type=decision.decision_type.value,
+                text=decision.text,
+                tool_calls=[
+                    {"name": call.name, "arguments": call.arguments, "id": call.call_id}
+                    for call in decision.tool_calls
+                ],
+            )
+
+            # ===== FINAL_ANSWER：模型已决定给出最终答案 =====
+            if decision.decision_type == DecisionType.FINAL_ANSWER:
+                if len(decision.text) > len(best_text):
+                    best_text = decision.text
+
+                # 如果还没执行工具但 force_tool，强制重试
+                if force_tool and not tools_executed and no_tool_rounds < 2:
+                    no_tool_rounds += 1
+                    trace.system_note = "forced_retry_no_tools"
+                    working_messages.append({"role": "assistant", "content": decision.text})
+                    working_messages.append({
+                        "role": "user",
+                        "content": "You have not used tools yet. If the task requires action, call tools now. If the task truly needs no tools, provide a direct complete answer.",
+                    })
+                    self._record_trace(trace)
+                    continue
+
+                self._record_trace(trace)
+                answer = self._clean_final_answer(decision.text.strip() or "No response generated.")
+
+                if tools_executed:
+                    yield "__status__:generating_answer"
+                    # 工具已执行，decision.text 是经过完整解析的干净文本
+                    # 逐块 yield 模拟流式输出，避免 stream_complete 误输出 tool call JSON
+                    chunk_size = 3
+                    for i in range(0, len(answer), chunk_size):
+                        yield answer[i:i + chunk_size]
+                        await asyncio.sleep(0.03)
+                else:
+                    # 无工具调用（闲聊、简单问答），使用真正的流式 API
+                    yield "__status__:generating_answer"
+                    try:
+                        stream_text = ""
+                        async for chunk in self._llm.stream_complete(
+                            system=system_prompt,
+                            messages=working_messages,
+                        ):
+                            stream_text += chunk
+                            yield chunk
+                        if not stream_text.strip():
+                            yield answer
+                    except Exception:
+                        yield answer
+                return
+
+            # ===== 工具调用处理 =====
+            # 发送工具执行状态通知
+            for call in decision.tool_calls:
+                yield f"__status__:{self._tool_status_text(call.name)}"
+
+            duplicate_round = False
+            for call in decision.tool_calls:
+                signature = self._make_signature(call)
+                seen_signatures[signature] = seen_signatures.get(signature, 0) + 1
+                if seen_signatures[signature] >= 3:
+                    duplicate_round = True
+
+            if duplicate_round:
+                trace.system_note = "duplicate_tool_calls_detected"
+                self._record_trace(trace)
+                working_messages.append({"role": "assistant", "content": decision.text})
+                working_messages.append({
+                    "role": "user",
+                    "content": "You are repeating the same tool call pattern. Use a different tool, ask the user for missing information, or provide the best final answer.",
+                })
+                continue
+
+            if near_limit and decision.tool_calls:
+                trace.system_note = "forced_final_answer_near_limit"
+                self._record_trace(trace)
+                working_messages.append({"role": "assistant", "content": decision.text or ""})
+                working_messages.append({
+                    "role": "user",
+                    "content": "You are approaching the maximum number of reasoning steps. You MUST now provide a complete final answer. Do NOT call any more tools.",
+                })
+                continue
+
+            tool_results = await self._tool_executor.execute(decision.tool_calls)
+            tools_executed = True
+            trace.tool_results = tool_results
+            self._record_trace(trace)
+
+            confirmation_required = [r for r in tool_results if r.get("requires_confirmation")]
+            if confirmation_required:
+                first = confirmation_required[0]
+                raise ConfirmationNeeded(str(first.get("content") or "Confirmation required."))
+
+            for result in tool_results:
+                if result.get("ask_user"):
+                    raise AskUserNeeded(str(result.get("question") or result.get("content") or ""))
+
+            # 将工具结果追加到 working_messages
+            if use_native:
+                assistant_msg: dict[str, Any] = {"role": "assistant", "content": decision.text or None}
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": call.call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                        },
+                    }
+                    for call in decision.tool_calls
+                ]
+                working_messages.append(assistant_msg)
+                for call, result in zip(decision.tool_calls, tool_results):
+                    tool_content = result.get("content", "")
+                    if isinstance(tool_content, dict):
+                        tool_content = json.dumps(tool_content, ensure_ascii=False)
+                    working_messages.append({
+                        "role": "tool",
+                        "tool_call_id": call.call_id,
+                        "content": str(tool_content)[:4000],
+                    })
+                working_messages.append({
+                    "role": "user",
+                    "content": "Use the tool results above to continue. If they are sufficient, reply with a plain-text final answer for the user. Only call new tools if you still need different information. Do not repeat the same tool calls.",
+                })
+            else:
+                assistant_payload = {"tool_calls": trace.tool_calls, "text": decision.text}
+                working_messages.append({"role": "assistant", "content": json.dumps(assistant_payload, ensure_ascii=False)})
+                result_summaries = []
+                for r in tool_results:
+                    name = r.get("name", "unknown")
+                    content = r.get("content", "")
+                    is_error = r.get("is_error", False)
+                    tag = "ERROR" if is_error else "OK"
+                    result_summaries.append(f"[{name}] {tag}: {content[:2000]}")
+                working_messages.append({
+                    "role": "user",
+                    "content": "Tool results:\n" + "\n---\n".join(result_summaries),
+                })
+
+        # 超过最大迭代次数
+        if best_text:
+            yield self._clean_final_answer(best_text.strip())
+        else:
+            yield "Stopped after reaching the maximum iteration limit."
 
     @staticmethod
     def _looks_grounded(text: str) -> bool:
