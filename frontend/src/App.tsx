@@ -5,6 +5,7 @@ import { ItineraryOverview } from './pages/ItineraryOverview'
 import { MemoryPage } from './pages/MemoryPage'
 import { ComparePage } from './pages/ComparePage'
 import { SharedItinerary } from './pages/SharedItinerary'
+import { AlbumPage } from './pages/AlbumPage'
 import { useAuthStore } from './hooks/useAuthStore'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,14 @@ function App() {
           element={
             <PrivateRoute>
               <ComparePage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/album/:id"
+          element={
+            <PrivateRoute>
+              <AlbumPage />
             </PrivateRoute>
           }
         />

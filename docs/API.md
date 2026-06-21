@@ -115,6 +115,42 @@ POST /api/chat
 
 ---
 
+### 2.2 流式对话
+
+```
+POST /api/chat/stream
+```
+
+请求体与 `/api/chat` 相同。
+
+响应：Server-Sent Events (SSE) 流，每行格式为 `data: {json}\n\n`
+
+事件类型：
+
+| type | data | 说明 |
+|------|------|------|
+| `status` | `"thinking"` | 正在思考/工具调用中 |
+| `tool_status` | 状态文本 | 工具执行状态（搜索机票、搜索酒店等） |
+| `chunk` | 文本片段 | 流式文本片段 |
+| `done` | `"completed"` | 流式结束 |
+| `error` | 错误信息 | 出错 |
+
+示例：
+
+```
+data: {"type": "status", "data": "thinking"}
+
+data: {"type": "tool_status", "data": "正在搜索机票..."}
+
+data: {"type": "chunk", "data": "为您推荐"}
+
+data: {"type": "chunk", "data": "以下行程"}
+
+data: {"type": "done", "data": "completed"}
+```
+
+---
+
 ## 3. 会话模块
 
 ### 3.1 获取会话列表
@@ -393,10 +429,42 @@ GET /api/itineraries/{itinerary_id}/expense-summary
 
 ---
 
-### 4.8 更新活动实际花费
+### 4.8 活动打卡
 
 ```
-PUT /api/itineraries/{itinerary_id}/activities/{activity_id}/cost
+PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/checkin
+```
+
+请求体：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| checked_in | boolean | 否 | 是否已打卡，默认 `true` |
+
+响应：返回更新后的活动对象。
+
+---
+
+### 4.9 删除活动
+
+```
+DELETE /api/itineraries/{itinerary_id}/activities/{activity_id}
+```
+
+响应：
+
+```json
+{
+  "detail": "已删除"
+}
+```
+
+---
+
+### 4.10 更新活动实际花费
+
+```
+PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/cost
 ```
 
 请求体：
@@ -404,11 +472,12 @@ PUT /api/itineraries/{itinerary_id}/activities/{activity_id}/cost
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | actual_cost | number | 是 | 实际花费 |
-| checked_in | boolean | 否 | 是否已打卡 |
+
+响应：返回更新后的活动对象。
 
 ---
 
-### 4.9 创建分享链接
+### 4.11 创建分享链接
 
 ```
 POST /api/itineraries/{itinerary_id}/share
@@ -431,7 +500,7 @@ POST /api/itineraries/{itinerary_id}/share
 
 ---
 
-### 4.10 获取分享链接列表
+### 4.12 获取分享链接列表
 
 ```
 GET /api/itineraries/{itinerary_id}/shares
@@ -453,7 +522,7 @@ GET /api/itineraries/{itinerary_id}/shares
 
 ---
 
-### 4.11 删除分享链接
+### 4.13 删除分享链接
 
 ```
 DELETE /api/itineraries/{itinerary_id}/shares/{token}
@@ -469,7 +538,7 @@ DELETE /api/itineraries/{itinerary_id}/shares/{token}
 
 ---
 
-### 4.12 查看分享行程
+### 4.14 查看分享行程
 
 ```
 GET /api/shared/{token}
@@ -718,6 +787,206 @@ GET /debug/mcp/select?query=搜索&limit=4
 ```
 GET /debug/task/{session_id}
 ```
+
+---
+
+## 10. 相册模块
+
+### 10.1 上传照片
+
+```
+POST /api/itineraries/{itinerary_id}/photos
+```
+
+Content-Type: `multipart/form-data`
+
+请求参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| files | file[] | 是 | 照片文件列表（支持多文件） |
+| description | string | 否 | 照片描述 |
+| day_index | int | 否 | 关联的天数索引，默认 0 |
+
+响应：
+
+```json
+{
+  "photos": [
+    {
+      "id": 1,
+      "file_name": "IMG_001.jpg",
+      "file_size": 2048000,
+      "mime_type": "image/jpeg",
+      "description": "东京塔夜景",
+      "day_index": 1,
+      "storage_path": "album/20260621/abc123.jpg",
+      "thumbnail_path": "album/20260621/abc123_thumb.jpg",
+      "latitude": 35.6586,
+      "longitude": 139.7454,
+      "ai_description": "东京塔夜景，灯光璀璨",
+      "tags": ["景点", "夜景"],
+      "is_cover": false,
+      "created_at": "2026-06-21T10:00:00"
+    }
+  ]
+}
+```
+
+---
+
+### 10.2 获取照片列表
+
+```
+GET /api/itineraries/{itinerary_id}/photos
+```
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| day_index | int | 否 | 按天数筛选 |
+| tag | string | 否 | 按标签筛选 |
+
+响应：
+
+```json
+{
+  "itinerary_id": "1",
+  "photos": [
+    {
+      "id": 1,
+      "file_name": "IMG_001.jpg",
+      "description": "东京塔夜景",
+      "day_index": 1,
+      "thumbnail_path": "album/20260621/abc123_thumb.jpg",
+      "tags": ["景点", "夜景"],
+      "is_cover": false
+    }
+  ],
+  "total": 10,
+  "tags": ["景点", "美食", "夜景"],
+  "cover": {
+    "id": 1,
+    "file_name": "IMG_001.jpg",
+    "thumbnail_path": "album/20260621/abc123_thumb.jpg"
+  }
+}
+```
+
+---
+
+### 10.3 删除照片
+
+```
+DELETE /api/itineraries/{itinerary_id}/photos/{photo_id}
+```
+
+响应：
+
+```json
+{
+  "detail": "已删除"
+}
+```
+
+错误码：
+
+| 状态码 | 说明 |
+|--------|------|
+| 403 | 无权删除此照片 |
+| 404 | 照片不存在 |
+
+---
+
+### 10.4 更新照片信息
+
+```
+PATCH /api/itineraries/{itinerary_id}/photos/{photo_id}
+```
+
+请求体：
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| description | string | 否 | 照片描述 |
+| day_index | int | 否 | 关联的天数索引 |
+| tags | array | 否 | 标签列表 |
+
+响应：返回更新后的照片对象。
+
+---
+
+### 10.5 设置封面照片
+
+```
+POST /api/itineraries/{itinerary_id}/photos/{photo_id}/cover
+```
+
+响应：返回设置为封面的照片对象。
+
+---
+
+### 10.6 获取照片地理位置
+
+```
+GET /api/itineraries/{itinerary_id}/photos/map
+```
+
+响应：
+
+```json
+{
+  "itinerary_id": "1",
+  "markers": [
+    {
+      "photo_id": 1,
+      "latitude": 35.6586,
+      "longitude": 139.7454,
+      "description": "东京塔",
+      "day_index": 1,
+      "thumbnail_path": "album/20260621/abc123_thumb.jpg"
+    }
+  ]
+}
+```
+
+---
+
+### 10.7 生成游记
+
+```
+POST /api/itineraries/{itinerary_id}/travelogue
+```
+
+基于行程和照片自动生成游记内容。
+
+响应：
+
+```json
+{
+  "itinerary_id": "1",
+  "content": "# 东京之旅\n\n第一天，我们来到了东京塔..."
+}
+```
+
+---
+
+### 10.8 获取相册图片文件
+
+```
+GET /api/album/{file_path}
+```
+
+用于前端 `<img>` 标签直接访问图片文件。支持通过 query param 传递 token。
+
+查询参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| token | string | 否 | 用户 token（因 `<img>` 标签无法携带 Authorization header） |
+
+响应：图片文件二进制数据。
 
 ---
 

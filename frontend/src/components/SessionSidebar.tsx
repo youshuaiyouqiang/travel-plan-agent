@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, MessageSquare, LogOut, ChevronLeft, ChevronRight, MapPin, Brain, ArrowRightLeft } from 'lucide-react'
+import { Plus, Trash2, MessageSquare, LogOut, ChevronLeft, ChevronRight, MapPin, Brain, ArrowRightLeft, Camera } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { useChatStore } from '../hooks/useChatStore'
 import { listSessions, createSession, deleteSession, getSessionMessages, listItineraries, deleteItinerary, ItineraryListItem } from '../utils/api'
@@ -204,6 +204,13 @@ export function SessionSidebar({ onSessionChange, activeSessionId }: Props) {
                     <p className="truncate text-xs font-medium">{itin.title}</p>
                     <p className="text-[10px] text-slate-400">{itin.destination}</p>
                   </div>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); navigate(`/album/${itin.id}`) }}
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-400 hover:text-indigo-500 transition-all flex-shrink-0"
+                  title="相册"
+                >
+                  <Camera size={11} />
                 </button>
                 <button
                   onClick={async (e) => {

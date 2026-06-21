@@ -237,6 +237,29 @@ CREATE TABLE IF NOT EXISTS shared_links (
     created_at   TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_shared_itinerary ON shared_links(itinerary_id);
+
+CREATE TABLE IF NOT EXISTS album_photos (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    itinerary_id   TEXT NOT NULL,
+    user_id        TEXT NOT NULL,
+    file_name      TEXT NOT NULL DEFAULT '',
+    file_size      INTEGER NOT NULL DEFAULT 0,
+    mime_type      TEXT NOT NULL DEFAULT '',
+    description    TEXT NOT NULL DEFAULT '',
+    storage_path   TEXT NOT NULL DEFAULT '',
+    thumbnail_path TEXT NOT NULL DEFAULT '',
+    day_index      INTEGER NOT NULL DEFAULT 0,
+    tags           TEXT NOT NULL DEFAULT '[]',
+    ai_description TEXT NOT NULL DEFAULT '',
+    latitude       REAL,
+    longitude      REAL,
+    is_cover       INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (itinerary_id) REFERENCES itineraries(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_photos_itinerary ON album_photos(itinerary_id);
+CREATE INDEX IF NOT EXISTS idx_photos_user ON album_photos(user_id);
+CREATE INDEX IF NOT EXISTS idx_photos_day ON album_photos(itinerary_id, day_index);
 """
 
 

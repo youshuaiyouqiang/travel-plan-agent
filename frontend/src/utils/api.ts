@@ -807,3 +807,139 @@ export async function batchGeocode(addresses: string[]): Promise<GeocodeResult[]
   )
   return results
 }
+
+// ==================== 相册管理 ====================
+
+export interface PhotoData {
+  id: number
+  itinerary_id: string
+  user_id: string
+  file_name: string
+  file_size: number
+  mime_type: string
+  description: string
+  storage_path: string
+  thumbnail_path: string
+  day_index: number
+  tags: string[]
+  ai_description: string
+  latitude: number | null
+  longitude: number | null
+  is_cover: boolean
+  created_at: string
+}
+
+export interface PhotoListResponse {
+  itinerary_id: string
+  photos: PhotoData[]
+  total: number
+  tags: string[]
+  cover: PhotoData | null
+}
+
+export interface PhotoMapMarker {
+  photo_id: number
+  latitude: number
+  longitude: number
+  description: string
+  day_index: number
+  thumbnail_path: string
+}
+
+export async function uploadPhotos(
+  itineraryId: string,
+  files: File[],
+  description: string = '',
+  dayIndex: number = 0,
+): Promise<{ photos: PhotoData[] }> {
+  const formData = new FormData()
+  for (const f of files) {
+    formData.append('files', f)
+  }
+  formData.append('description', description)
+  formData.append('day_index', String(dayIndex))
+
+  const token = getToken()
+  const headers: HeadersInit = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+  if (!res.ok) throw new Error(`上传失败 (${res.status})`)
+  return res.json()
+}
+
+export async function listPhotos(
+  itineraryId: string,
+  dayIndex?: number,
+  tag?: string,
+): Promise<PhotoListResponse> {
+  const params = new URLSearchParams()
+  if (dayIndex && dayIndex > 0) params.set('day_index', String(dayIndex))
+  if (tag) params.set('tag', tag)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos${qs}`, {
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`获取照片失败 (${res.status})`)
+  return res.json()
+}
+
+export async function deletePhoto(itineraryId: string, photoId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`删除失败 (${res.status})`)
+}
+
+export async function updatePhoto(
+  itineraryId: string,
+  photoId: number,
+  data: { description?: string; day_index?: number; tags?: string[] },
+): Promise<PhotoData> {
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`更新失败 (${res.status})`)
+  return res.json()
+}
+
+export async function setPhotoCover(itineraryId: string, photoId: number): Promise<PhotoData> {
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}/cover`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`设置封面失败 (${res.status})`)
+  return res.json()
+}
+
+export async function getPhotoMapMarkers(itineraryId: string): Promise<{ itinerary_id: string; markers: PhotoMapMarker[] }> {
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/map`, {
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`获取地图标记失败 (${res.status})`)
+  return res.json()
+}
+
+export async function generateTravelogue(itineraryId: string): Promise<{ itinerary_id: string; content: string }> {
+  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/travelogue`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`生成游记失败 (${res.status})`)
+  return res.json()
+}
+
+export function getAlbumImageUrl(path: string): string {
+  const token = getToken()
+  // 兼容旧数据：如果 path 以 album/ 开头，去掉前缀（路由已包含 /album/）
+  const cleanPath = path.startsWith('album/') ? path.slice(6) : path
+  const base = `${API_BASE}/album/${cleanPath}`
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, MapPin, Calendar, Wallet, CheckCircle2, Plane, Share2, BarChart3, TrendingDown, TrendingUp, Minus, X, Copy, Check, Eye } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, Wallet, CheckCircle2, Plane, Share2, BarChart3, TrendingDown, TrendingUp, Minus, X, Copy, Check, Eye, Camera } from 'lucide-react'
 import { useItineraryStore } from '../hooks/useItineraryStore'
 import { DayBlinds } from '../components/itinerary/DayBlinds'
 import { ActivityDetail } from '../components/itinerary/ActivityDetail'
@@ -173,6 +173,14 @@ export function ItineraryOverview() {
               title="分享行程"
             >
               <Share2 size={17} />
+            </button>
+            <button
+              onClick={() => navigate(`/album/${id}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 backdrop-blur-md text-white/80 hover:bg-white/25 transition-colors text-xs font-medium"
+              title="旅行相册"
+            >
+              <Camera size={14} />
+              相册
             </button>
             {itinerary.status && (
               <span className="px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-white/80 text-xs font-medium">
