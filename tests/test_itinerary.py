@@ -4,7 +4,7 @@ import json
 import pytest
 from datetime import datetime
 
-from infra.db import get_connection, reset_connection, init_db
+from infrastructure.persistence.database import get_connection, reset_connection, init_db
 from core.itinerary.schema import Itinerary, DayPlan, Activity
 from core.itinerary.repository import ItineraryRepository
 from core.itinerary.parser import ItineraryParser

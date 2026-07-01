@@ -1,8 +1,8 @@
 """Tests for core/contxt_manager.py — ContextManager, PreparedContext"""
 import pytest
 
-from core.contxt_manager import ContextManager, PreparedContext
-from core.session import Session, Turn
+from domain.reasoning.context_manager import ContextManager, PreparedContext
+from domain.user.session.manager import Session, Turn
 
 
 class TestPreparedContext:

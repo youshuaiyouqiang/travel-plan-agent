@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { SessionInfo } from '../utils/api'
 
 export interface ThinkingStep {
   id: string
@@ -22,6 +23,8 @@ interface ChatState {
   userId: string
   isEscalated: boolean
   thinkingSteps: ThinkingStep[]
+  sessions: SessionInfo[]
+  sessionsLoadedAt: number
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void
   appendToLastMessage: (chunk: string) => void
   finishLastMessage: () => void
@@ -34,6 +37,7 @@ interface ChatState {
   clearMessages: () => void
   loadMessages: (msgs: Array<{ role: string; content: string; created_at?: string }>) => void
   resetSession: () => void
+  setSessions: (sessions: SessionInfo[]) => void
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -43,6 +47,8 @@ export const useChatStore = create<ChatState>((set) => ({
   userId: '',
   isEscalated: false,
   thinkingSteps: [],
+  sessions: [],
+  sessionsLoadedAt: 0,
   addMessage: (msg) =>
     set((state) => ({
       messages: [
@@ -101,6 +107,7 @@ export const useChatStore = create<ChatState>((set) => ({
       })),
     }),
   resetSession: () => set({ messages: [], isEscalated: false, sessionId: generateId(), thinkingSteps: [] }),
+  setSessions: (sessions) => set({ sessions, sessionsLoadedAt: Date.now() }),
 }))
 
 function generateId(): string {

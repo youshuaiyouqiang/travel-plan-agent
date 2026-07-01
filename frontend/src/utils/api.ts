@@ -6,6 +6,7 @@ export interface ChatRequest {
   session_id: string
   user_id?: string
   message: string
+  agent_id?: string
 }
 
 export interface ChatResponse {
@@ -60,8 +61,8 @@ export async function sendMessage(req: ChatRequest, signal?: AbortSignal): Promi
 }
 
 export interface StreamEvent {
-  type: 'status' | 'chunk' | 'done' | 'error' | 'tool_status'
-  data: string
+  type: 'status' | 'chunk' | 'done' | 'error' | 'tool_status' | 'route' | 'actions'
+  data: any
 }
 
 export async function* sendMessageStream(
@@ -942,4 +943,91 @@ export function getAlbumImageUrl(path: string): string {
   const cleanPath = path.startsWith('album/') ? path.slice(6) : path
   const base = `${API_BASE}/album/${cleanPath}`
   return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}
+
+// ===== Agent 中心 API =====
+
+// 类型定义（字段与后端 AgentConfig 完全对齐）
+export interface SkillInfo {
+  name: string
+  display_name: string
+  description: string
+  default_prompt: string
+  requires_env: string[]
+  env_configured: boolean
+  icon: string
+}
+
+export interface AgentInfo {
+  id: string
+  name: string
+  description: string
+  icon: string
+  source: 'builtin' | 'custom'    // 与后端 AgentConfig.source 对齐
+  skills?: string[]
+  is_public?: boolean
+  created_at?: string
+  system_prompt?: string
+  welcome_message?: string
+  temperature?: number
+  user_id?: string
+}
+
+// 获取 skill 列表
+export async function fetchSkills(): Promise<SkillInfo[]> {
+  const res = await fetch(`${API_BASE}/skills`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('获取 Skill 列表失败')
+  const data = await res.json()
+  return data.skills
+}
+
+// 获取智能体列表
+export async function fetchAgents(): Promise<{
+  builtin: AgentInfo[]
+  custom: AgentInfo[]
+  public: AgentInfo[]
+}> {
+  const res = await fetch(`${API_BASE}/agents`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('获取智能体列表失败')
+  return res.json()
+}
+
+// 创建自定义智能体
+export async function createCustomAgent(data: Partial<AgentInfo>): Promise<AgentInfo> {
+  const res = await fetch(`${API_BASE}/agents/custom`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '创建智能体失败')
+  }
+  return res.json()
+}
+
+// 更新自定义智能体
+export async function updateCustomAgent(agentId: string, data: Partial<AgentInfo>): Promise<AgentInfo> {
+  const res = await fetch(`${API_BASE}/agents/custom/${agentId}`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '更新智能体失败')
+  }
+  return res.json()
+}
+
+// 删除自定义智能体
+export async function deleteCustomAgent(agentId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/agents/custom/${agentId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '删除智能体失败')
+  }
 }

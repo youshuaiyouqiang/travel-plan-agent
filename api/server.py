@@ -3,26 +3,26 @@ from __future__ import annotations
 import asyncio
 import json as json_mod
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from dataclasses import asdict
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import logging
-from app import build_agent
+from app import build_orchestrator
 
 from config import settings
-from core.logging import setup_logging
+from domain.shared.runtime.logging import init_from_settings
 from core.auth import UserStore
 from core.token import generate_token, verify_token
 from core.trending import get_trending_travel, refresh_pool
+from core.audit.logger import AuditLogger
 
-setup_logging(
-    log_level=settings.log_level,
-    log_dir=settings.log_dir,
-    log_to_console=settings.log_to_console,
-    log_to_file=settings.log_to_file,
-)
+init_from_settings()
 logger = logging.getLogger(__name__)
+_api_audit = AuditLogger()
 
 _BACKGROUND_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
@@ -62,7 +62,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Claw API", lifespan=lifespan)
-agent = build_agent()
+_container = build_orchestrator()
+agent = _container.orchestrator
+app.state.skill_provider = _container.skill_provider
+app.state.builtin_configs = _container.builtin_configs
+app.state.custom_repo = _container.custom_repo
 user_store = UserStore()
 
 _PUBLIC_PATHS = {"/api/auth/register", "/api/auth/login", "/api/trending", "/health", "/metrics", "/api/shared"}
@@ -142,7 +146,8 @@ async def login(req: LoginRequest) -> AuthResponse:
 class ChatRequest(BaseModel):
     session_id: str
     user_id: str | None = None
-    message: str
+    message: str = Field(..., min_length=1, max_length=8000)
+    agent_id: str | None = None  # 指定使用哪个智能体
 
 
 class ChatResponse(BaseModel):
@@ -154,13 +159,28 @@ class ChatResponse(BaseModel):
 async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     auth_user_id = getattr(request.state, "user_id", None)
     effective_user_id = auth_user_id or req.user_id
-    logger.info("API /chat request: session_id=%s user_id=%s", req.session_id, effective_user_id)
+    trace_id = uuid.uuid4().hex[:16]
+    start_time = time.monotonic()
+    logger.info("API /chat request: session_id=%s user_id=%s trace_id=%s", req.session_id, effective_user_id, trace_id)
+    _api_audit.log_api_boundary(
+        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
+        direction="request", endpoint="/api/chat", method="POST",
+        payload=req.message, agent_id=req.agent_id or "",
+    )
     result = await agent.chat(
         session_id=req.session_id,
         user_id=effective_user_id,
         message=req.message,
+        agent_id=req.agent_id,
+        trace_id=trace_id,
     )
-    logger.info("API /chat response: session_id=%s user_id=%s", req.session_id, effective_user_id)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    _api_audit.log_api_boundary(
+        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
+        direction="response", endpoint="/api/chat", method="POST",
+        payload=result.get("reply", ""), duration_ms=duration_ms, agent_id=req.agent_id or "",
+    )
+    logger.info("API /chat response: session_id=%s user_id=%s trace_id=%s duration_ms=%s", req.session_id, effective_user_id, trace_id, duration_ms)
     return ChatResponse(status=result["status"], reply=result["reply"])
 
 
@@ -168,21 +188,41 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
 async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     auth_user_id = getattr(request.state, "user_id", None)
     effective_user_id = auth_user_id or req.user_id
-    logger.info("API /chat/stream request: session_id=%s user_id=%s", req.session_id, effective_user_id)
+    trace_id = uuid.uuid4().hex[:16]
+    start_time = time.monotonic()
+    logger.info("API /chat/stream request: session_id=%s user_id=%s trace_id=%s", req.session_id, effective_user_id, trace_id)
+    _api_audit.log_api_boundary(
+        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
+        direction="request", endpoint="/api/chat/stream", method="POST",
+        payload=req.message, agent_id=req.agent_id or "",
+    )
+    full_reply = ""
 
     async def event_generator():
+        nonlocal full_reply
         try:
             async for event in agent.chat_stream(
                 session_id=req.session_id,
                 user_id=effective_user_id,
                 message=req.message,
+                agent_id=req.agent_id,
+                trace_id=trace_id,
             ):
-                data = json_mod.dumps(event, ensure_ascii=False)
-                yield f"data: {data}\n\n"
+                if event.get("type") == "chunk":
+                    full_reply += event.get("data", "")
+                yield f"data: {json_mod.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.error("Stream error: %s", e, exc_info=True)
-            error_event = json_mod.dumps({"type": "error", "data": str(e)}, ensure_ascii=False)
+            logger.error("Stream error: trace_id=%s %s", trace_id, e, exc_info=True)
+            error_event = json_mod.dumps({"type": "error", "data": str(e), "trace_id": trace_id}, ensure_ascii=False)
             yield f"data: {error_event}\n\n"
+
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+        _api_audit.log_api_boundary(
+            session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
+            direction="response", endpoint="/api/chat/stream", method="POST",
+            payload=full_reply, duration_ms=duration_ms, agent_id=req.agent_id or "",
+        )
+        logger.info("API /chat/stream done: session_id=%s trace_id=%s duration_ms=%s", req.session_id, trace_id, duration_ms)
 
     return StreamingResponse(
         event_generator(),
@@ -202,6 +242,95 @@ async def list_sessions(request: Request) -> dict:
         return JSONResponse(status_code=401, content={"detail": "未登录"})
     sessions = agent.list_user_sessions(user_id)
     return {"sessions": sessions}
+
+
+class CreateAgentRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    description: str = Field("", max_length=500)
+    icon: str = Field("🤖", max_length=16)
+    system_prompt: str = Field(..., min_length=1, max_length=8000)
+    skills: list[str] = Field(default_factory=list, max_length=20)
+    welcome_message: str = Field("", max_length=500)
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+    is_public: bool = False
+
+
+class UpdateAgentRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=64)
+    description: str | None = Field(None, max_length=500)
+    icon: str | None = Field(None, max_length=16)
+    system_prompt: str | None = Field(None, min_length=1, max_length=8000)
+    skills: list[str] | None = Field(None, max_length=20)
+    welcome_message: str | None = Field(None, max_length=500)
+    temperature: float | None = Field(None, ge=0.0, le=2.0)
+    is_public: bool | None = None
+
+
+@app.get("/api/skills")
+async def list_skills(request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    sp = request.app.state.skill_provider
+    return {"skills": [asdict(s) for s in sp.list_skills()]}
+
+
+@app.get("/api/agents")
+async def list_agents(request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    builtin = [asdict(c) for c in request.app.state.builtin_configs]
+    custom = [asdict(c) for c in request.app.state.custom_repo.list_by_user(user_id)]
+    public = [asdict(c) for c in request.app.state.custom_repo.list_public()]
+    return {"builtin": builtin, "custom": custom, "public": public}
+
+
+@app.post("/api/agents/custom")
+async def create_custom_agent(req: CreateAgentRequest, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    # TODO: 商用应加速率限制（如每用户每天最多创建 N 个）
+    config = request.app.state.custom_repo.create(user_id, **req.model_dump())
+    return asdict(config)
+
+
+@app.get("/api/agents/custom/{agent_id}")
+async def get_custom_agent(agent_id: str, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    config = request.app.state.custom_repo.get(agent_id)
+    if not config or (config.user_id != user_id and not config.is_public):
+        raise HTTPException(404, "智能体不存在")
+    return asdict(config)
+
+
+@app.put("/api/agents/custom/{agent_id}")
+async def update_custom_agent(agent_id: str, req: UpdateAgentRequest, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    repo = request.app.state.custom_repo
+    config = repo.get(agent_id)
+    if not config or config.user_id != user_id:
+        raise HTTPException(403, "无权修改")
+    updated = repo.update(agent_id, **req.model_dump(exclude_unset=True))
+    return asdict(updated)
+
+
+@app.delete("/api/agents/custom/{agent_id}")
+async def delete_custom_agent(agent_id: str, request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(401, "未登录")
+    repo = request.app.state.custom_repo
+    config = repo.get(agent_id)
+    if not config or config.user_id != user_id:
+        raise HTTPException(403, "无权删除")
+    repo.delete(agent_id)
+    return {"status": "deleted"}
 
 
 @app.post("/api/sessions")
@@ -771,24 +900,11 @@ async def batch_geocode(request: Request) -> dict:
     return {"results": results}
 
 
-@app.post("/api/geocode/intl")
-async def intl_geocode(request: Request) -> dict:
-    user_id = getattr(request.state, "user_id", None)
-    if not user_id:
-        return JSONResponse(status_code=401, content={"detail": "未登录"})
-    body = await request.json()
-    address = str(body.get("address", "")).strip()
-    city = str(body.get("city", "")).strip()
-    if not address:
-        return JSONResponse(status_code=400, content={"detail": "address 不能为空"})
-    from api.intl_coords import lookup_intl_coords
-    coords = lookup_intl_coords(address, city or None)
-    if coords:
-        return {"address": address, "lng": coords[0], "lat": coords[1], "formatted": address}
+def _nominatim_lookup(query: str) -> dict | None:
+    """同步调用 Nominatim —— 必须在线程池中执行，避免阻塞事件循环。"""
     import urllib.request
     import urllib.parse
     import json as _json
-    query = f"{city} {address}" if city and address not in city else address
     try:
         qs = urllib.parse.urlencode({
             "q": query,
@@ -805,13 +921,36 @@ async def intl_geocode(request: Request) -> dict:
             lon = float(data[0].get("lon", 0))
             if lat != 0 and lon != 0:
                 return {
-                    "address": address,
                     "lng": lon,
                     "lat": lat,
                     "formatted": data[0].get("display_name", ""),
                 }
     except Exception as e:
-        logger.warning("Nominatim geocode failed for '%s': %s", address, e)
+        logger.warning("Nominatim geocode failed for '%s': %s", query, e)
+    return None
+
+
+@app.post("/api/geocode/intl")
+async def intl_geocode(request: Request) -> dict:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        return JSONResponse(status_code=401, content={"detail": "未登录"})
+    body = await request.json()
+    address = str(body.get("address", "")).strip()
+    city = str(body.get("city", "")).strip()
+    if not address:
+        return JSONResponse(status_code=400, content={"detail": "address 不能为空"})
+    from api.intl_coords import lookup_intl_coords
+    coords = lookup_intl_coords(address, city or None)
+    if coords:
+        return {"address": address, "lng": coords[0], "lat": coords[1], "formatted": address}
+    query = f"{city} {address}" if city and address not in city else address
+    # 用线程池执行同步阻塞的 Nominatim 调用，避免卡死事件循环
+    # （此前直接在 async 路由里调 urllib.urlopen 会阻塞整个事件循环，
+    #  导致并发的其他请求如打卡 PATCH 长时间无响应）
+    result = await asyncio.to_thread(_nominatim_lookup, query)
+    if result:
+        return {"address": address, **result}
     return {"address": address, "lng": None, "lat": None, "formatted": ""}
 
 

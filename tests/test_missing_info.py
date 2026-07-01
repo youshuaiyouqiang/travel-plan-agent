@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 from core.intent.travel_classifier import TravelIntentClassifier, TravelIntentResult
 from core.intent.travel_schema import TravelIntentType
-from core.memory import DualLayerMemoryManager, LongTermMemory, ShortTermMemory
-from infra.db import init_db, reset_connection, _json_dumps
+from domain.memory.manager import DualLayerMemoryManager, LongTermMemory, ShortTermMemory
+from infrastructure.persistence.database import init_db, reset_connection, _json_dumps
 
 
 class TestExtractDestination:

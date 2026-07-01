@@ -1,8 +1,8 @@
 """Tests for core/session.py — Session, Turn, SessionManager"""
 import pytest
 
-from core.session import Session, Turn, SessionManager
-from infra.db import init_db, reset_connection
+from domain.user.session.manager import Session, Turn, SessionManager
+from infrastructure.persistence.database import init_db, reset_connection
 
 
 class TestTurn:

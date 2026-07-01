@@ -1,8 +1,8 @@
 """Tests for core/task_state.py — TaskStatus, TaskRecord, TaskStateStore"""
 import pytest
 
-from core.task_state import TaskStatus, TaskRecord, TaskStateStore
-from infra.db import init_db, reset_connection
+from domain.user.session.task_state import TaskStatus, TaskRecord, TaskStateStore
+from infrastructure.persistence.database import init_db, reset_connection
 
 
 class TestTaskStatus:

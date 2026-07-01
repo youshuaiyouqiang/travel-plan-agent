@@ -1,0 +1,15 @@
+# 内置旅行规划智能体配置
+# 注意：source 字段不由 YAML 定义，由 BuiltinAgentLoader 硬编码为 "builtin"，
+# 因为内置智能体的来源是确定的，不需要在配置里声明。
+id: travel
+name: 旅行规划助手
+description: >
+  旅行规划助手。处理行程规划、景点推荐、机票酒店搜索、
+  地图导航、花费统计、相册管理、旅行记忆等所有旅行相关需求。
+icon: "✈️"
+system_prompt: ""  # 旅行智能体使用内置 PromptBuilder，不走 DynamicAgent，此处留空
+skills:
+  - amap-maps
+  - fliggy-travel
+welcome_message: "你好！我是旅行规划助手，告诉我你想去哪里？"
+temperature: 0.7

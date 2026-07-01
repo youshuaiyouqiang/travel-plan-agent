@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from core.reasoning import (
+from domain.reasoning.engine import (
     ReasoningEngine,
     TraceStep,
     AskUserNeeded,
@@ -13,11 +13,11 @@ from core.reasoning import (
     REACT_SYSTEM_SUFFIX,
 )
 from core.types import Decision, DecisionType, ToolCall
-from core.llm import LLMResponse, ToolCallResult as LLMToolCall
-from tools.registry import ToolRegistry
-from tools.executor import ToolExecutor
-from tools.policy import ToolPolicy
-from tools.base import ToolSpec, bind_tool
+from infrastructure.llm.openai import LLMResponse, ToolCallResult as LLMToolCall
+from infrastructure.tools.registry import ToolRegistry
+from infrastructure.tools.executor import ToolExecutor
+from infrastructure.tools.policy import ToolPolicy
+from infrastructure.tools.base import ToolSpec, bind_tool
 from unittest.mock import AsyncMock
 
 

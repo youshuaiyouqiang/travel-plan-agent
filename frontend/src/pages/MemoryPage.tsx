@@ -197,7 +197,7 @@ export function MemoryPage() {
             <ArrowLeft size={16} />
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-semibold text-slate-800">旅行记忆</h1>
+            <h1 className="text-base font-semibold text-slate-800">记忆</h1>
             <p className="text-xs text-slate-400 mt-0.5">
               AI 自动从对话中提取你的偏好、事实和经验
             </p>

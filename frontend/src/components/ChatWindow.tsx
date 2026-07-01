@@ -1,8 +1,11 @@
 import { useRef, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Message, ThinkingStep } from '../hooks/useChatStore'
+import { useSessionStore } from '../hooks/useSessionStore'
 import { Bot, User, AlertTriangle, MapPin, TrendingUp, RefreshCw, Eye, ThumbsUp, Map, Loader2, Check } from 'lucide-react'
 import { getTrending, TrendingItem } from '../utils/api'
+import { AgentActivationBanner } from './AgentActivationBanner'
+import { AgentActionCard } from './AgentActionCard'
 
 interface Props {
   messages: Message[]
@@ -57,13 +60,15 @@ function _isItineraryConfirmPrompt(content: string): boolean {
 export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, onQuickSend }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const activeAgent = useSessionStore((s) => s.activeAgent)
+  const agentActions = useSessionStore((s) => s.agentActions)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
 
   const handleViewItinerary = (itineraryId: string) => {
-    navigate(`/itinerary/${itineraryId}`)
+    navigate(`/agent/travel/itinerary/${itineraryId}`)
   }
 
   // 一旦已生成行程概览，禁用所有版本的"满意"按钮，防止重复生成
@@ -156,6 +161,22 @@ export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, on
               <p className="text-xs text-amber-600">正在为您转接专属旅行顾问</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 智能体激活提示 — 显示在消息列表底部 */}
+      {activeAgent && (
+        <div className="flex justify-center">
+          <AgentActivationBanner agent={activeAgent} />
+        </div>
+      )}
+
+      {/* 操作卡片 — 显示在最新一条助手消息之后 */}
+      {agentActions.length > 0 && (
+        <div className="flex justify-start max-w-3xl mx-auto">
+          {agentActions.map((action, i) => (
+            <AgentActionCard key={i} action={action} />
+          ))}
         </div>
       )}
 

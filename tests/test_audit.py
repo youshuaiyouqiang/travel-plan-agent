@@ -42,10 +42,15 @@ class TestAuditLogger:
             tool_name="run_shell",
             action="ls -la",
             risk_level="low",
+            trace_id="trace-1",
         )
-        import datetime
+        import datetime, json
         log_file = tmp_path / f"audit-{datetime.datetime.utcnow().strftime('%Y-%m-%d')}.jsonl"
         assert log_file.exists()
+        line = log_file.read_text(encoding="utf-8").strip()
+        event = json.loads(line)
+        assert event["trace_id"] == "trace-1"
+        assert event["event_type"] == "tool_call"
 
     def test_log_disabled(self, tmp_path: Path, monkeypatch):
         monkeypatch.setattr("config.settings.audit_enabled", False)

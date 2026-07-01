@@ -1,0 +1,45 @@
+digraph DAI_Net_Contrastive {
+	rankdir=LR
+	bgcolor=white splines=ortho
+	subgraph cluster_backbone {
+		fillcolor="#E8F5E9" label=Backbone style="rounded,filled"
+		Input [label="Dark / Light
+Image Pair" fillcolor=white shape=box style="rounded,filled"]
+		VGG [label="Shared VGG" fillcolor=white shape=box style="rounded,filled"]
+		Input -> VGG
+	}
+	subgraph cluster_retinex {
+		fillcolor="#FFF3E0" label="Retinex Branch" style="rounded,filled"
+		Retinex [label="Reflection
+Exchange" shape=box]
+		KL [label="Mutual KL
+Loss" shape=box]
+		Retinex -> KL
+	}
+	subgraph cluster_dsfd {
+		fillcolor="#E3F2FD" label="DSFD Detector" style="rounded,filled"
+		FPN [label="FPN + FEM"]
+		PAL1 [label=PAL1]
+		PAL2 [label=PAL2]
+		FPN -> PAL1
+		FPN -> PAL2
+	}
+	subgraph cluster_contrastive {
+		fillcolor="#EDE7F6" label="Proposed Contrastive Branch" style="rounded,filled"
+		GAP [label="Global Avg Pool"]
+		Proj [label="Projection Head"]
+		InfoNCE [label="InfoNCE Loss"]
+		GAP -> Proj
+		Proj -> InfoNCE
+	}
+	DetLoss [label="Detection Loss" shape=box style=rounded]
+	Total [label="Total Loss" fillcolor="#FFEBEE" shape=box style="rounded,filled"]
+	VGG -> Retinex
+	VGG -> FPN
+	PAL1 -> DetLoss
+	PAL2 -> DetLoss
+	PAL2 -> GAP
+	DetLoss -> Total
+	KL -> Total
+	InfoNCE -> Total
+}

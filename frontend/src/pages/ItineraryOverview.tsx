@@ -175,7 +175,7 @@ export function ItineraryOverview() {
               <Share2 size={17} />
             </button>
             <button
-              onClick={() => navigate(`/album/${id}`)}
+              onClick={() => navigate(`/agent/travel/album/${id}`)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/15 backdrop-blur-md text-white/80 hover:bg-white/25 transition-colors text-xs font-medium"
               title="旅行相册"
             >

@@ -1,9 +1,9 @@
 """Tests for core/memory.py — MemoryRecord, MemoryManager, DualLayerMemoryManager, SessionMemory"""
 import pytest
 
-from core.memory import MemoryRecord, MemoryManager, DualLayerMemoryManager, ShortTermMemory, LongTermMemory, SessionMemory
-from core.session import Session
-from infra.db import init_db, reset_connection, _json_dumps
+from domain.memory.manager import MemoryRecord, MemoryManager, DualLayerMemoryManager, ShortTermMemory, LongTermMemory, SessionMemory
+from domain.user.session.manager import Session
+from infrastructure.persistence.database import init_db, reset_connection, _json_dumps
 
 
 class TestMemoryRecord:

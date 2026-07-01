@@ -1,35 +1,62 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from core.agent import Agent
-from core.llm import OpenAILLM
-from core.logging_config import init_from_settings
+from infrastructure.llm.openai import OpenAILLM
+from domain.shared.runtime.logging import init_from_settings
 from core.prompting import PromptBuilder
-from tools.interaction import get_interaction_handlers, get_interaction_specs
+from infrastructure.tools.adapters.interaction import get_interaction_handlers, get_interaction_specs
 from core.session import SessionManager
-from tools.executor import ToolExecutor
-from tools.http import get_http_handlers, get_http_specs
-from tools.travel import get_travel_handlers, get_travel_specs
-from tools.amap import get_amap_handlers, get_amap_specs
-from tools.fliggy import get_fliggy_handlers, get_fliggy_specs
-from tools.policy import ToolPolicy
-from tools.registry import ToolRegistry
-from tools.catalog import ToolCatalog
-from tools.base import bind_tool
-from core.mcp_catalog import MCPCatalog
-from tools.mcp import MCPProxyRuntime
+from infrastructure.tools.executor import ToolExecutor
+from infrastructure.tools.adapters.http import get_http_handlers, get_http_specs
+from domain.travel.tools.travel_tools import get_travel_handlers, get_travel_specs
+from infrastructure.tools.adapters.amap import get_amap_handlers, get_amap_specs
+from infrastructure.tools.adapters.fliggy import get_fliggy_handlers, get_fliggy_specs
+from infrastructure.tools.policy import ToolPolicy
+from infrastructure.tools.registry import ToolRegistry
+from infrastructure.tools.catalog import ToolCatalog
+from infrastructure.tools.base import bind_tool
+from infrastructure.external.mcp.catalog import MCPCatalog
+from infrastructure.external.mcp.runtime import MCPProxyRuntime
 from core.intent.travel_classifier import TravelIntentClassifier
 from core.emotion.detector import EmotionDetector
 from core.profile.manager import ProfileManager
 from core.audit.logger import AuditLogger
 from core.metrics.collector import start_metrics_server
-from infra.db import init_db
+from infrastructure.persistence.database import init_db
+
+from domain.agent.travel_core import Agent
+from domain.agent.schema import AgentConfig
+from core.agents.builtin_loader import BuiltinAgentLoader  # TODO: 后续迁移到application层
+from domain.agent.repository import CustomAgentRepository
+from domain.agent.factory import AgentFactory
+from domain.agent.orchestrator import OrchestratorAgent
+from domain.agent.travel_agent import TravelAgent
+from core.skills.provider import FileSkillProvider, SkillProvider
+
+
+@dataclass
+class AppContainer:
+    """依赖注入容器 — 持有总调度及供 API 路由使用的依赖。"""
+    orchestrator: OrchestratorAgent
+    skill_provider: SkillProvider
+    builtin_configs: list[AgentConfig] = field(default_factory=list)
+    custom_repo: CustomAgentRepository = None  # type: ignore[assignment]
+
 
 def build_agent() -> Agent:
+    """保留原有 build_agent()，向后兼容（仅构建旅游 Agent 主循环）。"""
+    return _build_travel_agent_core(
+        AuditLogger(),
+        OpenAILLM(audit_logger=AuditLogger()),
+    )
+
+
+def _build_travel_agent_core(llm: OpenAILLM, audit_logger: AuditLogger) -> Agent:
+    """构建原有旅游 Agent（所有原代码保留，抽成函数）。"""
     init_from_settings()
     init_db()
-    audit_logger = AuditLogger()
-    llm = OpenAILLM(audit_logger=audit_logger)
     prompt_builder = PromptBuilder()
     session_store = SessionManager()
     tool_catalog = ToolCatalog()
@@ -80,4 +107,58 @@ def build_agent() -> Agent:
         emotion_detector=emotion_detector,
         profile_manager=profile_manager,
         audit_logger=audit_logger,
+    )
+
+
+def build_orchestrator() -> AppContainer:
+    """组装多智能体架构，返回依赖注入容器。"""
+    init_from_settings()
+    init_db()
+
+    # ===== 基础依赖 =====
+    audit_logger = AuditLogger()
+    llm = OpenAILLM(audit_logger=audit_logger)
+
+    # ===== Skill 提供者（抽象接口，可替换实现） =====
+    skill_provider = FileSkillProvider(
+        skills_dir=Path(__file__).resolve().parents[0] / "skills"
+    )
+
+    # ===== 内置智能体配置（从 YAML 加载，零硬编码） =====
+    builtin_loader = BuiltinAgentLoader(
+        builtin_dir=Path(__file__).resolve().parents[0] / "agents" / "builtin"
+    )
+    builtin_configs = builtin_loader.load_all()
+
+    # ===== 旅行智能体的特殊构造器（需要完整 Agent 主循环） =====
+    # 先构建原有旅游 Agent（代码完全保留）
+    travel_agent_core = _build_travel_agent_core(llm, audit_logger)
+
+    def travel_builder(config: AgentConfig) -> TravelAgent:
+        return TravelAgent(travel_agent_core)
+
+    # ===== 工厂 =====
+    factory = AgentFactory(
+        llm=llm,
+        skill_provider=skill_provider,
+        builtin_builders={"travel": travel_builder},
+    )
+
+    # ===== 自定义智能体 Repository =====
+    custom_repo = CustomAgentRepository()
+
+    # ===== 总调度 =====
+    orchestrator = OrchestratorAgent(
+        llm=llm,
+        factory=factory,
+        builtin_configs=builtin_configs,
+        custom_repo=custom_repo,
+        default_agent="travel",
+    )
+
+    return AppContainer(
+        orchestrator=orchestrator,
+        skill_provider=skill_provider,
+        builtin_configs=builtin_configs,
+        custom_repo=custom_repo,
     )
