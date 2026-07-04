@@ -14,6 +14,8 @@ from infrastructure.tools.adapters.http import get_http_handlers, get_http_specs
 from domain.travel.tools.travel_tools import get_travel_handlers, get_travel_specs
 from infrastructure.tools.adapters.amap import get_amap_handlers, get_amap_specs
 from infrastructure.tools.adapters.fliggy import get_fliggy_handlers, get_fliggy_specs
+from infrastructure.tools.adapters.qweather import get_qweather_handlers, get_qweather_specs
+from infrastructure.tools.adapters.drive_cost import get_drive_cost_handlers, get_drive_cost_specs
 from infrastructure.tools.adapters.shared import get_shared_handlers, get_shared_specs
 from infrastructure.tools.policy import ToolPolicy
 from infrastructure.tools.registry import ToolRegistry
@@ -65,6 +67,8 @@ def _build_tool_infrastructure(
         + get_travel_specs()
         + get_amap_specs()
         + get_fliggy_specs()
+        + get_qweather_specs()
+        + get_drive_cost_specs()
         + get_shared_specs()
         + mcp_runtime.build_specs()
     )
@@ -77,6 +81,8 @@ def _build_tool_infrastructure(
     all_handlers.update(get_travel_handlers())
     all_handlers.update(get_amap_handlers())
     all_handlers.update(get_fliggy_handlers())
+    all_handlers.update(get_qweather_handlers())
+    all_handlers.update(get_drive_cost_handlers())
     all_handlers.update(get_shared_handlers())
     all_handlers.update(mcp_runtime.build_handlers())
 

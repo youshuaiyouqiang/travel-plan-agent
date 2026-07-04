@@ -157,6 +157,28 @@ class ReasoningEngine:
         # P0-5：用共享 ContextVar 替代实例属性，并发安全
         AuditContext.set(session_id=session_id, user_id=user_id, trace_id=trace_id)
 
+    _MAX_HISTORY_TURNS = 6  # 最近 3 轮（user+assistant 各一条）
+
+    @staticmethod
+    def _build_working_messages(
+        user_message: str,
+        conversation_history: list[dict[str, str]] | None = None,
+    ) -> list[dict[str, str]]:
+        """构建 working_messages：截取最近对话历史 + 当前用户消息。
+
+        保留最近 3 轮对话（6 条消息）作为上下文，防止 LLM 遗忘关键信息。
+        """
+        messages: list[dict[str, str]] = []
+        if conversation_history:
+            recent = conversation_history[-ReasoningEngine._MAX_HISTORY_TURNS:]
+            for turn in recent:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_message})
+        return messages
+
     def _auto_disclose(self, user_message: str) -> None:
         """P1-2：根据用户消息自动披露相关工具（渐进式披露的自动推荐）。
 
@@ -361,8 +383,9 @@ class ReasoningEngine:
             )
         return Decision(decision_type=DecisionType.FINAL_ANSWER, text="")
 
-    async def run(self, *, system_prompt: str, user_message: str, force_tool: bool) -> str:
-        working_messages: list[dict[str, str]] = [{"role": "user", "content": user_message}]
+    async def run(self, *, system_prompt: str, user_message: str, force_tool: bool,
+                  conversation_history: list[dict[str, str]] | None = None) -> str:
+        working_messages = self._build_working_messages(user_message, conversation_history)
         self.last_trace = []
         no_tool_rounds = 0
         ungrounded_rounds = 0
@@ -681,14 +704,15 @@ class ReasoningEngine:
         return ReasoningEngine._TOOL_STATUS_MAP.get(name, f"正在执行 {name}...")
 
     async def run_stream(
-        self, *, system_prompt: str, user_message: str, force_tool: bool
+        self, *, system_prompt: str, user_message: str, force_tool: bool,
+        conversation_history: list[dict[str, str]] | None = None,
     ) -> AsyncGenerator[str, None]:
         """流式推理：工具调用阶段同步执行，最终回复阶段逐 token 流式输出。
 
         yield 的字符串中，以 ``__status__:`` 开头的是状态通知（非文本内容），
         上层 agent 应将其转为 tool_status SSE 事件，不写入最终回复文本。
         """
-        working_messages: list[dict[str, str]] = [{"role": "user", "content": user_message}]
+        working_messages = self._build_working_messages(user_message, conversation_history)
         self.last_trace = []
         no_tool_rounds = 0
         best_text = ""

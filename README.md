@@ -1,6 +1,6 @@
 # 云合 — 通用智能体平台
 
-通用 Agent 调度 + 领域 Agent + Skill + MCP · 智能旅行 · 流式对话 · 地图展示 · 花费统计 · 一键分享
+通用 Agent 调度 + 领域 Agent + Skill + MCP · 智能旅行 · 多方案对比 · 流式对话 · 地图展示 · 花费统计 · 一键分享 · 自驾预估
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![React 18](https://img.shields.io/badge/React-18-61dafb.svg)](https://reactjs.org/)
@@ -10,8 +10,9 @@
 
 ## 功能亮点
 
-- **多智能体架构** — Orchestrator 总调度 + TravelAgent / DynamicAgent + 自定义 Agent，LLM 智能路由
+- **多智能体架构** — Orchestrator 三层决策（快路径 → function calling 委派 → 委派执行）+ TravelAgent / AcademicAgent / 自定义 Agent，LLM 智能路由
 - **AI 流式对话** — SSE 流式对话，实时展示思考过程与工具调用状态
+- **多方案对比** — 一次生成景点打卡型 + 经济实惠型两套行程方案，含出行方式对比（飞机/高铁/自驾），支持方案确认与撤销
 - **行程生成** — 根据需求自动生成多日行程，含景点、时间、费用、贴士
 - **地图展示** — Leaflet + 高德瓦片地图，标记行程地点并绘制路线
 - **花费统计** — 按天/按活动统计预算与实际花费，支持打卡记录
@@ -19,13 +20,16 @@
 - **行程对比** — 最多 4 个行程横向对比预算与活动
 - **相册管理** — 上传旅行照片，自动提取 EXIF 地理位置，地图标记，AI 生成游记
 - **记忆系统** — 双层记忆（短期/长期），自动提取用户偏好与旅行经验，支持记忆蒸馏
-- **Skill + MCP** — 模块化技能（高德地图、飞猪旅行、arXiv 学术搜索）与 MCP 工具代理，可扩展
+- **Skill + MCP** — 模块化技能（高德地图、飞猪旅行、和风天气、arXiv 学术搜索）与 MCP 工具代理，可扩展
+- **学术搜索** — 学术智能体，arXiv 论文搜索、引用分析、创新点挖掘
+- **自驾费用预估** — 车型差异化油耗系数（轿车/SUV/电动车），油价参数化，自驾方案一键预估
 - **情感检测** — 实时检测用户情绪，自动调整回复策略
 - **用户画像** — 根据交互记录自动构建用户偏好标签
 - **审计日志** — 记录 LLM 调用、工具执行、意图识别全链路审计事件
 - **热门推荐** — 实时抓取旅行热门话题与目的地推荐
 - **新闻收藏** — 收藏感兴趣的新闻话题，自动提取到短期记忆
 - **用户系统** — 注册/登录、Token 鉴权
+- **LLM 降级链** — FallbackLLM 主备切换，主 provider 异常自动降级到备用 provider
 
 ---
 
@@ -41,19 +45,20 @@ graph TB
     end
 
     subgraph "API 层 (FastAPI)"
-        API[API 路由<br/>47 个接口]
+        API[API 路由<br/>60 个接口]
         Auth[认证中间件<br/>Token 鉴权]
         RateLimit[限流中间件]
     end
     
     subgraph "应用层 (Application)"
-        Orchestrator[Orchestrator<br/>总调度 Agent]
-        BuiltinAgents[内置智能体<br/>travel / yunhe]
+        Orchestrator[Orchestrator<br/>三层决策调度]
+        BuiltinAgents[内置智能体<br/>travel / yunhe / academic]
     end
 
     subgraph "领域层 (Domain)"
         AgentCore[Agent 主循环<br/>domain/travel/core.py]
-        Reasoning[ReAct 推理引擎]
+        TravelAgentWrapper[TravelAgent<br/>多方案锚点注入]
+        Reasoning[ReAct 推理引擎<br/>CostGuard + ToolSelector]
         Intent[意图识别]
         Emotion[情感检测]
         Profile[用户画像]
@@ -80,6 +85,7 @@ graph TB
             Skills[Skill Provider]
             AmapSkill[高德地图]
             FliggySkill[飞猪旅行]
+            QWeatherSkill[和风天气]
         end
         
         LLMClient[LLM 适配器<br/>OpenAI 兼容]
@@ -90,6 +96,7 @@ graph TB
         LLM[LLM API<br/>通义千问/OpenAI]
         Amap[高德地图 API]
         Fliggy[飞猪旅行 API]
+        QWeather[和风天气 API]
         WebSearch[Web 搜索]
     end
 
@@ -104,6 +111,7 @@ graph TB
     
     Orchestrator --> BuiltinAgents
     Orchestrator --> AgentCore
+    AgentCore --> TravelAgentWrapper
     
     AgentCore --> Reasoning
     Reasoning --> Intent
@@ -126,12 +134,14 @@ graph TB
     Executor --> Skills
     Skills --> AmapSkill
     Skills --> FliggySkill
+    Skills --> QWeatherSkill
     
     Tools --> LLMClient
     MCP --> WebSearch
     LLMClient --> LLM
     AmapSkill --> Amap
     FliggySkill --> Fliggy
+    QWeatherSkill --> QWeather
     
     AgentCore --> DB
     Memory --> DB
@@ -147,7 +157,7 @@ graph TB
 
 | 层 | 技术 |
 |----|------|
-| 后端 | Python 3.11 · FastAPI · SQLite · OpenAI 兼容 API · 高德地图 Web服务 API · arXiv API |
+| 后端 | Python 3.11 · FastAPI · SQLite · OpenAI 兼容 API · 高德地图 Web服务 API · 和风天气 API · arXiv API |
 | 前端 | React 18 · TypeScript · Vite 6 · Tailwind CSS 3 · Zustand · Leaflet · Framer Motion · React Router 7 |
 | Agent | ReAct 推理循环 · 双层记忆 · 意图识别 · 情感检测 · MCP 工具代理 · Skill 系统 · 记忆蒸馏 |
 | 基础设施 | Uvicorn · Prometheus · Redis（可选） · DDD 分层架构 · 异步任务调度 |
@@ -247,8 +257,11 @@ api.interceptors.response.use(
 | `GET /api/shared/:token` | 分享页 | 公开 |
 | `GET /api/news/favorites` | 新闻收藏列表 | 需登录 |
 | `POST /api/news/favorites` | 收藏新闻 | 需登录 |
+| `POST /api/session/:id/confirm-plan` | 确认行程方案 | 需登录 |
+| `POST /api/session/:id/revoke-confirm` | 撤销方案确认 | 需登录 |
+| `GET /api/session/:id/confirm-status` | 查询确认状态 | 需登录 |
 
-> 📘 **完整 API 文档**：[docs/api/API.md](docs/api/API.md) — 50 个接口，含 TypeScript 类型定义、SSE 流式处理代码示例、错误码说明。
+> 📘 **完整 API 文档**：[docs/api/API.md](docs/api/API.md) — 60 个接口，含 TypeScript 类型定义、SSE 流式处理代码示例、错误码说明。
 
 ---
 
@@ -315,19 +328,19 @@ chmod +x start.sh && ./start.sh
 ```
 claw7/
 ├── api/                    # API 路由与中间件
-│   ├── server.py           # FastAPI 主入口（50 个接口，含认证/限流中间件）
+│   ├── server.py           # FastAPI 主入口（60 个接口，含认证/限流中间件）
 │   └── intl_coords.py      # 国际目的地坐标库
 ├── domain/                 # 领域层（DDD 核心业务逻辑）
-│   ├── agent/              # 多智能体系统（Orchestrator / TravelAgent / DynamicAgent）
+│   ├── agent/              # 多智能体系统（Orchestrator 三层决策 / TravelAgent / 自定义 Agent）
 │   ├── travel/             # 旅行聚合（意图识别 / 行程 / 相册 / 工具 / 推理）
 │   ├── memory/             # 双层记忆（提取 / 蒸馏）
 │   ├── reasoning/          # ReAct 推理引擎（已迁移到 domain/travel）
 │   ├── user/               # 用户聚合（认证 / 画像 / 情感 / 会话）
 │   └── shared/             # 共享组件（审计 / 监控 / 运行时）
 ├── infrastructure/         # 基础设施层
-│   ├── tools/              # 工具系统（注册表 / 执行器 / 策略 / 适配器）
-│   ├── skills/             # Skill 定义（高德地图 / 飞猪 / 自定义）
-│   ├── llm/                # LLM 适配器（OpenAI 兼容客户端）
+│   ├── tools/              # 工具系统（注册表 / 执行器 / 策略 / 适配器 / 自驾费用 / 天气查询）
+│   ├── skills/             # Skill 定义（高德地图 / 飞猪 / 和风天气 / 自定义）
+│   ├── llm/                # LLM 适配器（OpenAI 兼容客户端 / FallbackLLM 降级链）
 │   ├── persistence/        # 持久化（SQLite 数据库 / 健康检查 / 会话仓库）
 │   ├── mcp/                # MCP 工具代理（运行时 / 目录 / 服务器配置）
 │   └── external/           # 外部服务集成
@@ -346,7 +359,7 @@ claw7/
 ├── tests/                  # 测试（16 个测试文件）
 ├── docs/                   # 文档
 │   ├── README.md           # 详细项目说明
-│   ├── api/API.md          # API 接口文档（50 个接口）
+│   ├── api/API.md          # API 接口文档（53 个接口）
 │   ├── architecture.md     # DDD 架构说明
 │   ├── PROJECT_MODULE_OVERVIEW.md  # 项目模块概览
 │   ├── MULTI_AGENT_DEV.md  # 多智能体开发指南
@@ -368,6 +381,10 @@ claw7/
 | `AMAP_WEBSERVICE_KEY` | ✅ | — | 高德地图 Web服务 Key |
 | `AMAP_JS_API_KEY` | ❌ | — | 高德地图 JS API Key（前端） |
 | `FLYAI_API_KEY` | ❌ | — | 飞猪旅行 API Key |
+| `WEATHER_API_KEY` | ❌ | — | 和风天气 API Key（旅行天气查询） |
+| `FALLBACK_API_KEY` | ❌ | — | LLM 降级备用 API 密钥 |
+| `FALLBACK_BASE_URL` | ❌ | — | LLM 降级备用 API 地址 |
+| `FALLBACK_MODEL` | ❌ | — | LLM 降级备用模型名称 |
 | `CLAW_LOG_LEVEL` | ❌ | `DEBUG` | 日志级别 |
 | `CLAW_DATABASE_PATH` | ❌ | `data/claw.db` | SQLite 数据库路径 |
 | `CLAW_RATE_LIMIT_RPM` | ❌ | `60` | 每分钟请求限制 |
@@ -386,11 +403,12 @@ claw7/
 ## 文档
 
 - [项目详细说明](docs/README.md)
-- [API 接口文档](docs/api/API.md) — 50 个接口完整文档
+- [API 接口文档](docs/api/API.md) — 60 个接口完整文档
 - [DDD 架构说明](docs/architecture.md)
 - [项目模块概览](docs/PROJECT_MODULE_OVERVIEW.md)
 - [多智能体开发指南](docs/MULTI_AGENT_DEV.md)
 - [通用 Agent 设计文档](docs/UNIVERSAL_AGENT_DESIGN.md)
+- [多方案对比 & 商用化升级设计](docs/MULTI_PLAN_UPGRADE_DESIGN.md)
 
 ---
 

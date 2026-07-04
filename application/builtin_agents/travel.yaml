@@ -4,12 +4,15 @@
 id: travel
 name: 旅行规划助手
 description: >
-  旅行规划助手。处理行程规划、景点推荐、机票酒店搜索、
-  地图导航、花费统计、相册管理、旅行记忆等所有旅行相关需求。
+  旅行规划助手。处理所有旅行相关需求：想去某地旅游、行程规划、
+  景点推荐、机票酒店搜索、地图导航、花费统计、天气查询、
+  相册管理、旅行记忆等。当用户提到去某地、旅行、旅游、
+  出行、度假、机票、酒店、行程等关键词时，应委派给此智能体。
 icon: "✈️"
 system_prompt: ""  # 旅行智能体使用内置 PromptBuilder，不走 DynamicAgent，此处留空
 skills:
   - amap-maps
   - fliggy-travel
+  - q-weather
 welcome_message: "你好！我是旅行规划助手，告诉我你想去哪里？"
 temperature: 0.7

@@ -199,6 +199,42 @@ def _run_migrations(conn: Any) -> None:
     except Exception:
         logger.info("Migration: sessions user_id column already exists (skipped)")
 
+    # ★ 多方案升级：itinerary 表新增 plans_json / confirmed_plan / confirmed_at / recommended_plan 列
+    try:
+        it_cols = {row[1] for row in conn.execute("PRAGMA table_info(itineraries)").fetchall()}
+        if "plans_json" not in it_cols:
+            conn.execute("ALTER TABLE itineraries ADD COLUMN plans_json TEXT")
+            conn.commit()
+            logger.info("Migration: added plans_json to itineraries")
+        if "confirmed_plan" not in it_cols:
+            conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
+            conn.commit()
+            logger.info("Migration: added confirmed_plan to itineraries")
+        if "confirmed_at" not in it_cols:
+            conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
+            conn.commit()
+            logger.info("Migration: added confirmed_at to itineraries")
+        if "recommended_plan" not in it_cols:
+            conn.execute("ALTER TABLE itineraries ADD COLUMN recommended_plan VARCHAR(32) DEFAULT NULL")
+            conn.commit()
+            logger.info("Migration: added recommended_plan to itineraries")
+    except Exception:
+        logger.info("Migration: itineraries multi-plan columns already exist (skipped)")
+
+    # ★ sessions 表新增 confirmed_plan / confirmed_at 列（会话级方案确认状态）
+    try:
+        s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+        if "confirmed_plan" not in s_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
+            conn.commit()
+            logger.info("Migration: added confirmed_plan to sessions")
+        if "confirmed_at" not in s_cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
+            conn.commit()
+            logger.info("Migration: added confirmed_at to sessions")
+    except Exception:
+        logger.info("Migration: sessions confirmed_plan/confirmed_at columns already exist (skipped)")
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (

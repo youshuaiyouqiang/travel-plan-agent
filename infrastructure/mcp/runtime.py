@@ -411,8 +411,8 @@ async def _run_arxiv_search(arguments: dict) -> dict:
         parts.append(f"({cat_filter})")
     if date_from or date_to:
         import time as tmod
-        start = tmod.strptime(date_from, "%Y-%m-%d").strftime("%Y%m%d0000") if date_from else "199107010000"
-        end = tmod.strptime(date_to, "%Y-%m-%d").strftime("%Y%m%d2359") if date_to else tmod.strftime("%Y%m%d2359")
+        start = tmod.strftime("%Y%m%d0000", tmod.strptime(date_from, "%Y-%m-%d")) if date_from else "199107010000"
+        end = tmod.strftime("%Y%m%d2359", tmod.strptime(date_to, "%Y-%m-%d")) if date_to else tmod.strftime("%Y%m%d2359")
         parts.append(f"submittedDate:[{start}+TO+{end}]")
 
     search_query = " AND ".join(parts)

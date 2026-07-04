@@ -1,6 +1,6 @@
 # 云合 API 接口文档（前端开发参考）
 
-> 本文档专为前端开发者编写，包含所有 47 个接口的请求/响应格式、TypeScript 类型定义、代码示例和常见错误处理。
+> 本文档专为前端开发者编写，包含所有 60 个接口的请求/响应格式、TypeScript 类型定义、代码示例和常见错误处理。
 
 ---
 
@@ -246,10 +246,30 @@ POST /api/chat/stream
 | 事件 type | data 内容 | 触发时机 | 前端处理建议 |
 |-----------|-----------|----------|-------------|
 | `thinking` | `"thinking"` | Agent 开始推理 | 显示"思考中..."动画 |
-| `tool_status` | 文本，如 `"正在搜索机票..."` | 工具开始执行 | 显示工具调用状态指示器 |
+| `tool_status` | 文本，如 `"正在搜索机票..."`、`"正在查询天气..."`、`"正在估算自驾费用..."` | 工具开始执行 | 显示工具调用状态指示器 |
 | `chunk` | 文本片段 | AI 逐词输出 | **追加**到消息内容末尾 |
+| `actions` | JSON 对象数组 | Agent 输出操作卡片 | 渲染操作按钮（见下方说明） |
 | `done` | `"completed"` + `trace_id` | 对话正常结束 | 停止流式渲染，保存完整回复 |
 | `error` | 错误信息 + `trace_id` | 发生错误 | 显示错误提示 |
+
+#### `actions` 事件详解（v1.1 更新）
+
+旅行智能体在生成行程后，会推送 `actions` 事件，前端据此渲染操作按钮：
+
+```typescript
+interface AgentActionCard {
+  type: string;             // 操作类型，如 'generate_itinerary'
+  label: string;            // 按钮显示文本
+  itinerary_id?: number;    // 关联行程 ID
+  session_id?: string;      // 关联会话 ID
+  plan_type?: string;       // 方案类型：'sightseeing' | 'budget'（v1.1 新增）
+}
+
+// actions 事件 data 格式
+// data: [{"type":"generate_itinerary","label":"查看行程","itinerary_id":42,"plan_type":"sightseeing"}]
+```
+
+**多方案锚点协议**：LLM 回复末尾会注入 HTML 注释锚点 `<!--MULTI_PLAN:plan1=sightseeing,plan2=budget-->`，前端解析锚点后渲染"景点打卡型/经济实惠型"双按钮；若已确认方案，则显示确认状态卡片 + 撤销按钮。
 
 #### 前端实现示例
 
@@ -365,7 +385,7 @@ const handleSend = async (message: string) => {
 
 ```typescript
 interface SSEEvent {
-  type: 'thinking' | 'tool_status' | 'chunk' | 'done' | 'error';
+  type: 'thinking' | 'tool_status' | 'chunk' | 'actions' | 'done' | 'error';
   data: string;
   trace_id?: string;  // done 和 error 事件携带
 }
@@ -488,6 +508,119 @@ const res = await axios.get<{ messages: ChatMessage[] }>(
 
 ---
 
+### 3.5 确认方案
+
+```
+POST /api/session/{session_id}/confirm-plan
+```
+
+> 多方案对比功能：当旅行智能体生成两套行程方案（景点打卡型 + 经济实惠型）后，用户选择确认其中一套。
+
+**幂等**：重复确认同一方案返回 200，确认不同方案返回 409。
+
+```typescript
+interface ConfirmPlanRequest {
+  plan_type: 'sightseeing' | 'budget';  // 必填，确认哪套方案
+  itinerary_id?: string;               // 可选，关联行程 ID（同步更新行程确认状态）
+}
+
+interface ConfirmPlanResponse {
+  confirmed_plan: string;         // 'sightseeing' 或 'budget'
+  itinerary_id: string;
+  confirmed_at: string;           // ISO 8601
+}
+
+// 请求
+const res = await axios.post<ConfirmPlanResponse>(
+  `/api/session/${sessionId}/confirm-plan`,
+  { plan_type: 'sightseeing', itinerary_id: '42' }
+);
+
+// 成功响应
+{
+  "confirmed_plan": "sightseeing",
+  "itinerary_id": "42",
+  "confirmed_at": "2026-07-04T10:30:00"
+}
+```
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 确认成功（首次确认或重复确认同一方案） |
+| 409 | 已确认其他方案（需先撤销再确认新方案） |
+
+**前端处理**：确认成功后，方案按钮区从"双按钮"切换为"已确认状态卡片 + 撤销按钮"。
+
+---
+
+### 3.6 撤销方案确认
+
+```
+POST /api/session/{session_id}/revoke-confirm
+```
+
+```typescript
+interface RevokeConfirmResponse {
+  message: string;  // "确认已撤销，可重新选择方案"
+}
+
+// 请求
+const res = await axios.post<RevokeConfirmResponse>(
+  `/api/session/${sessionId}/revoke-confirm`,
+  { itinerary_id: '42' }  // 可选，同步清除行程确认状态
+);
+
+// 成功响应
+{
+  "message": "确认已撤销，可重新选择方案"
+}
+```
+
+| 状态码 | 说明 |
+|--------|------|
+| 200 | 撤销成功 |
+| 404 | 当前无确认方案可撤销 |
+
+**前端处理**：撤销后恢复双按钮选择界面。
+
+---
+
+### 3.7 查询方案确认状态
+
+```
+GET /api/session/{session_id}/confirm-status
+```
+
+```typescript
+interface ConfirmStatusResponse {
+  confirmed_plan: string | null;   // 'sightseeing' / 'budget' / null（未确认）
+  confirmed_at: string | null;     // ISO 8601 或 null
+  itinerary_id?: number;           // 关联行程 ID
+}
+
+// 请求
+const res = await axios.get<ConfirmStatusResponse>(
+  `/api/session/${sessionId}/confirm-status`
+);
+
+// 未确认
+{
+  "confirmed_plan": null,
+  "confirmed_at": null
+}
+
+// 已确认景点打卡型
+{
+  "confirmed_plan": "sightseeing",
+  "confirmed_at": "2026-07-04T10:30:00",
+  "itinerary_id": 42
+}
+```
+
+**前端使用**：切换会话时调用此接口，恢复确认状态的 UI 展示。
+
+---
+
 ## 4. 智能体模块
 
 > 智能体（Agent）是对话背后的"大脑"。系统内置 `travel`（旅行助手）和 `yunhe`（通用助手），用户可创建自定义智能体。
@@ -528,7 +661,7 @@ const res = await axios.get<{
       "name": "旅行规划助手",
       "description": "处理行程规划、景点推荐、机票酒店搜索等",
       "icon": "✈️",
-      "skills": ["amap-maps", "fliggy-travel"],
+      "skills": ["amap-maps", "fliggy-travel", "q-weather"],
       "mcp_servers": [],
       "system_prompt": "",
       "welcome_message": "你好！我是旅行规划助手，告诉我你想去哪里？",
@@ -545,6 +678,19 @@ const res = await axios.get<{
       "mcp_servers": [],
       "system_prompt": "",
       "welcome_message": "你好！我是云合，有什么可以帮你的？",
+      "temperature": 0.7,
+      "is_public": true,
+      "source": "builtin"
+    },
+    {
+      "id": "academic",
+      "name": "学术搜索助手",
+      "description": "论文搜索、引用分析、创新点挖掘、可行性评估",
+      "icon": "📚",
+      "skills": [],
+      "mcp_servers": ["arxiv-search", "web-search"],
+      "system_prompt": "",
+      "welcome_message": "你好！我是学术搜索助手，帮你搜索论文、分析引用。告诉我你的研究主题？",
       "temperature": 0.7,
       "is_public": true,
       "source": "builtin"
@@ -803,6 +949,11 @@ interface Itinerary {
   created_at: string;
   updated_at: string;
   days: DayPlan[];         // 每日计划
+  // —— 多方案对比字段（v1.1 新增） ——
+  plans_json?: string;           // JSON 序列化的 Plan[] 数组
+  confirmed_plan?: string | null; // 已确认方案标识：'sightseeing' / 'budget' / null
+  confirmed_at?: string | null;   // 确认时间，ISO 8601
+  recommended_plan?: string | null; // 推荐方案标识
 }
 
 interface DayPlan {
@@ -824,6 +975,56 @@ interface Activity {
   tips: string;            // 小贴士
   image_url: string;       // 图片 URL
   checked_in: boolean;     // 是否已打卡
+}
+
+// —— 多方案对比类型（v1.1 新增） ——
+
+/** 方案类型枚举 */
+type PlanType = 'sightseeing' | 'budget' | 'single';
+
+/** 出行方式枚举 */
+type TransportMode = 'flight' | 'train' | 'drive';
+
+/** 费用分项 */
+interface CostBreakdown {
+  transport: number;       // 交通费用
+  hotel: number;           // 住宿费用
+  food: number;            // 餐饮费用
+  tickets: number;         // 门票费用
+  shopping: number;        // 购物预估
+  other: number;           // 其他费用
+  total: number;           // 总计
+}
+
+/** 出行方式选项 */
+interface TransportOption {
+  mode: TransportMode;     // 出行方式
+  label: string;           // 显示名称，如 "飞机"、"高铁"、"自驾"
+  price_range: string;     // 价格区间，如 "800-1500元"
+  duration: string;        // 耗时，如 "2h"
+  pros: string[];          // 优势
+  cons: string[];          // 劣势
+}
+
+/** 单套方案 */
+interface Plan {
+  plan_type: PlanType;       // 方案类型
+  plan_label: string;        // 方案显示名，如 "景点打卡型"、"经济实惠型"
+  transport: TransportOption; // 出行方式
+  cost_breakdown: CostBreakdown; // 费用明细
+  version: number;           // 方案版本号
+}
+
+/** 多方案行程（统一模型） */
+interface MultiPlanItinerary {
+  id: string;
+  session_id: string;
+  user_id: string;
+  destination: string;
+  plans: Plan[];                // 方案列表（1=单方案，2=双方案对比）
+  recommended_plan: string | null; // 推荐方案标识
+  confirmed_plan: string | null;   // 已确认方案标识
+  confirmed_at: string | null;     // 确认时间
 }
 ```
 
@@ -1652,7 +1853,7 @@ async function apiCall<T>(fn: () => Promise<AxiosResponse<T>>): Promise<T> {
 
 | 路由 | 页面 | 主要接口 |
 |------|------|----------|
-| `/` | 首页/对话 | `POST /api/chat/stream` + `GET /api/agents` |
+| `/` | 首页/对话 | `POST /api/chat/stream` + `GET /api/agents` + `GET /api/session/:id/confirm-status` |
 | `/login` / `/register` | 登录/注册 | `POST /api/auth/*` |
 | `/itineraries` | 行程列表 | `GET /api/itineraries` |
 | `/itineraries/:id` | 行程详情 | `GET /api/itineraries/:id` |
@@ -1785,4 +1986,4 @@ const res = await axios.delete(`/api/news/favorites/${favoriteId}`);
 
 ---
 
-> **接口总数**：50 个 | **模块数**：15 | **最后更新**：2026-07-04
+> **接口总数**：60 个 | **模块数**：15 | **最后更新**：2026-07-05（v1.2 新增学术智能体、自驾费用/天气工具、LLM 降级链；更新确认方案 plan_type 为 sightseeing/budget）

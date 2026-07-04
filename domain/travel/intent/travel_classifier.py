@@ -89,7 +89,10 @@ _TRAVEL_CLASSIFY_SYSTEM = """你是智能旅行规划助手的意图分类器。
   "intent": "意图类型（见下方列表）",
   "goal": "用户目标的简洁描述",
   "confidence": 0.0-1.0,
-  "rag_keywords": ["用于知识库检索的关键词（最多3个）"]
+  "rag_keywords": ["用于知识库检索的关键词（最多3个）"],
+  "modification_scope": "local_reorder|partial_research|full_research|",
+  "affected_categories": ["hotel|poi|flight|train|route|weather"],
+  "target_plan": "plan1|plan2|"
 }
 意图类型列表：
 - trip_planning: 整体行程规划（包含多天安排）
@@ -108,6 +111,20 @@ _TRAVEL_CLASSIFY_SYSTEM = """你是智能旅行规划助手的意图分类器。
 - travel_companion: 结伴/拼团
 - emergency_help: 紧急求助
 - general_chat: 闲聊/其他
+
+当 intent 为 itinerary_adjust 时，额外返回以下字段：
+- modification_scope: 修改范围判断
+  - "local_reorder": 仅调整行程安排，不需要重新搜索。例："太赶了""轻松一点""第一天和第二天换一下""少去一个景点"
+  - "partial_research": 需要重新搜索特定类别，但其他数据不变。例："酒店便宜点"→ hotel / "换个景点"→ poi / "能坐飞机去吗"→ flight
+  - "full_research": 核心参数变了（出发地/目的地/日期/天数/人数），所有数据需重搜。例："改到下周出发""不去成都了去重庆""玩5天不是3天"
+  - 如果不是 itinerary_adjust 意图，modification_scope 设为空字符串
+- affected_categories: 受影响的类别列表（如 ["hotel"]、["flight", "hotel"]）
+  如果 modification_scope 为 "full_research"，affected_categories 可为空数组
+- target_plan: 被修改的是哪个方案
+  - "plan1": 方案一（景点打卡型）
+  - "plan2": 方案二（经济实惠型）
+  - "": 无法确定或两个都要改
+
 规则：
 - 涉及多天安排 → trip_planning
 - 明确问机票/航班 → flight_search
@@ -129,6 +146,10 @@ class TravelIntentResult:
     missing_info: list[str] = field(default_factory=list)
     detected_destination: str = ""
     raw_output: str = ""
+    # ★ 多方案修改元数据
+    modification_scope: str = ""          # "local_reorder" | "partial_research" | "full_research" | ""
+    affected_categories: list[str] = field(default_factory=list)  # ["hotel", "poi"] 等
+    target_plan: str = ""                 # "plan1" | "plan2" | ""
 
 
 def _extract_json(text: str) -> dict:
@@ -208,6 +229,10 @@ class TravelIntentClassifier:
             missing_info=self._check_missing_info(message, intent, conversation_history),
             detected_destination=self._extract_destination(message),
             raw_output=text,
+            # ★ 多方案修改元数据
+            modification_scope=str(data.get("modification_scope", "")),
+            affected_categories=[str(c) for c in data.get("affected_categories", [])],
+            target_plan=str(data.get("target_plan", "")),
         )
 
     _CONFIRM_KEYWORDS = {"满意", "就这样", "确认", "没问题", "好的就这样", "ok", "OK", "确认行程"}
@@ -385,21 +410,23 @@ class TravelIntentClassifier:
         if intent == TravelIntentType.TRIP_PLANNING:
             if not re.search(r"去|到|飞|前往|云南|北京|上海|成都|三亚|西藏|新疆|杭州|西安|厦门|桂林|丽江|大理|昆明|西双版纳|香格里拉|目的地", compacted):
                 missing.append("destination")
+            if not re.search(r"从|出发|南京|北京|上海|广州|深圳|成都|杭州|合肥|武汉|长沙|重庆|昆明|厦门|青岛|大连|苏州", compacted):
+                missing.append("origin")
             if not re.search(r"\d+天|[一两三四五六七八九十]+天|几天|多久|日游|\d+晚", compacted):
                 missing.append("duration")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|五一|十一|暑假|寒假|春节|国庆|出发日期|日期", compacted):
+            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|五一|十一|暑假|寒假|春节|国庆|出发日期|日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
                 missing.append("dates")
         elif intent == TravelIntentType.FLIGHT_SEARCH:
             if not re.search(r"从|出发|南京|北京|上海|广州|深圳|成都|杭州|合肥", compacted):
                 missing.append("origin")
             if not re.search(r"到|去|飞|前往|云南|昆明|三亚|成都|西安|杭州", compacted):
                 missing.append("destination")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|出发日期", compacted):
+            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
                 missing.append("dates")
         elif intent == TravelIntentType.HOTEL_SEARCH:
             if not re.search(r"去|到|在|云南|昆明|三亚|成都|西安|杭州", compacted):
                 missing.append("destination")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|入住|下周|下月|出发日期", compacted):
+            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|入住|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
                 missing.append("dates")
         elif intent == TravelIntentType.ATTRACTION_SEARCH:
             if not re.search(r"去|到|在|云南|昆明|三亚|成都|西安", combined):

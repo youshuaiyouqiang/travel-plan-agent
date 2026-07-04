@@ -8,6 +8,31 @@ import { TrendingBar } from './TrendingBar'
 
 import type { AgentInfo } from '../utils/api'
 
+// ★ 多方案锚点解析
+const MULTI_PLAN_ANCHOR_RE = /<!--MULTI_PLAN:(.*?)-->/
+
+interface PlanMeta {
+  type: string       // "sightseeing" | "budget"
+  version: string    // "v1" | "v2" ...
+}
+
+interface MultiPlanAnchor {
+  plans: Record<string, PlanMeta>
+}
+
+function parseMultiPlanAnchor(content: string): MultiPlanAnchor | null {
+  const m = content.match(MULTI_PLAN_ANCHOR_RE)
+  if (!m) return null
+  const plans: Record<string, PlanMeta> = {}
+  for (const part of m[1].split(',')) {
+    const [key, val] = part.split('=')
+    if (!key || !val) continue
+    const [type, version] = val.split(':')
+    plans[key] = { type, version: version || 'v1' }
+  }
+  return Object.keys(plans).length > 0 ? { plans } : null
+}
+
 interface Props {
   messages: Message[]
   isLoading: boolean
@@ -54,6 +79,8 @@ export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, on
   const bottomRef = useRef<HTMLDivElement>(null)
   const activeAgent = useSessionStore((s) => s.activeAgent)
   const agentActions = useSessionStore((s) => s.agentActions)
+  const sessionConfirmedPlan = useSessionStore((s) => s.sessionConfirmedPlan)
+  const isConfirming = useSessionStore((s) => s.isConfirming)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -101,22 +128,94 @@ export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, on
                 已转接旅行顾问
               </div>
             )}
-            {msg.role === 'assistant' && !msg.isStreaming && _isItineraryConfirmPrompt(msg.content) && (
-              <div className="mt-3 flex gap-2">
-                <button
-                  onClick={() => onQuickSend?.('满意，请生成行程概览')}
-                  disabled={hasConfirmedItinerary}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98] ${
-                    hasConfirmedItinerary
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-md shadow-emerald-200'
-                  }`}
-                >
-                  <ThumbsUp size={15} />
-                  {hasConfirmedItinerary ? '已生成概览' : '满意，生成概览'}
-                </button>
-              </div>
-            )}
+            {msg.role === 'assistant' && !msg.isStreaming && (() => {
+  const anchor = parseMultiPlanAnchor(msg.content)
+  const isSinglePlan = !anchor && _isItineraryConfirmPrompt(msg.content)
+  const hasAnyConfirmed = sessionConfirmedPlan !== null
+
+  // 单方案降级（旧流程或无锚点）
+  if (isSinglePlan && !anchor) {
+    return (
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => onQuickSend?.('满意，请生成行程概览')}
+          disabled={hasConfirmedItinerary}
+          className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98] ${
+            hasConfirmedItinerary
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-md shadow-emerald-200'
+          }`}
+        >
+          <ThumbsUp size={15} />
+          {hasConfirmedItinerary ? '已生成概览' : '满意，生成概览'}
+        </button>
+      </div>
+    )
+  }
+
+  // 无锚点且非单方案 → 不渲染按钮
+  if (!anchor) return null
+
+  // 多方案双按钮
+  return (
+    <div className="mt-3 flex gap-3 flex-wrap">
+      {hasAnyConfirmed ? (
+        <>
+          <div className="text-xs text-slate-400 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200">
+            {sessionConfirmedPlan === 'plan1'
+              ? '✅ 方案一（景点打卡型）已确认，行程概览已生成'
+              : '方案一（景点打卡型）——本次会话已选择方案二'}
+          </div>
+          <div className="text-xs text-slate-400 bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-200">
+            {sessionConfirmedPlan === 'plan2'
+              ? '✅ 方案二（经济实惠型）已确认，行程概览已生成'
+              : '方案二（经济实惠型）——本次会话已选择方案一'}
+          </div>
+          <button
+            onClick={() => {
+              if (window.confirm('确定要更换方案吗？当前方案的概览将保留但标记为已废弃')) {
+                const actions = useSessionStore.getState().agentActions
+                const itineraryAction = actions.find(a => a.type === 'navigate' && a.path.includes('/itinerary/'))
+                if (itineraryAction) {
+                  const itineraryId = itineraryAction.path.split('/itinerary/')[1]?.split('/')[0] || ''
+                  useSessionStore.getState().revokeConfirm(itineraryId, '')
+                }
+              }
+            }}
+            className="text-xs text-amber-600 hover:text-amber-700 underline"
+          >
+            ↩️ 撤销确认，重新选择
+          </button>
+        </>
+      ) : (
+        <>
+          {anchor.plans.plan1 && (
+            <button
+              onClick={() => onQuickSend?.('选方案一，请生成景点打卡型行程概览')}
+              disabled={isConfirming}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98] bg-gradient-to-r from-sky-500 to-blue-500 text-white hover:from-sky-600 hover:to-blue-600 shadow-md shadow-sky-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Sparkles size={15} />
+              为方案一生成概览
+              <span className="text-xs opacity-80">({anchor.plans.plan1.type})</span>
+            </button>
+          )}
+          {anchor.plans.plan2 && (
+            <button
+              onClick={() => onQuickSend?.('选方案二，请生成经济实惠型行程概览')}
+              disabled={isConfirming}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-[0.98] bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:from-emerald-600 hover:to-green-600 shadow-md shadow-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ThumbsUp size={15} />
+              为方案二生成概览
+              <span className="text-xs opacity-80">({anchor.plans.plan2.type})</span>
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+})()}
             {/* P1-13：行程概览跳转按钮已移除，改由 agentActions 中的 navigate 类型
                 action 通过 AgentActionCard 渲染（结构化，避免正则误匹配）。 */}
           </div>

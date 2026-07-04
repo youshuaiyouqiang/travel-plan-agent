@@ -114,6 +114,7 @@ class Agent:
         urgency_context: str
         prompt_context: Any
         early_action: tuple[str, Any] | None = field(default=None)
+        conversation_history: list[dict[str, str]] = field(default_factory=list)
 
     async def _prepare_chat_context(
         self,
@@ -159,17 +160,35 @@ class Agent:
             ops_result = await self._ops_classifier.classify(
                 message, conversation_history=conversation_history
             )
-            # P2-11：用对话历史重新检查 missing_info，避免当前消息已提供但正则未匹配的情况
-            if ops_result and ops_result.missing_info and conversation_history:
-                try:
-                    context_missing = await self._ops_classifier.check_missing_info_with_context(
-                        message=message,
-                        intent=ops_result.intent,
-                        conversation_history=conversation_history,
-                    )
-                    ops_result.missing_info = context_missing
-                except Exception as e:
-                    logger.warning("Failed to re-check missing_info with context: %s", e)
+            # ★ TRIP_PLANNING 等需要信息完整性的意图：优先用 LLM 检查 missing_info，
+            # regex 仅作 LLM 不可用时的 fallback。
+            if ops_result and conversation_history:
+                _LLM_FIRST_INTENTS = {
+                    TravelIntentType.TRIP_PLANNING,
+                    TravelIntentType.FLIGHT_SEARCH,
+                    TravelIntentType.HOTEL_SEARCH,
+                }
+                if ops_result.intent in _LLM_FIRST_INTENTS:
+                    try:
+                        context_missing = await self._ops_classifier.check_missing_info_with_context(
+                            message=message,
+                            intent=ops_result.intent,
+                            conversation_history=conversation_history,
+                        )
+                        ops_result.missing_info = context_missing
+                    except Exception as e:
+                        logger.warning("LLM missing_info check failed, using regex result: %s", e)
+                elif ops_result.missing_info:
+                    # 非关键意图：regex 有缺失时才用 LLM 纠正
+                    try:
+                        context_missing = await self._ops_classifier.check_missing_info_with_context(
+                            message=message,
+                            intent=ops_result.intent,
+                            conversation_history=conversation_history,
+                        )
+                        ops_result.missing_info = context_missing
+                    except Exception as e:
+                        logger.warning("Failed to re-check missing_info with context: %s", e)
             intent = self._ops_classifier.to_intent_result(ops_result)
             if self._audit_logger:
                 self._audit_logger.log_intent_classify(
@@ -336,6 +355,13 @@ class Agent:
                 connected_mcp_tools=[ref.proxy_name for ref in connected_mcp_tools],
             )
 
+        # 构建对话历史供 ReAct 引擎使用
+        conversation_history = [
+            {"role": t.role, "content": t.content}
+            for t in session.turns[:-1]  # 排除当前用户消息
+            if t.role in ("user", "assistant") and t.content
+        ]
+
         return self.ChatPreparation(
             session=session, task=task, intent=intent, ops_result=ops_result,
             emotion_result=emotion_result, system=system, tools=tools,
@@ -343,7 +369,7 @@ class Agent:
             memory_context=memory_context, dual_memory_context=dual_memory_context,
             mcp_context=mcp_context, profile_context=profile_context,
             urgency_context=urgency_context, prompt_context=prompt_context,
-            early_action=None,
+            early_action=None, conversation_history=conversation_history,
         )
 
     async def _finalize_chat(
@@ -532,6 +558,7 @@ class Agent:
                 system_prompt=prep.system,
                 user_message=message,
                 force_tool=prep.intent.force_tool,
+                conversation_history=prep.conversation_history,
             )
         except AskUserNeeded as exc:
             reply = exc.question
@@ -691,6 +718,7 @@ class Agent:
                 system_prompt=prep.system,
                 user_message=message,
                 force_tool=prep.intent.force_tool,
+                conversation_history=prep.conversation_history,
             ):
                 if chunk.startswith("__status__:"):
                     # 状态通知，转为 tool_status 事件，不写入回复文本
@@ -1094,36 +1122,39 @@ class Agent:
         return "\n".join(parts)
 
     def _build_clarification_question(self, ops_result: Any) -> str:
-        """根据 missing_info 构建友好的追问问题，在进入 ReAct 前调用。"""
+        """根据 missing_info 构建友好的追问问题，在进入 ReAct 前调用。
+
+        一次性问完所有缺失信息，避免多轮追问。
+        """
         destination = getattr(ops_result, "detected_destination", "")
         missing = ops_result.missing_info
 
-        # 如果目的地也缺失，优先问目的地
+        # 如果目的地也缺失，优先问目的地（最关键信息）
         if "destination" in missing:
             return "请问您想去哪个城市旅行？"
 
-        # 目的地已知，友好地追问其他缺失信息
+        # 目的地已知，一次性问完所有缺失信息
         destination = destination or "目的地"
-        question = f"好的，您想去{destination}旅行。"
+        question_parts: list[str] = []
 
-        if "duration" in missing and "dates" in missing:
-            question += "请问您计划旅行几天，以及大概的出发时间？"
-        elif "duration" in missing and "origin" in missing:
-            question += "请问您从哪个城市出发，以及计划旅行几天？"
-        elif "duration" in missing:
-            question += "请问您计划旅行几天？"
-        elif "dates" in missing:
-            question += "请问您大概什么时候出发？"
-        elif "origin" in missing:
-            question += "请问您从哪个城市出发？"
-        elif "budget" in missing:
-            question += "请问您的预算大概是多少？"
+        for field in missing:
+            label = self._FIELD_LABELS.get(field, field)
+            if field == "origin":
+                question_parts.append(f"从哪个城市出发")
+            elif field == "duration":
+                question_parts.append(f"计划旅行几天")
+            elif field == "dates":
+                question_parts.append(f"大概什么时候出发")
+            elif field == "budget":
+                question_parts.append(f"预算大概是多少")
+            else:
+                question_parts.append(f"补充一下{label}")
+
+        if len(question_parts) == 1:
+            return f"好的，您想去{destination}旅行。请问{question_parts[0]}？"
         else:
-            labels = [self._FIELD_LABELS.get(f, f) for f in missing]
-            labels_text = "、".join(labels)
-            question += f"请问您能补充一下{labels_text}吗？"
-
-        return question
+            items = "、".join(question_parts)
+            return f"好的，您想去{destination}旅行。请问{items}？"
 
     def _build_cached_tool_context(self, task: Any) -> str:
         cached = task.get_cached_results()
@@ -1167,9 +1198,35 @@ class Agent:
         message: str,
         ops_result: TravelIntentResult | None,
     ) -> None:
+        """基于 LLM 意图分类结果决定缓存策略，关键词匹配作为兜底。"""
         cached = task.get_cached_results()
         if not cached:
             return
+
+        # ★ 优先使用 LLM 分类结果中的 modification_scope
+        if (
+            ops_result
+            and ops_result.intent == TravelIntentType.ITINERARY_ADJUST
+            and ops_result.modification_scope
+        ):
+            scope = ops_result.modification_scope
+            categories = ops_result.affected_categories
+
+            if scope == "full_research":
+                task.invalidate_cache()
+                logger.info("Cache fully invalidated (LLM classified: full_research) for session %s", task.session_id)
+                return
+            elif scope == "partial_research" and categories:
+                for cat in categories:
+                    task.invalidate_cache(cat)
+                logger.info("Cache partial invalidated: %s (LLM classified) for session %s", categories, task.session_id)
+                return
+            elif scope == "local_reorder":
+                # 缓存不动，LLM 纯重排
+                logger.info("Cache kept (LLM classified: local_reorder) for session %s", task.session_id)
+                return
+
+        # ★ 兜底：LLM 分类没有 modification_scope 时，走关键词匹配
         is_core_change = any(kw in message for kw in self._CORE_CHANGE_KEYWORDS)
         if is_core_change:
             task.invalidate_cache()

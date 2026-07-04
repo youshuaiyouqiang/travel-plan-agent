@@ -582,6 +582,126 @@ async def delete_session(session_id: str, request: Request) -> dict:
     return {"detail": "已删除"}
 
 
+# ===== ★ 多方案确认/撤销 API =====
+
+@app.post("/api/session/{session_id}/confirm-plan")
+async def confirm_plan(session_id: str, request: Request) -> dict:
+    """确认方案 —— 并发安全设计（幂等 + 409 冲突）"""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        return JSONResponse(status_code=401, content={"detail": "未登录"})
+    body = await request.json()
+    plan_type = str(body.get("plan_type", "")).strip()
+    itinerary_id = str(body.get("itinerary_id", "")).strip()
+    if plan_type not in ("sightseeing", "budget"):
+        return JSONResponse(status_code=400, content={"error": "plan_type 必须为 sightseeing 或 budget"})
+
+    from infrastructure.persistence.database import get_connection
+    from datetime import datetime
+    conn = get_connection()
+    try:
+        # 查询当前确认状态
+        row = conn.execute(
+            "SELECT confirmed_plan FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return JSONResponse(status_code=404, content={"error": "session not found"})
+
+        current = row["confirmed_plan"]
+        # 幂等：已确认同一个方案
+        if current == plan_type:
+            return {"message": "already confirmed", "plan_type": plan_type, "itinerary_id": itinerary_id}
+
+        # 冲突：已确认不同方案
+        if current is not None and current != "":
+            return JSONResponse(status_code=409, content={
+                "error": "已确认其他方案，如需更换请先撤销",
+                "current_confirmed": current,
+                "hint": "调用 POST /api/session/{session_id}/revoke-confirm 撤销后重新选择",
+            })
+
+        # 更新确认状态
+        now = datetime.now().isoformat()
+        conn.execute(
+            "UPDATE sessions SET confirmed_plan = ?, confirmed_at = ? WHERE session_id = ?",
+            (plan_type, now, session_id),
+        )
+        # 同步更新 itinerary 的确认状态
+        if itinerary_id:
+            conn.execute(
+                "UPDATE itineraries SET confirmed_plan = ?, confirmed_at = ? WHERE id = ?",
+                (plan_type, now, itinerary_id),
+            )
+        conn.commit()
+        return {"confirmed_plan": plan_type, "itinerary_id": itinerary_id, "confirmed_at": now}
+    except Exception as e:
+        conn.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/session/{session_id}/revoke-confirm")
+async def revoke_confirm(session_id: str, request: Request) -> dict:
+    """撤销确认 —— 恢复所有按钮为可点击态"""
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        return JSONResponse(status_code=401, content={"detail": "未登录"})
+    body = await request.json()
+    itinerary_id = str(body.get("itinerary_id", "")).strip()
+
+    from infrastructure.persistence.database import get_connection
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT confirmed_plan FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row or not row["confirmed_plan"]:
+            return JSONResponse(status_code=404, content={"error": "无确认记录可撤销"})
+
+        conn.execute(
+            "UPDATE sessions SET confirmed_plan = NULL, confirmed_at = NULL WHERE session_id = ?",
+            (session_id,),
+        )
+        if itinerary_id:
+            conn.execute(
+                "UPDATE itineraries SET confirmed_plan = NULL, confirmed_at = NULL WHERE id = ?",
+                (itinerary_id,),
+            )
+        conn.commit()
+        return {"message": "确认已撤销，可重新选择方案"}
+    except Exception as e:
+        conn.rollback()
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/session/{session_id}/confirm-status")
+async def get_confirm_status(session_id: str) -> dict:
+    """查询会话的方案确认状态"""
+    from infrastructure.persistence.database import get_connection
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT confirmed_plan, confirmed_at FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "session not found"})
+
+    # 查找关联的 itinerary_id
+    itinerary_row = conn.execute(
+        "SELECT id FROM itineraries WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+        (session_id,),
+    ).fetchone()
+
+    result: dict = {
+        "confirmed_plan": row["confirmed_plan"] if row["confirmed_plan"] else None,
+        "confirmed_at": row["confirmed_at"] if row["confirmed_at"] else None,
+    }
+    if itinerary_row:
+        result["itinerary_id"] = itinerary_row["id"]
+    return result
+
+
 @app.get("/api/memories")
 async def get_memories(request: Request) -> dict:
     user_id = getattr(request.state, "user_id", None)

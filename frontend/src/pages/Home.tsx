@@ -109,8 +109,16 @@ export function Home() {
     }
   }, [authUserId, setSessionId, setUserId, resetSession])
 
-  const handleSessionChange = (newSessionId: string) => {
+  const handleSessionChange = async (newSessionId: string) => {
     setActiveSessionId(newSessionId)
+    setSessionId(newSessionId)
+    resetSession()
+    try {
+      const msgs = await getSessionMessages(newSessionId)
+      useChatStore.getState().loadMessages(msgs)
+    } catch {
+      // 消息加载失败，不阻塞
+    }
   }
 
   const handleNewChat = async () => {
