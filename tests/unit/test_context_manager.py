@@ -1,4 +1,5 @@
 """Tests for domain/travel/context_manager.py — ContextManager, PreparedContext"""
+
 import pytest
 
 from domain.travel.context_manager import ContextManager, PreparedContext
@@ -63,6 +64,7 @@ class TestContextManager:
         assert result.was_trimmed is True
         # Should keep at most max_context_turns (default 16)
         from config import settings
+
         assert len(result.recent_turns) <= settings.max_context_turns
 
     def test_prepare_trimming_by_chars(self):
@@ -79,6 +81,7 @@ class TestContextManager:
         # Total chars should be within limit
         total_chars = sum(len(turn.content) for turn in result.recent_turns)
         from config import settings
+
         assert total_chars <= settings.max_context_chars
 
     def test_prepare_preserves_summary(self):

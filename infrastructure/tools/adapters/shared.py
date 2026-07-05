@@ -64,13 +64,16 @@ async def get_current_time_handler(arguments: dict) -> dict:
     weekday_map = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_map[now.weekday()]
     return {
-        "content": json_dumps({
-            "datetime": time_str,
-            "date": now.strftime("%Y-%m-%d"),
-            "time": now.strftime("%H:%M:%S"),
-            "weekday": weekday,
-            "timestamp": now.timestamp(),
-        }, ensure_ascii=False),
+        "content": json_dumps(
+            {
+                "datetime": time_str,
+                "date": now.strftime("%Y-%m-%d"),
+                "time": now.strftime("%H:%M:%S"),
+                "weekday": weekday,
+                "timestamp": now.timestamp(),
+            },
+            ensure_ascii=False,
+        ),
     }
 
 

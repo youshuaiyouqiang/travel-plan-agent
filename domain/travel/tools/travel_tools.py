@@ -15,6 +15,7 @@ async def _save_itinerary(arguments: dict) -> dict:
         return {"is_error": True, "content": "missing itinerary content"}
     from config import settings
     from pathlib import Path
+
     path = settings.workspace / "itineraries" / f"{title}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -33,6 +34,7 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
 
     if not user_id and session_id:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         row = conn.execute(
             "SELECT user_id FROM tasks WHERE session_id = ?",
@@ -44,6 +46,7 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
 
     if not content and session_id:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         rows = conn.execute(
             "SELECT role, content FROM session_turns WHERE session_id = ? ORDER BY turn_index DESC",
@@ -54,13 +57,17 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
             if row["role"] == "assistant" and len(row["content"]) > 100:
                 if any(marker in row["content"] for marker in itinerary_markers):
                     content = row["content"]
-                    logger.info("generate_itinerary_overview: content resolved from session history, length=%d", len(content))
+                    logger.info(
+                        "generate_itinerary_overview: content resolved from session history, length=%d", len(content)
+                    )
                     break
         if not content:
             for row in rows:
                 if row["role"] == "assistant" and len(row["content"]) > 200:
                     content = row["content"]
-                    logger.info("generate_itinerary_overview: fallback to longest assistant turn, length=%d", len(content))
+                    logger.info(
+                        "generate_itinerary_overview: fallback to longest assistant turn, length=%d", len(content)
+                    )
                     break
 
     # 如果指定了 plan_type，从 content 中提取对应方案的内容
@@ -106,6 +113,7 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
     if plan_type:
         try:
             from infrastructure.persistence.database import get_connection
+
             conn = get_connection()
             conn.execute(
                 "UPDATE itineraries SET raw_content = ? WHERE id = ?",
@@ -183,7 +191,7 @@ def _extract_plan_content(content: str, plan_type: str) -> str:
     # 查找下一个方案的起始位置（截取当前方案内容）
     end_idx = len(content)
     for nm in next_plan_markers:
-        match = re.search(nm, content[start_idx + 10:])
+        match = re.search(nm, content[start_idx + 10 :])
         if match:
             candidate_end = start_idx + 10 + match.start()
             if candidate_end < end_idx:
@@ -222,7 +230,10 @@ def get_travel_specs() -> list[ToolSpec]:
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "行程标题，如：成都5日游"},
-                    "content": {"type": "string", "description": "行程的完整文字内容，markdown格式。可以不传，系统会自动从会话历史获取"},
+                    "content": {
+                        "type": "string",
+                        "description": "行程的完整文字内容，markdown格式。可以不传，系统会自动从会话历史获取",
+                    },
                     "destination": {"type": "string", "description": "目的地城市"},
                     "user_id": {"type": "string", "description": "用户ID"},
                     "session_id": {"type": "string", "description": "会话ID（必传，用于获取行程内容和关联用户）"},

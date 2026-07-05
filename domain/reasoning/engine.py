@@ -170,7 +170,7 @@ class ReasoningEngine:
         """
         messages: list[dict[str, str]] = []
         if conversation_history:
-            recent = conversation_history[-ReasoningEngine._MAX_HISTORY_TURNS:]
+            recent = conversation_history[-ReasoningEngine._MAX_HISTORY_TURNS :]
             for turn in recent:
                 role = turn.get("role", "user")
                 content = turn.get("content", "")
@@ -201,7 +201,8 @@ class ReasoningEngine:
         if recommendations:
             logger.info(
                 "ToolSelector disclosed %d tools: %s",
-                len(recommendations), [s.name for s in recommendations],
+                len(recommendations),
+                [s.name for s in recommendations],
             )
 
     def _build_active_tools_schema(self) -> list[dict[str, Any]]:
@@ -214,15 +215,14 @@ class ReasoningEngine:
             return self._build_tools_schema(disclosed_tools=self._disclosed_tools)
         return self._build_tools_schema()
 
-    async def _execute_tool_safely(
-        self, tool_name: str, arguments: dict, tool_call_id: str = ""
-    ) -> dict:
+    async def _execute_tool_safely(self, tool_name: str, arguments: dict, tool_call_id: str = "") -> dict:
         """安全执行工具，带完整的错误处理与统一返回格式。
 
         不会让 LLM 看到原始 Python traceback，
         而是返回结构化的错误信息供 LLM 决策（重试/换工具/告诉用户）。
         """
         from domain.shared.types import ToolCall
+
         call = ToolCall(name=tool_name, arguments=arguments, call_id=tool_call_id)
 
         try:
@@ -232,16 +232,21 @@ class ReasoningEngine:
             return {"error": "no_result", "tool": tool_name}
         except TimeoutError:
             logger.warning("Tool timeout: %s(%s)", tool_name, arguments)
-            return {"error": "timeout", "tool": tool_name,
-                    "message": "工具执行超时，请稍后重试或尝试其他工具"}
+            return {"error": "timeout", "tool": tool_name, "message": "工具执行超时，请稍后重试或尝试其他工具"}
         except ConnectionError as e:
             logger.warning("Tool connection failed: %s: %s", tool_name, e)
-            return {"error": "connection_failed", "tool": tool_name,
-                    "message": f"工具 {tool_name} 连接失败，请稍后重试"}
+            return {
+                "error": "connection_failed",
+                "tool": tool_name,
+                "message": f"工具 {tool_name} 连接失败，请稍后重试",
+            }
         except Exception as e:
             logger.error("Tool execution failed: %s: %s", tool_name, e)
-            return {"error": "execution_failed", "tool": tool_name,
-                    "message": f"工具 {tool_name} 执行出错：{str(e)[:200]}"}
+            return {
+                "error": "execution_failed",
+                "tool": tool_name,
+                "message": f"工具 {tool_name} 执行出错：{str(e)[:200]}",
+            }
 
     def _record_trace(self, trace: TraceStep) -> None:
         self.last_trace.append(trace)
@@ -259,9 +264,7 @@ class ReasoningEngine:
                 system_note=trace.system_note,
             )
 
-    def _build_tools_schema(
-        self, disclosed_tools: set[str] | None = None
-    ) -> list[dict[str, Any]]:
+    def _build_tools_schema(self, disclosed_tools: set[str] | None = None) -> list[dict[str, Any]]:
         """构建传给 LLM 的 native tools schema。
 
         当 disclosed_tools 为 None 时：全量构建（向后兼容，缓存全量结果）。
@@ -346,9 +349,7 @@ class ReasoningEngine:
                     args = {}
             if not isinstance(args, dict):
                 return None
-            valid_calls.append(
-                ToolCall(name=str(name), arguments=args, call_id=str(item.get("id", uuid.uuid4())))
-            )
+            valid_calls.append(ToolCall(name=str(name), arguments=args, call_id=str(item.get("id", uuid.uuid4()))))
         return valid_calls if valid_calls else None
 
     def _llm_response_to_decision(self, llm_resp: LLMResponse) -> Decision:
@@ -383,8 +384,14 @@ class ReasoningEngine:
             )
         return Decision(decision_type=DecisionType.FINAL_ANSWER, text="")
 
-    async def run(self, *, system_prompt: str, user_message: str, force_tool: bool,
-                  conversation_history: list[dict[str, str]] | None = None) -> str:
+    async def run(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        force_tool: bool,
+        conversation_history: list[dict[str, str]] | None = None,
+    ) -> str:
         working_messages = self._build_working_messages(user_message, conversation_history)
         self.last_trace = []
         no_tool_rounds = 0
@@ -403,9 +410,7 @@ class ReasoningEngine:
         for iteration in range(1, settings.max_iterations + 1):
             # ===== P1-2：CostGuard 预算检查 =====
             if not self._cost_guard.can_continue():
-                logger.warning(
-                    "CostGuard stopped reasoning: %s", self._cost_guard.exceeded_detail()
-                )
+                logger.warning("CostGuard stopped reasoning: %s", self._cost_guard.exceeded_detail())
                 break
 
             logger.info("===== Reasoning iteration %s/%s =====", iteration, settings.max_iterations)
@@ -438,8 +443,7 @@ class ReasoningEngine:
                 decision_type=decision.decision_type.value,
                 text=decision.text,
                 tool_calls=[
-                    {"name": call.name, "arguments": call.arguments, "id": call.call_id}
-                    for call in decision.tool_calls
+                    {"name": call.name, "arguments": call.arguments, "id": call.call_id} for call in decision.tool_calls
                 ],
             )
 
@@ -470,7 +474,8 @@ class ReasoningEngine:
                     if ungrounded_rounds >= 3:
                         logger.warning(
                             "Reasoning: accepting best text after %d ungrounded rounds (len=%d)",
-                            ungrounded_rounds, len(best_text),
+                            ungrounded_rounds,
+                            len(best_text),
                         )
                         self._record_trace(trace)
                         if best_text:
@@ -524,7 +529,8 @@ class ReasoningEngine:
             if near_limit and decision.tool_calls:
                 logger.warning(
                     "Reasoning near iteration limit (%s/%s), forcing final answer",
-                    iteration, settings.max_iterations,
+                    iteration,
+                    settings.max_iterations,
                 )
                 trace.system_note = "forced_final_answer_near_limit"
                 self._record_trace(trace)
@@ -704,7 +710,11 @@ class ReasoningEngine:
         return ReasoningEngine._TOOL_STATUS_MAP.get(name, f"正在执行 {name}...")
 
     async def run_stream(
-        self, *, system_prompt: str, user_message: str, force_tool: bool,
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        force_tool: bool,
         conversation_history: list[dict[str, str]] | None = None,
     ) -> AsyncGenerator[str, None]:
         """流式推理：工具调用阶段同步执行，最终回复阶段逐 token 流式输出。
@@ -767,8 +777,7 @@ class ReasoningEngine:
                 decision_type=decision.decision_type.value,
                 text=decision.text,
                 tool_calls=[
-                    {"name": call.name, "arguments": call.arguments, "id": call.call_id}
-                    for call in decision.tool_calls
+                    {"name": call.name, "arguments": call.arguments, "id": call.call_id} for call in decision.tool_calls
                 ],
             )
 
@@ -782,10 +791,12 @@ class ReasoningEngine:
                     no_tool_rounds += 1
                     trace.system_note = "forced_retry_no_tools"
                     working_messages.append({"role": "assistant", "content": decision.text})
-                    working_messages.append({
-                        "role": "user",
-                        "content": "You have not used tools yet. If the task requires action, call tools now. If the task truly needs no tools, provide a direct complete answer.",
-                    })
+                    working_messages.append(
+                        {
+                            "role": "user",
+                            "content": "You have not used tools yet. If the task requires action, call tools now. If the task truly needs no tools, provide a direct complete answer.",
+                        }
+                    )
                     self._record_trace(trace)
                     continue
 
@@ -798,7 +809,7 @@ class ReasoningEngine:
                     # 逐块 yield 模拟流式输出，避免 stream_complete 误输出 tool call JSON
                     chunk_size = 3
                     for i in range(0, len(answer), chunk_size):
-                        yield answer[i:i + chunk_size]
+                        yield answer[i : i + chunk_size]
                         await asyncio.sleep(0.03)
                 else:
                     # 无工具调用（闲聊、简单问答），使用真正的流式 API
@@ -833,20 +844,24 @@ class ReasoningEngine:
                 trace.system_note = "duplicate_tool_calls_detected"
                 self._record_trace(trace)
                 working_messages.append({"role": "assistant", "content": decision.text})
-                working_messages.append({
-                    "role": "user",
-                    "content": "You are repeating the same tool call pattern. Use a different tool, ask the user for missing information, or provide the best final answer.",
-                })
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": "You are repeating the same tool call pattern. Use a different tool, ask the user for missing information, or provide the best final answer.",
+                    }
+                )
                 continue
 
             if near_limit and decision.tool_calls:
                 trace.system_note = "forced_final_answer_near_limit"
                 self._record_trace(trace)
                 working_messages.append({"role": "assistant", "content": decision.text or ""})
-                working_messages.append({
-                    "role": "user",
-                    "content": "You are approaching the maximum number of reasoning steps. You MUST now provide a complete final answer. Do NOT call any more tools.",
-                })
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": "You are approaching the maximum number of reasoning steps. You MUST now provide a complete final answer. Do NOT call any more tools.",
+                    }
+                )
                 continue
 
             tool_results = await self._tool_executor.execute(decision.tool_calls)
@@ -885,18 +900,24 @@ class ReasoningEngine:
                     tool_content = result.get("content", "")
                     if isinstance(tool_content, dict):
                         tool_content = json.dumps(tool_content, ensure_ascii=False)
-                    working_messages.append({
-                        "role": "tool",
-                        "tool_call_id": call.call_id,
-                        "content": str(tool_content)[:4000],
-                    })
-                working_messages.append({
-                    "role": "user",
-                    "content": "Use the tool results above to continue. If they are sufficient, reply with a plain-text final answer for the user. Only call new tools if you still need different information. Do not repeat the same tool calls.",
-                })
+                    working_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.call_id,
+                            "content": str(tool_content)[:4000],
+                        }
+                    )
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": "Use the tool results above to continue. If they are sufficient, reply with a plain-text final answer for the user. Only call new tools if you still need different information. Do not repeat the same tool calls.",
+                    }
+                )
             else:
                 assistant_payload = {"tool_calls": trace.tool_calls, "text": decision.text}
-                working_messages.append({"role": "assistant", "content": json.dumps(assistant_payload, ensure_ascii=False)})
+                working_messages.append(
+                    {"role": "assistant", "content": json.dumps(assistant_payload, ensure_ascii=False)}
+                )
                 result_summaries = []
                 for r in tool_results:
                     name = r.get("name", "unknown")
@@ -904,10 +925,12 @@ class ReasoningEngine:
                     is_error = r.get("is_error", False)
                     tag = "ERROR" if is_error else "OK"
                     result_summaries.append(f"[{name}] {tag}: {content[:2000]}")
-                working_messages.append({
-                    "role": "user",
-                    "content": "Tool results:\n" + "\n---\n".join(result_summaries),
-                })
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": "Tool results:\n" + "\n---\n".join(result_summaries),
+                    }
+                )
 
         # 超过最大迭代次数
         if best_text:
@@ -940,9 +963,20 @@ class ReasoningEngine:
         has_confirmation_only = any(p in clean for p in confirmation_only_patterns)
         if has_confirmation_only:
             content_markers = (
-                "第1天", "第一天", "Day 1", "行程安排", "每日行程",
-                "交通", "住宿", "景点", "预算", "推荐",
-                "高铁", "机票", "酒店", "元",
+                "第1天",
+                "第一天",
+                "Day 1",
+                "行程安排",
+                "每日行程",
+                "交通",
+                "住宿",
+                "景点",
+                "预算",
+                "推荐",
+                "高铁",
+                "机票",
+                "酒店",
+                "元",
             )
             has_real_content = any(m in clean for m in content_markers)
             if not has_real_content:
@@ -971,7 +1005,9 @@ class ReasoningEngine:
                     cleaned = ""
         except (json.JSONDecodeError, ValueError):
             pass
-        if '"text"' in cleaned and ('"tool_calls"' in cleaned or '"tool_results"' in cleaned or '"arguments"' in cleaned):
+        if '"text"' in cleaned and (
+            '"tool_calls"' in cleaned or '"tool_results"' in cleaned or '"arguments"' in cleaned
+        ):
             text_match = re.search(r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned)
             if text_match:
                 extracted = text_match.group(1)
@@ -991,50 +1027,50 @@ class ReasoningEngine:
                     pass
                 if extracted.strip():
                     return ReasoningEngine._strip_reasoning_prefix(extracted.strip())
-            cleaned = re.sub(r'\{[^{}]*"tool_results"\s*:\s*\[.*?\][^{}]*\}', '', cleaned, flags=re.DOTALL)
+            cleaned = re.sub(r'\{[^{}]*"tool_results"\s*:\s*\[.*?\][^{}]*\}', "", cleaned, flags=re.DOTALL)
         cleaned = re.sub(
             r'\{[^{}]*"tool_calls"\s*:\s*\[[^\]]*\][^{}]*\}',
-            '',
+            "",
             cleaned,
             flags=re.DOTALL,
         )
         cleaned = re.sub(
             r'["\']tool_calls["\']\s*:\s*\[[^\]]*\]\s*,?',
-            '',
+            "",
             cleaned,
             flags=re.DOTALL,
         )
         cleaned = re.sub(
             r'\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}\s*\}',
-            '',
+            "",
             cleaned,
             flags=re.DOTALL,
         )
         cleaned = re.sub(
             r'tool_calls["\']?\s*:\s*\[[^\]]*\]',
-            '',
+            "",
             cleaned,
             flags=re.DOTALL,
         )
-        xml_pattern = r'<tool_call[^>]*>.*?</tool_call'
-        cleaned = re.sub(xml_pattern + '>', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        xml_pattern = r"<tool_call[^>]*>.*?</tool_call"
+        cleaned = re.sub(xml_pattern + ">", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         cleaned = ReasoningEngine._strip_reasoning_prefix(cleaned)
         return cleaned.strip()
 
     _REASONING_PATTERNS = [
-        r'(?:Now|So)\s+I\s+have\s+enough\s+information.*?(?=\n)',
-        r'Let\s+me\s+(?:now\s+)?(?:compile|save|create|generate|summarize|put|write|provide).*?(?=\n)',
-        r'Key\s+findings?\s*:\s*',
-        r'I\s+will\s+now\s+.*?(?=\n)',
-        r'Let(?:\'s| us)\s+(?:now\s+)?(?:proceed|move|start|begin|compile|create|generate|save|put|write).*?(?=\n)',
-        r'Based\s+on\s+(?:the\s+)?(?:above|these|tool|search|following)\s+(?:results?|data|information|findings).*?(?=\n)',
-        r'With\s+(?:all\s+)?(?:the\s+)?(?:above|these|tool)\s+(?:results?|data|information).*?(?=\n)',
+        r"(?:Now|So)\s+I\s+have\s+enough\s+information.*?(?=\n)",
+        r"Let\s+me\s+(?:now\s+)?(?:compile|save|create|generate|summarize|put|write|provide).*?(?=\n)",
+        r"Key\s+findings?\s*:\s*",
+        r"I\s+will\s+now\s+.*?(?=\n)",
+        r"Let(?:\'s| us)\s+(?:now\s+)?(?:proceed|move|start|begin|compile|create|generate|save|put|write).*?(?=\n)",
+        r"Based\s+on\s+(?:the\s+)?(?:above|these|tool|search|following)\s+(?:results?|data|information|findings).*?(?=\n)",
+        r"With\s+(?:all\s+)?(?:the\s+)?(?:above|these|tool)\s+(?:results?|data|information).*?(?=\n)",
     ]
 
     @staticmethod
     def _strip_reasoning_prefix(text: str) -> str:
-        lines = text.split('\n')
+        lines = text.split("\n")
         result_lines = []
         for line in lines:
             stripped = line.strip()
@@ -1045,15 +1081,15 @@ class ReasoningEngine:
                     break
             if not is_reasoning:
                 result_lines.append(line)
-        cleaned = '\n'.join(result_lines)
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        cleaned = "\n".join(result_lines)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
 
     @staticmethod
     def _strip_tool_calls_from_text(text: str) -> str:
         cleaned = ReasoningEngine._clean_final_answer(text)
-        cleaned = re.sub(r'\{[\s\S]*?"tool_calls"[\s\S]*?\}', '', cleaned)
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        cleaned = re.sub(r'\{[\s\S]*?"tool_calls"[\s\S]*?\}', "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
 
     def _parse_decision(self, text: str) -> Decision:
@@ -1127,11 +1163,13 @@ class ReasoningEngine:
         for item in raw_calls:
             if not isinstance(item, dict) or "name" not in item:
                 continue
-            tool_calls.append(ToolCall(
-                name=str(item["name"]),
-                arguments=dict(item.get("arguments") or item.get("args") or {}),
-                call_id=str(item.get("id", uuid.uuid4())),
-            ))
+            tool_calls.append(
+                ToolCall(
+                    name=str(item["name"]),
+                    arguments=dict(item.get("arguments") or item.get("args") or {}),
+                    call_id=str(item.get("id", uuid.uuid4())),
+                )
+            )
         if not tool_calls:
             return None
         clean_text = ReasoningEngine._strip_tool_calls_from_text(str(data.get("text", "")))
@@ -1198,10 +1236,10 @@ class ReasoningEngine:
         if not calls:
             return None
         plain_text = self._TOOL_CALL_ITEM_RE.sub("", text)
-        plain_text = re.sub(r'["\']tool_calls["\']\s*:\s*\[[\s\S]*?\]', '', plain_text)
-        plain_text = re.sub(r'\{[\s\S]*?["\']tool_calls["\'][\s\S]*\}', '', plain_text)
-        plain_text = re.sub(r'tool_calls["\']?\s*:\s*\[[\s\S]*?\]', '', plain_text)
-        plain_text = re.sub(r'\n{3,}', '\n\n', plain_text).strip()
+        plain_text = re.sub(r'["\']tool_calls["\']\s*:\s*\[[\s\S]*?\]', "", plain_text)
+        plain_text = re.sub(r'\{[\s\S]*?["\']tool_calls["\'][\s\S]*\}', "", plain_text)
+        plain_text = re.sub(r'tool_calls["\']?\s*:\s*\[[\s\S]*?\]', "", plain_text)
+        plain_text = re.sub(r"\n{3,}", "\n\n", plain_text).strip()
         return Decision(
             decision_type=DecisionType.TOOL_CALLS,
             text=plain_text,
@@ -1209,7 +1247,7 @@ class ReasoningEngine:
         )
 
     _XML_TOOL_RE = re.compile(
-        r'<tool_call[^>]*>\s*\n?(.*?)(?:</tool_call|(?=<tool_call)|$)',
+        r"<tool_call[^>]*>\s*\n?(.*?)(?:</tool_call|(?=<tool_call)|$)",
         re.DOTALL | re.IGNORECASE,
     )
 
@@ -1223,7 +1261,7 @@ class ReasoningEngine:
         if not calls:
             return None
         plain_text = self._XML_TOOL_RE.sub("", text).strip()
-        plain_text = re.sub(r'\n{3,}', '\n\n', plain_text)
+        plain_text = re.sub(r"\n{3,}", "\n\n", plain_text)
         return Decision(
             decision_type=DecisionType.TOOL_CALLS,
             text=plain_text,
@@ -1232,7 +1270,7 @@ class ReasoningEngine:
 
     def _parse_xml_func_call(self, inner: str) -> ToolCall | None:
         inner = inner.strip()
-        match = re.match(r'\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*\((.*)\)\s*$', inner, re.DOTALL)
+        match = re.match(r"\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*\((.*)\)\s*$", inner, re.DOTALL)
         if not match:
             return None
         name = match.group(1)
@@ -1240,7 +1278,7 @@ class ReasoningEngine:
         args = self._parse_kwargs(args_str)
         if self._tool_registry.has(name):
             return ToolCall(name=name, arguments=args, call_id=str(uuid.uuid4()))
-        if name.startswith(('fliggy_', 'amap_', 'save_')):
+        if name.startswith(("fliggy_", "amap_", "save_")):
             return ToolCall(name=name, arguments=args, call_id=str(uuid.uuid4()))
         return None
 

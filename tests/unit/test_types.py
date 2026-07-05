@@ -1,4 +1,5 @@
 """Tests for core/types.py — IntentType, DecisionType, ToolCall, Decision, TraceEvent"""
+
 from domain.shared.types import (
     IntentType,
     IntentResult,
@@ -22,6 +23,7 @@ class TestIntentType:
 
     def test_invalid_string_raises(self):
         import pytest
+
         with pytest.raises(ValueError):
             IntentType("unknown_intent")
 

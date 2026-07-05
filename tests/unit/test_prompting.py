@@ -1,4 +1,5 @@
 """Tests for domain/travel/prompting.py — PromptBuilder"""
+
 from domain.travel.prompting import PromptBuilder
 from domain.travel.prompt_context import PromptContext
 from domain.travel.context_manager import PreparedContext

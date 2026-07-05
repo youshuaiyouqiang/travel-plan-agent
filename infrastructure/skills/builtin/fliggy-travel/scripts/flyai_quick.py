@@ -58,7 +58,15 @@ def cmd_ai_search(args):
 
 def cmd_flight(args):
     ensure_cli()
-    cli_args = ["search-flight", "--origin", args.origin, "--destination", args.destination, "--dep-date", args.dep_date]
+    cli_args = [
+        "search-flight",
+        "--origin",
+        args.origin,
+        "--destination",
+        args.destination,
+        "--dep-date",
+        args.dep_date,
+    ]
     run_cli(cli_args)
 
 
@@ -70,7 +78,15 @@ def cmd_train(args):
 
 def cmd_hotel(args):
     ensure_cli()
-    cli_args = ["search-hotel", "--dest-name", args.dest_name, "--check-in-date", args.check_in_date, "--check-out-date", args.check_out_date]
+    cli_args = [
+        "search-hotel",
+        "--dest-name",
+        args.dest_name,
+        "--check-in-date",
+        args.check_in_date,
+        "--check-out-date",
+        args.check_out_date,
+    ]
     run_cli(cli_args)
 
 
@@ -96,12 +112,17 @@ def main():
 
     p_hotel = sub.add_parser("hotel", help="酒店搜索")
     p_hotel.add_argument("--dest-name", required=True, help="目的地城市")
-    p_hotel.add_argument("--check-in-date", "--checkin", dest="check_in_date", required=True, help="入住日期 (YYYY-MM-DD)")
-    p_hotel.add_argument("--check-out-date", "--checkout", dest="check_out_date", required=True, help="离店日期 (YYYY-MM-DD)")
+    p_hotel.add_argument(
+        "--check-in-date", "--checkin", dest="check_in_date", required=True, help="入住日期 (YYYY-MM-DD)"
+    )
+    p_hotel.add_argument(
+        "--check-out-date", "--checkout", dest="check_out_date", required=True, help="离店日期 (YYYY-MM-DD)"
+    )
 
     args = parser.parse_args()
-    {"search": cmd_search, "ai-search": cmd_ai_search,
-     "flight": cmd_flight, "train": cmd_train, "hotel": cmd_hotel}[args.command](args)
+    {"search": cmd_search, "ai-search": cmd_ai_search, "flight": cmd_flight, "train": cmd_train, "hotel": cmd_hotel}[
+        args.command
+    ](args)
 
 
 if __name__ == "__main__":

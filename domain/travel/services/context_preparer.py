@@ -37,6 +37,7 @@ class ChatPreparation:
     early_action 为 None 时表示进入 ReAct 推理主路径；
     否则调用方需根据 kind 自行处理（保存/trace/yield/return）后提前结束。
     """
+
     session: Any
     task: Any
     intent: Any
@@ -116,6 +117,7 @@ class ContextPreparer:
         self._llm.set_audit_context(session_id=session_id, user_id=memory_scope, trace_id=trace_id)
         self._reasoning.set_audit_context(session_id=session_id, user_id=memory_scope, trace_id=trace_id)
         from infrastructure.tools.executor import ToolExecutor
+
         # ToolExecutor audit context is set by the caller (Agent) since it owns the executor
         session = self._session_store.get(session_id)
         task = self._task_store.get(session_id, user_id=memory_scope)
@@ -125,10 +127,20 @@ class ContextPreparer:
         direct_runtime_answer = answer_date_or_time_query(message)
         if direct_runtime_answer:
             return ChatPreparation(
-                session=session, task=task, intent=None, ops_result=None,
-                emotion_result=None, system="", tools=[], selected_mcp_tools=[],
-                connected_mcp_tools=[], memory_context="", dual_memory_context="",
-                mcp_context="", profile_context="", urgency_context="",
+                session=session,
+                task=task,
+                intent=None,
+                ops_result=None,
+                emotion_result=None,
+                system="",
+                tools=[],
+                selected_mcp_tools=[],
+                connected_mcp_tools=[],
+                memory_context="",
+                dual_memory_context="",
+                mcp_context="",
+                profile_context="",
+                urgency_context="",
                 prompt_context=None,
                 early_action=("direct_runtime_answer", direct_runtime_answer),
             )
@@ -138,11 +150,11 @@ class ContextPreparer:
         if self._ops_classifier:
             # 构建对话历史（不含当前消息），用于 missing_info 上下文检查
             history_turns = session.turns[:-1] if len(session.turns) > 1 else []
-            conversation_history = [{"role": t.role, "content": t.content} for t in history_turns] if history_turns else None
-
-            ops_result = await self._ops_classifier.classify(
-                message, conversation_history=conversation_history
+            conversation_history = (
+                [{"role": t.role, "content": t.content} for t in history_turns] if history_turns else None
             )
+
+            ops_result = await self._ops_classifier.classify(message, conversation_history=conversation_history)
             # ★ TRIP_PLANNING 等需要信息完整性的意图：优先用 LLM 检查 missing_info，
             # regex 仅作 LLM 不可用时的 fallback。
             if ops_result and conversation_history:
@@ -175,20 +187,31 @@ class ContextPreparer:
             intent = self._ops_classifier.to_intent_result(ops_result)
             if self._audit_logger:
                 self._audit_logger.log_intent_classify(
-                    session_id=session_id, user_id=memory_scope, trace_id=trace_id,
-                    message=message, intent=ops_result.intent.value, goal=intent.goal,
-                    confidence=ops_result.confidence, classifier="travel_classifier",
+                    session_id=session_id,
+                    user_id=memory_scope,
+                    trace_id=trace_id,
+                    message=message,
+                    intent=ops_result.intent.value,
+                    goal=intent.goal,
+                    confidence=ops_result.confidence,
+                    classifier="travel_classifier",
                     raw_llm_output=getattr(ops_result, "raw_output", ""),
                 )
         else:
             from domain.shared.types import IntentResult
+
             intent = IntentResult(
-                intent=IntentType.TASK, goal=message[:100],
-                fast_reply=False, force_tool=True, tool_hints=[],
+                intent=IntentType.TASK,
+                goal=message[:100],
+                fast_reply=False,
+                force_tool=True,
+                tool_hints=[],
             )
         logger.info(
             "Intent resolved: intent=%s fast_reply=%s force_tool=%s travel_intent=%s",
-            intent.intent.value, intent.fast_reply, intent.force_tool,
+            intent.intent.value,
+            intent.fast_reply,
+            intent.force_tool,
             ops_result.intent.value if ops_result else "none",
         )
 
@@ -198,9 +221,13 @@ class ContextPreparer:
             emotion_result = await self._emotion_detector.detect(message)
             if self._audit_logger:
                 self._audit_logger.log_emotion_detect(
-                    session_id=session_id, user_id=memory_scope, trace_id=trace_id,
-                    message=message, emotion=emotion_result.emotion.value,
-                    score=emotion_result.score, confidence=emotion_result.confidence,
+                    session_id=session_id,
+                    user_id=memory_scope,
+                    trace_id=trace_id,
+                    message=message,
+                    emotion=emotion_result.emotion.value,
+                    score=emotion_result.score,
+                    confidence=emotion_result.confidence,
                     response_style=emotion_result.response_style,
                     raw_llm_output=getattr(emotion_result, "raw_output", ""),
                 )
@@ -209,10 +236,20 @@ class ContextPreparer:
         emergency_reply = self._check_emergency_keywords(message)
         if emergency_reply:
             return ChatPreparation(
-                session=session, task=task, intent=intent, ops_result=ops_result,
-                emotion_result=emotion_result, system="", tools=[], selected_mcp_tools=[],
-                connected_mcp_tools=[], memory_context="", dual_memory_context="",
-                mcp_context="", profile_context="", urgency_context="",
+                session=session,
+                task=task,
+                intent=intent,
+                ops_result=ops_result,
+                emotion_result=emotion_result,
+                system="",
+                tools=[],
+                selected_mcp_tools=[],
+                connected_mcp_tools=[],
+                memory_context="",
+                dual_memory_context="",
+                mcp_context="",
+                profile_context="",
+                urgency_context="",
                 prompt_context=None,
                 early_action=("emergency_reply", emergency_reply),
             )
@@ -222,7 +259,8 @@ class ContextPreparer:
         self._task_store.save(task)
         logger.info(
             "Intent analyzed: session_id=%s user_id=%s intent=%s emotion=%s force_tool=%s",
-            session_id, memory_scope,
+            session_id,
+            memory_scope,
             ops_result.intent.value if ops_result else intent.intent.value,
             emotion_result.emotion.value if emotion_result else "none",
             intent.force_tool,
@@ -233,10 +271,20 @@ class ContextPreparer:
             logger.warning("FAST_REPLY path triggered! intent=%s fast_reply=%s", intent.intent.value, intent.fast_reply)
             system = self._prompt_builder.build_fast_reply_system(intent)
             return ChatPreparation(
-                session=session, task=task, intent=intent, ops_result=ops_result,
-                emotion_result=emotion_result, system=system, tools=[], selected_mcp_tools=[],
-                connected_mcp_tools=[], memory_context="", dual_memory_context="",
-                mcp_context="", profile_context="", urgency_context="",
+                session=session,
+                task=task,
+                intent=intent,
+                ops_result=ops_result,
+                emotion_result=emotion_result,
+                system=system,
+                tools=[],
+                selected_mcp_tools=[],
+                connected_mcp_tools=[],
+                memory_context="",
+                dual_memory_context="",
+                mcp_context="",
+                profile_context="",
+                urgency_context="",
                 prompt_context=None,
                 early_action=("fast_reply", system),
             )
@@ -245,10 +293,20 @@ class ContextPreparer:
         if ops_result and ops_result.intent == TravelIntentType.ITINERARY_CONFIRM:
             logger.info("itinerary_confirm: bypassing LLM, directly calling generate_itinerary_overview")
             return ChatPreparation(
-                session=session, task=task, intent=intent, ops_result=ops_result,
-                emotion_result=emotion_result, system="", tools=[], selected_mcp_tools=[],
-                connected_mcp_tools=[], memory_context="", dual_memory_context="",
-                mcp_context="", profile_context="", urgency_context="",
+                session=session,
+                task=task,
+                intent=intent,
+                ops_result=ops_result,
+                emotion_result=emotion_result,
+                system="",
+                tools=[],
+                selected_mcp_tools=[],
+                connected_mcp_tools=[],
+                memory_context="",
+                dual_memory_context="",
+                mcp_context="",
+                profile_context="",
+                urgency_context="",
                 prompt_context=None,
                 early_action=("itinerary_confirm", ops_result),
             )
@@ -261,10 +319,20 @@ class ContextPreparer:
             )
             clarification_question = self._prompt_helper.build_clarification_question(ops_result)
             return ChatPreparation(
-                session=session, task=task, intent=intent, ops_result=ops_result,
-                emotion_result=emotion_result, system="", tools=[], selected_mcp_tools=[],
-                connected_mcp_tools=[], memory_context="", dual_memory_context="",
-                mcp_context="", profile_context="", urgency_context="",
+                session=session,
+                task=task,
+                intent=intent,
+                ops_result=ops_result,
+                emotion_result=emotion_result,
+                system="",
+                tools=[],
+                selected_mcp_tools=[],
+                connected_mcp_tools=[],
+                memory_context="",
+                dual_memory_context="",
+                mcp_context="",
+                profile_context="",
+                urgency_context="",
                 prompt_context=None,
                 early_action=("need_input", clarification_question),
             )
@@ -301,7 +369,10 @@ class ContextPreparer:
 
         logger.info(
             "Agent reasoning path: session_id=%s user_id=%s tools=%s memory=%s mcp=%s emotion=%s",
-            session_id, memory_scope, ",".join(tools), bool(memory_context),
+            session_id,
+            memory_scope,
+            ",".join(tools),
+            bool(memory_context),
             ",".join(ref.proxy_name for ref in connected_mcp_tools),
             emotion_result.emotion.value if emotion_result else "none",
         )
@@ -329,10 +400,16 @@ class ContextPreparer:
             logger.warning("itinerary_confirm: confirm context is EMPTY despite ITINERARY_CONFIRM intent")
         if self._audit_logger:
             self._audit_logger.log_context_built(
-                session_id=session_id, user_id=memory_scope, trace_id=trace_id,
-                system_prompt=system, tools=tools, memory_context=memory_context,
-                dual_memory_context=dual_memory_context, mcp_context=mcp_context,
-                profile_context=profile_context, emotion_context=urgency_context,
+                session_id=session_id,
+                user_id=memory_scope,
+                trace_id=trace_id,
+                system_prompt=system,
+                tools=tools,
+                memory_context=memory_context,
+                dual_memory_context=dual_memory_context,
+                mcp_context=mcp_context,
+                profile_context=profile_context,
+                emotion_context=urgency_context,
                 selected_mcp_tools=[ref.proxy_name for ref in selected_mcp_tools],
                 connected_mcp_tools=[ref.proxy_name for ref in connected_mcp_tools],
             )
@@ -345,13 +422,23 @@ class ContextPreparer:
         ]
 
         return ChatPreparation(
-            session=session, task=task, intent=intent, ops_result=ops_result,
-            emotion_result=emotion_result, system=system, tools=tools,
-            selected_mcp_tools=selected_mcp_tools, connected_mcp_tools=connected_mcp_tools,
-            memory_context=memory_context, dual_memory_context=dual_memory_context,
-            mcp_context=mcp_context, profile_context=profile_context,
-            urgency_context=urgency_context, prompt_context=prompt_context,
-            early_action=None, conversation_history=conversation_history,
+            session=session,
+            task=task,
+            intent=intent,
+            ops_result=ops_result,
+            emotion_result=emotion_result,
+            system=system,
+            tools=tools,
+            selected_mcp_tools=selected_mcp_tools,
+            connected_mcp_tools=connected_mcp_tools,
+            memory_context=memory_context,
+            dual_memory_context=dual_memory_context,
+            mcp_context=mcp_context,
+            profile_context=profile_context,
+            urgency_context=urgency_context,
+            prompt_context=prompt_context,
+            early_action=None,
+            conversation_history=conversation_history,
         )
 
     @staticmethod

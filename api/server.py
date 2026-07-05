@@ -1,13 +1,3 @@
-"""Claw7 API 服务器入口。
-
-本文件仅负责：
-1. 创建 FastAPI 应用实例
-2. 注册生命周期钩子
-3. 挂载中间件和全局异常处理器
-4. 挂载 API v1 路由
-
-所有路由逻辑已拆分至 ``api/v1/`` 目录。
-"""
 from __future__ import annotations
 
 import asyncio
@@ -25,6 +15,17 @@ from application.trending.manager import refresh_pool
 from app import build_orchestrator
 from config import settings
 from domain.shared.runtime.logging import init_from_settings
+
+"""Claw7 API 服务器入口。
+
+本文件仅负责：
+1. 创建 FastAPI 应用实例
+2. 注册生命周期钩子
+3. 挂载中间件和全局异常处理器
+4. 挂载 API v1 路由
+
+所有路由逻辑已拆分至 ``api/v1/`` 目录。
+"""
 
 init_from_settings()
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ async def _periodic_refresh_pool() -> None:
 async def _periodic_memory_maintenance() -> None:
     """记忆维护后台任务（蒸馏 + 衰减）。"""
     from application.scheduler import run_memory_maintenance
+
     await run_memory_maintenance()
 
 

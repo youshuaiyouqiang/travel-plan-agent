@@ -73,12 +73,15 @@ class MemoryDistiller:
                 "last_accessed_at, status, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
                 (
-                    user_id, stm["category"], content,
+                    user_id,
+                    stm["category"],
+                    content,
                     _json_dumps(source_ids),
                     stm.get("experience_tag", ""),
                     stm["extraction_count"],
                     stm["last_accessed_at"] or now,
-                    now, now,
+                    now,
+                    now,
                 ),
             )
             conn.execute(
@@ -88,7 +91,9 @@ class MemoryDistiller:
             distilled_count += 1
             logger.info(
                 "Memory distilled: user=%s category=%s content=%s",
-                user_id, stm["category"], content[:30],
+                user_id,
+                stm["category"],
+                content[:30],
             )
 
         conn.commit()
@@ -211,6 +216,7 @@ class MemoryDistiller:
 
         try:
             import asyncio
+
             # asyncio.run() 创建独立事件循环；调用方必须在独立线程中调用 run_distillation
             result = asyncio.run(
                 self._llm.complete_json(

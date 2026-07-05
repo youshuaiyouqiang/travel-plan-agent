@@ -68,8 +68,29 @@ class ItineraryGenerator:
                     for marker in dest_markers:
                         idx = turn.content.find(marker)
                         if idx >= 0:
-                            fragment = turn.content[idx + len(marker):idx + len(marker) + 10].strip()
-                            for city in ["北京", "上海", "广州", "深圳", "成都", "重庆", "杭州", "西安", "厦门", "青岛", "三亚", "丽江", "大理", "长沙", "武汉", "南京", "苏州", "昆明", "桂林", "黄山"]:
+                            fragment = turn.content[idx + len(marker) : idx + len(marker) + 10].strip()
+                            for city in [
+                                "北京",
+                                "上海",
+                                "广州",
+                                "深圳",
+                                "成都",
+                                "重庆",
+                                "杭州",
+                                "西安",
+                                "厦门",
+                                "青岛",
+                                "三亚",
+                                "丽江",
+                                "大理",
+                                "长沙",
+                                "武汉",
+                                "南京",
+                                "苏州",
+                                "昆明",
+                                "桂林",
+                                "黄山",
+                            ]:
                                 if city in fragment:
                                     destination = city
                                     break

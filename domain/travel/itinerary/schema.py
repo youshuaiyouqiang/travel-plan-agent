@@ -5,9 +5,9 @@ from enum import Enum
 
 
 class PlanType(str, Enum):
-    SIGHTSEEING = "sightseeing"   # 景点打卡型
-    BUDGET = "budget"             # 经济实惠型
-    SINGLE = "single"             # 单方案（兼容旧数据/降级场景）
+    SIGHTSEEING = "sightseeing"  # 景点打卡型
+    BUDGET = "budget"  # 经济实惠型
+    SINGLE = "single"  # 单方案（兼容旧数据/降级场景）
 
 
 class TransportMode(str, Enum):
@@ -19,13 +19,14 @@ class TransportMode(str, Enum):
 @dataclass
 class CostBreakdown:
     """费用明细分项"""
-    transport: float = 0          # 往返交通
-    hotel: float = 0              # 住宿
-    tickets: float = 0            # 景点门票
-    meals: float = 0              # 餐饮
-    local_transport: float = 0    # 市内交通
-    other: float = 0              # 其他
-    total: float = 0              # 总计
+
+    transport: float = 0  # 往返交通
+    hotel: float = 0  # 住宿
+    tickets: float = 0  # 景点门票
+    meals: float = 0  # 餐饮
+    local_transport: float = 0  # 市内交通
+    other: float = 0  # 其他
+    total: float = 0  # 总计
 
     def to_dict(self) -> dict:
         return {
@@ -54,11 +55,12 @@ class CostBreakdown:
 @dataclass
 class TransportOption:
     """出行方式选项"""
+
     mode: TransportMode = TransportMode.FLIGHT
     duration_hours: float = 0
     cost_yuan: float = 0
-    detail: str = ""              # 如"CA1234 08:00-10:30"
-    weather_risk: str = ""        # 天气影响评估
+    detail: str = ""  # 如"CA1234 08:00-10:30"
+    weather_risk: str = ""  # 天气影响评估
 
     def to_dict(self) -> dict:
         return {
@@ -83,6 +85,7 @@ class TransportOption:
 @dataclass
 class Plan:
     """一套完整的出行方案"""
+
     plan_type: PlanType = PlanType.SINGLE
     transport: TransportOption = field(default_factory=TransportOption)
     hotel_name: str = ""
@@ -151,7 +154,7 @@ class Activity:
             "actual_cost": self.actual_cost,
             "tips": self.tips,
             "checked_in": self.checked_in,
-    }
+        }
 
     @classmethod
     def from_row(cls, row: dict) -> Activity:
@@ -264,6 +267,7 @@ class Itinerary:
 @dataclass
 class MultiPlanItinerary:
     """统一行程模型（旧 Itinerary 等价于 plans=[单个Plan]）"""
+
     id: str = ""
     session_id: str = ""
     user_id: str = ""
@@ -316,9 +320,11 @@ class MultiPlanItinerary:
             destination=old.destination,
             start_date=old.start_date,
             end_date=old.end_date,
-            plans=[Plan(
-                plan_type=PlanType.SINGLE,
-                days=old.days,
-            )],
+            plans=[
+                Plan(
+                    plan_type=PlanType.SINGLE,
+                    days=old.days,
+                )
+            ],
             created_at=old.created_at,
         )

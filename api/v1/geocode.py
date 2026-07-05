@@ -23,12 +23,14 @@ router = APIRouter(tags=["geocode"])
 def _nominatim_lookup(query: str) -> dict | None:
     """同步调用 Nominatim —— 必须在线程池中执行，避免阻塞事件循环。"""
     try:
-        qs = urllib.parse.urlencode({
-            "q": query,
-            "format": "json",
-            "limit": "1",
-            "accept-language": "zh",
-        })
+        qs = urllib.parse.urlencode(
+            {
+                "q": query,
+                "format": "json",
+                "limit": "1",
+                "accept-language": "zh",
+            }
+        )
         url = f"https://nominatim.openstreetmap.org/search?{qs}"
         req = urllib.request.Request(url, headers={"User-Agent": "ClawTravelApp/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -73,12 +75,14 @@ async def batch_geocode(req: BatchGeocodeRequest, request: Request) -> dict:
             if geocodes:
                 loc = geocodes[0].get("location", "")
                 parts = loc.split(",") if loc else []
-                results.append({
-                    "address": addr,
-                    "lng": float(parts[0]) if len(parts) == 2 else None,
-                    "lat": float(parts[1]) if len(parts) == 2 else None,
-                    "formatted": geocodes[0].get("formatted_address", ""),
-                })
+                results.append(
+                    {
+                        "address": addr,
+                        "lng": float(parts[0]) if len(parts) == 2 else None,
+                        "lat": float(parts[1]) if len(parts) == 2 else None,
+                        "formatted": geocodes[0].get("formatted_address", ""),
+                    }
+                )
             else:
                 results.append({"address": addr, "lng": None, "lat": None, "formatted": ""})
         except Exception as e:

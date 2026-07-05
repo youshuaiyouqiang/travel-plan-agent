@@ -14,14 +14,15 @@ from infrastructure.persistence.database import get_connection
 @dataclass
 class QualityIssue:
     """质量问题记录。"""
+
     id: int | None = None
     session_id: str = ""
     user_id: str = ""
-    rating: str = ""              # "good" | "bad"
-    issue_type: str = ""          # "inaccurate" | "tool_error" | "delegation_error" | "other"
-    comment: str = ""             # 用户文字反馈
-    agent_id: str = ""            # 涉及智能体
-    message_snippet: str = ""     # 用户消息片段
+    rating: str = ""  # "good" | "bad"
+    issue_type: str = ""  # "inaccurate" | "tool_error" | "delegation_error" | "other"
+    comment: str = ""  # 用户文字反馈
+    agent_id: str = ""  # 涉及智能体
+    message_snippet: str = ""  # 用户消息片段
     created_at: str = ""
 
 
@@ -44,12 +45,8 @@ class FeedbackRepository:
                     created_at TEXT NOT NULL
                 )
             """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_quality_issues_user ON quality_issues(user_id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_quality_issues_rating ON quality_issues(rating)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_quality_issues_user ON quality_issues(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_quality_issues_rating ON quality_issues(rating)")
             conn.commit()
         finally:
             conn.close()

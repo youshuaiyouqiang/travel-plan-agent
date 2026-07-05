@@ -44,12 +44,15 @@ class TestItineraryRepository:
 
     def test_list_itineraries(self):
         repo = ItineraryRepository()
-        repo.create_itinerary(user_id="u1", title="成都5日游", destination="成都",
-                              start_date="2026-06-01", end_date="2026-06-05")
-        repo.create_itinerary(user_id="u1", title="杭州3日游", destination="杭州",
-                              start_date="2026-07-01", end_date="2026-07-03")
-        repo.create_itinerary(user_id="u2", title="北京2日游", destination="北京",
-                              start_date="2026-08-01", end_date="2026-08-02")
+        repo.create_itinerary(
+            user_id="u1", title="成都5日游", destination="成都", start_date="2026-06-01", end_date="2026-06-05"
+        )
+        repo.create_itinerary(
+            user_id="u1", title="杭州3日游", destination="杭州", start_date="2026-07-01", end_date="2026-07-03"
+        )
+        repo.create_itinerary(
+            user_id="u2", title="北京2日游", destination="北京", start_date="2026-08-01", end_date="2026-08-02"
+        )
 
         items = repo.list_itineraries("u1")
         assert len(items) == 2
@@ -59,8 +62,11 @@ class TestItineraryRepository:
     def test_update_itinerary(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         repo.update_itinerary(created.id, title="成都6日游", status="confirmed")
         updated = repo.get_itinerary(created.id)
@@ -70,8 +76,11 @@ class TestItineraryRepository:
     def test_delete_itinerary(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         assert repo.delete_itinerary(created.id) is True
         assert repo.get_itinerary(created.id) is None
@@ -79,8 +88,11 @@ class TestItineraryRepository:
     def test_add_day_and_activity(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         day = repo.add_day(
             itinerary_id=created.id,
@@ -113,8 +125,11 @@ class TestItineraryRepository:
     def test_check_in_activity(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         day = repo.add_day(itinerary_id=created.id, day_index=0)
         act = repo.add_activity(day_id=day.id, activity_index=0, title="测试活动")
@@ -131,8 +146,11 @@ class TestItineraryRepository:
     def test_delete_activity(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         day = repo.add_day(itinerary_id=created.id, day_index=0)
         act = repo.add_activity(day_id=day.id, activity_index=0, title="测试活动")
@@ -203,8 +221,11 @@ class TestItineraryRepository:
     def test_cascade_delete(self):
         repo = ItineraryRepository()
         created = repo.create_itinerary(
-            user_id="u1", title="成都5日游", destination="成都",
-            start_date="2026-06-01", end_date="2026-06-05",
+            user_id="u1",
+            title="成都5日游",
+            destination="成都",
+            start_date="2026-06-01",
+            end_date="2026-06-05",
         )
         day = repo.add_day(itinerary_id=created.id, day_index=0)
         act = repo.add_activity(day_id=day.id, activity_index=0, title="测试活动")
@@ -244,19 +265,21 @@ class TestItinerarySchema:
         assert "days" not in d2
 
     def test_activity_from_row(self):
-        act = Activity.from_row({
-            "id": 1,
-            "day_id": 2,
-            "activity_index": 0,
-            "time_slot": "09:00-11:00",
-            "title": "测试",
-            "location": "成都",
-            "description": "描述",
-            "image_url": "",
-            "cost": 50,
-            "tips": "贴士",
-            "checked_in": 1,
-        })
+        act = Activity.from_row(
+            {
+                "id": 1,
+                "day_id": 2,
+                "activity_index": 0,
+                "time_slot": "09:00-11:00",
+                "title": "测试",
+                "location": "成都",
+                "description": "描述",
+                "image_url": "",
+                "cost": 50,
+                "tips": "贴士",
+                "checked_in": 1,
+            }
+        )
         assert act.checked_in is True
         assert act.cost == 50.0
 

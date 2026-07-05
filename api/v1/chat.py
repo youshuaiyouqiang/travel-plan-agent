@@ -31,9 +31,14 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     start_time = time.monotonic()
     logger.info("API /chat request: session_id=%s user_id=%s trace_id=%s", req.session_id, effective_user_id, trace_id)
     _api_audit.log_api_boundary(
-        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
-        direction="request", endpoint="/api/chat", method="POST",
-        payload=req.message, agent_id=req.agent_id or "",
+        session_id=req.session_id,
+        user_id=effective_user_id or "",
+        trace_id=trace_id,
+        direction="request",
+        endpoint="/api/chat",
+        method="POST",
+        payload=req.message,
+        agent_id=req.agent_id or "",
     )
     result = await agent.chat(
         session_id=req.session_id,
@@ -44,11 +49,23 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     )
     duration_ms = int((time.monotonic() - start_time) * 1000)
     _api_audit.log_api_boundary(
-        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
-        direction="response", endpoint="/api/chat", method="POST",
-        payload=result.get("reply", ""), duration_ms=duration_ms, agent_id=req.agent_id or "",
+        session_id=req.session_id,
+        user_id=effective_user_id or "",
+        trace_id=trace_id,
+        direction="response",
+        endpoint="/api/chat",
+        method="POST",
+        payload=result.get("reply", ""),
+        duration_ms=duration_ms,
+        agent_id=req.agent_id or "",
     )
-    logger.info("API /chat response: session_id=%s user_id=%s trace_id=%s duration_ms=%s", req.session_id, effective_user_id, trace_id, duration_ms)
+    logger.info(
+        "API /chat response: session_id=%s user_id=%s trace_id=%s duration_ms=%s",
+        req.session_id,
+        effective_user_id,
+        trace_id,
+        duration_ms,
+    )
     return ChatResponse(status=result["status"], reply=result["reply"])
 
 
@@ -59,11 +76,18 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     effective_user_id = auth_user_id or req.user_id
     trace_id = uuid.uuid4().hex[:16]
     start_time = time.monotonic()
-    logger.info("API /chat/stream request: session_id=%s user_id=%s trace_id=%s", req.session_id, effective_user_id, trace_id)
+    logger.info(
+        "API /chat/stream request: session_id=%s user_id=%s trace_id=%s", req.session_id, effective_user_id, trace_id
+    )
     _api_audit.log_api_boundary(
-        session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
-        direction="request", endpoint="/api/chat/stream", method="POST",
-        payload=req.message, agent_id=req.agent_id or "",
+        session_id=req.session_id,
+        user_id=effective_user_id or "",
+        trace_id=trace_id,
+        direction="request",
+        endpoint="/api/chat/stream",
+        method="POST",
+        payload=req.message,
+        agent_id=req.agent_id or "",
     )
     full_reply = ""
 
@@ -87,11 +111,19 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
         _api_audit.log_api_boundary(
-            session_id=req.session_id, user_id=effective_user_id or "", trace_id=trace_id,
-            direction="response", endpoint="/api/chat/stream", method="POST",
-            payload=full_reply, duration_ms=duration_ms, agent_id=req.agent_id or "",
+            session_id=req.session_id,
+            user_id=effective_user_id or "",
+            trace_id=trace_id,
+            direction="response",
+            endpoint="/api/chat/stream",
+            method="POST",
+            payload=full_reply,
+            duration_ms=duration_ms,
+            agent_id=req.agent_id or "",
         )
-        logger.info("API /chat/stream done: session_id=%s trace_id=%s duration_ms=%s", req.session_id, trace_id, duration_ms)
+        logger.info(
+            "API /chat/stream done: session_id=%s trace_id=%s duration_ms=%s", req.session_id, trace_id, duration_ms
+        )
 
     return StreamingResponse(
         event_generator(),

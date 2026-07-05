@@ -24,9 +24,6 @@ class User:
             self.updated_at = self.created_at
 
 
-
-
-
 class UserStore:
     # P2-1：缓存 TTL（秒），过期后下次 _load_to_cache 重新从 DB 加载
     _CACHE_TTL = 300

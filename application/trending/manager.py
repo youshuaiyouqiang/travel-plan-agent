@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import random
-import re
 import time
 from pathlib import Path
 
@@ -14,21 +13,143 @@ logger = logging.getLogger(__name__)
 _CACHE_FILE = Path(__file__).resolve().parent.parent / "data" / "trending_cache.json"
 _CACHE_TTL = 1800
 
-_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/125.0.0.0 Safari/537.36"
-)
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
 # 通用新闻分类关键词（用于给热搜打标签）
 _CATEGORY_KEYWORDS = {
-    "科技": ["AI", "人工智能", "芯片", "手机", "互联网", "算法", "大模型", "算力", "5G", "6G", "量子", "机器人", "自动驾驶", "腾讯", "阿里", "字节", "华为", "苹果", "谷歌", "微软", "OpenAI", "百度", "Meta"],
-    "财经": ["股市", "A股", "基金", "央行", "降准", "降息", "利率", "GDP", "CPI", "经济", "通胀", "汇率", "美元", "人民币", "楼 市", "房价", "上市", "IPO", "市值", "比特币", "加密货币"],
-    "社会": ["警方", "事故", "救援", "地震", "洪水", "暴雨", "台风", "火灾", "遇难", "伤亡", "失踪", "调查", "通报", "警方通报"],
-    "体育": ["奥运", "世界杯", "NBA", "CBA", "中超", "足球", "篮球", "网球", "乒乓球", "羽毛球", "游泳", "田径", "冠军", "决赛", "半决赛", "联赛", "夺冠"],
-    "娱乐": ["电影", "电视剧", "综艺", "明星", "演员", "歌手", "演唱会", "票房", "首映", "出道", "离婚", "结婚", "热搜"],
-    "国际": ["美国", "俄罗斯", "乌克兰", "欧盟", "日本", "韩国", "朝鲜", "伊朗", "以色列", "巴勒斯坦", "联合国", "北约", "G7", "G20", "访问", "会晤", "峰会"],
-    "教育": ["高考", "中考", "考研", "大学", "高校", "招生", "录取", "分数", "志愿", "毕业", "就业", "招聘", "考公", "公务员"],
+    "科技": [
+        "AI",
+        "人工智能",
+        "芯片",
+        "手机",
+        "互联网",
+        "算法",
+        "大模型",
+        "算力",
+        "5G",
+        "6G",
+        "量子",
+        "机器人",
+        "自动驾驶",
+        "腾讯",
+        "阿里",
+        "字节",
+        "华为",
+        "苹果",
+        "谷歌",
+        "微软",
+        "OpenAI",
+        "百度",
+        "Meta",
+    ],
+    "财经": [
+        "股市",
+        "A股",
+        "基金",
+        "央行",
+        "降准",
+        "降息",
+        "利率",
+        "GDP",
+        "CPI",
+        "经济",
+        "通胀",
+        "汇率",
+        "美元",
+        "人民币",
+        "楼 市",
+        "房价",
+        "上市",
+        "IPO",
+        "市值",
+        "比特币",
+        "加密货币",
+    ],
+    "社会": [
+        "警方",
+        "事故",
+        "救援",
+        "地震",
+        "洪水",
+        "暴雨",
+        "台风",
+        "火灾",
+        "遇难",
+        "伤亡",
+        "失踪",
+        "调查",
+        "通报",
+        "警方通报",
+    ],
+    "体育": [
+        "奥运",
+        "世界杯",
+        "NBA",
+        "CBA",
+        "中超",
+        "足球",
+        "篮球",
+        "网球",
+        "乒乓球",
+        "羽毛球",
+        "游泳",
+        "田径",
+        "冠军",
+        "决赛",
+        "半决赛",
+        "联赛",
+        "夺冠",
+    ],
+    "娱乐": [
+        "电影",
+        "电视剧",
+        "综艺",
+        "明星",
+        "演员",
+        "歌手",
+        "演唱会",
+        "票房",
+        "首映",
+        "出道",
+        "离婚",
+        "结婚",
+        "热搜",
+    ],
+    "国际": [
+        "美国",
+        "俄罗斯",
+        "乌克兰",
+        "欧盟",
+        "日本",
+        "韩国",
+        "朝鲜",
+        "伊朗",
+        "以色列",
+        "巴勒斯坦",
+        "联合国",
+        "北约",
+        "G7",
+        "G20",
+        "访问",
+        "会晤",
+        "峰会",
+    ],
+    "教育": [
+        "高考",
+        "中考",
+        "考研",
+        "大学",
+        "高校",
+        "招生",
+        "录取",
+        "分数",
+        "志愿",
+        "毕业",
+        "就业",
+        "招聘",
+        "考公",
+        "公务员",
+    ],
     "健康": ["疫情", "新冠", "病毒", "疫苗", "医院", "病例", "感染", "确诊", "医疗", "药品", "医保"],
 }
 
@@ -101,15 +222,17 @@ async def _fetch_baidu_hot() -> list[dict]:
                     desc = item.get("desc", "").strip()
                     raw_url = item.get("rawUrl", "") or item.get("url", "")
                     hot_score = item.get("hotScore", "")
-                    results.append({
-                        "title": word,
-                        "tag": _classify(word),
-                        "summary": desc[:80] if desc else "",
-                        "content": desc or f"百度热搜：{word}",
-                        "url": raw_url,
-                        "hotScore": hot_score,
-                        "source": "baidu",
-                    })
+                    results.append(
+                        {
+                            "title": word,
+                            "tag": _classify(word),
+                            "summary": desc[:80] if desc else "",
+                            "content": desc or f"百度热搜：{word}",
+                            "url": raw_url,
+                            "hotScore": hot_score,
+                            "source": "baidu",
+                        }
+                    )
             return results
     except Exception as e:
         logger.warning("Failed to fetch baidu hot: %s", e)
@@ -134,16 +257,17 @@ async def _fetch_toutiao_hot() -> list[dict]:
                 if not title:
                     continue
                 url = item.get("Url", "") or item.get("url", "")
-                cluster_id = item.get("ClusterId", "")
-                results.append({
-                    "title": title,
-                    "tag": _classify(title),
-                    "summary": "头条热点资讯",
-                    "content": f"{title}——头条热点资讯",
-                    "url": url,
-                    "hotScore": str(item.get("HotValue", "")),
-                    "source": "toutiao",
-                })
+                results.append(
+                    {
+                        "title": title,
+                        "tag": _classify(title),
+                        "summary": "头条热点资讯",
+                        "content": f"{title}——头条热点资讯",
+                        "url": url,
+                        "hotScore": str(item.get("HotValue", "")),
+                        "source": "toutiao",
+                    }
+                )
             return results
     except Exception as e:
         logger.warning("Failed to fetch toutiao hot: %s", e)
@@ -172,15 +296,17 @@ async def _fetch_weibo_hot() -> list[dict]:
                 num = item.get("num", 0)
                 word_scheme = item.get("word_scheme", word)
                 url = f"https://s.weibo.com/weibo?q=%23{word_scheme}%23"
-                results.append({
-                    "title": note,
-                    "tag": _classify(note),
-                    "summary": f"微博{label}",
-                    "content": f"{note}——微博热搜话题",
-                    "url": url,
-                    "hotScore": str(num),
-                    "source": "weibo",
-                })
+                results.append(
+                    {
+                        "title": note,
+                        "tag": _classify(note),
+                        "summary": f"微博{label}",
+                        "content": f"{note}——微博热搜话题",
+                        "url": url,
+                        "hotScore": str(num),
+                        "source": "weibo",
+                    }
+                )
             return results
     except Exception as e:
         logger.warning("Failed to fetch weibo hot: %s", e)
@@ -209,15 +335,17 @@ async def _fetch_zhihu_hot() -> list[dict]:
                 excerpt = target.get("excerpt", "") or ""
                 detail_text = entry.get("detail_text", "")
                 url = f"https://www.zhihu.com/question/{qid}"
-                results.append({
-                    "title": title,
-                    "tag": _classify(title),
-                    "summary": excerpt[:80] if excerpt else "知乎热榜",
-                    "content": f"{title}——知乎热榜讨论。{excerpt}",
-                    "url": url,
-                    "hotScore": detail_text.replace("万热度", "万") if detail_text else "",
-                    "source": "zhihu",
-                })
+                results.append(
+                    {
+                        "title": title,
+                        "tag": _classify(title),
+                        "summary": excerpt[:80] if excerpt else "知乎热榜",
+                        "content": f"{title}——知乎热榜讨论。{excerpt}",
+                        "url": url,
+                        "hotScore": detail_text.replace("万热度", "万") if detail_text else "",
+                        "source": "zhihu",
+                    }
+                )
             return results
     except Exception as e:
         logger.warning("Failed to fetch zhihu hot: %s", e)
@@ -227,6 +355,7 @@ async def _fetch_zhihu_hot() -> list[dict]:
 async def _fetch_all_sources() -> list[dict]:
     """并发抓取所有热搜源，合并去重，按热度排序。"""
     import asyncio
+
     results = await asyncio.gather(
         _fetch_baidu_hot(),
         _fetch_toutiao_hot(),
@@ -290,7 +419,7 @@ async def get_trending_travel(*, refresh: bool = False) -> list[dict]:
 
     items: list[dict] = []
     per_source = max(1, 12 // max(1, len(by_source)))
-    for src, lst in by_source.items():
+    for _src, lst in by_source.items():
         items.extend(lst[:per_source])
     items = items[:12]
     random.shuffle(items)

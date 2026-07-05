@@ -63,10 +63,14 @@ class EarlyActionHandler:
             self._task_store.save(task)
             self._trace_store.put(
                 RunTrace(
-                    session_id=session_id, user_id=memory_scope,
-                    user_message=message, reply=reply,
-                    intent="runtime_fact", goal="answer date/time from runtime facts",
-                    tools=[], trace_steps=[],
+                    session_id=session_id,
+                    user_id=memory_scope,
+                    user_message=message,
+                    reply=reply,
+                    intent="runtime_fact",
+                    goal="answer date/time from runtime facts",
+                    tools=[],
+                    trace_steps=[],
                     events=[{"kind": "runtime_fact", "message": "Answered from runtime clock"}],
                 )
             )
@@ -92,10 +96,15 @@ class EarlyActionHandler:
             self._task_store.save(task)
             self._trace_store.put(
                 RunTrace(
-                    session_id=session_id, user_id=memory_scope,
-                    user_message=message, reply=reply,
-                    intent=prep.intent.intent.value, goal=prep.intent.goal,
-                    tools=[], memory_context="", trace_steps=[],
+                    session_id=session_id,
+                    user_id=memory_scope,
+                    user_message=message,
+                    reply=reply,
+                    intent=prep.intent.intent.value,
+                    goal=prep.intent.goal,
+                    tools=[],
+                    memory_context="",
+                    trace_steps=[],
                     events=[{"kind": "fast_reply", "message": "Handled without tools"}],
                 )
             )
@@ -107,8 +116,10 @@ class EarlyActionHandler:
             ops_result = payload
             logger.info("itinerary_confirm: bypassing LLM, directly calling generate_itinerary_overview")
             reply, itinerary_id = await self._itinerary_generator.generate_itinerary(
-                session=session, session_id=session_id,
-                user_id=memory_scope, ops_result=ops_result,
+                session=session,
+                session_id=session_id,
+                user_id=memory_scope,
+                ops_result=ops_result,
             )
             if itinerary_id:
                 task.metadata["last_itinerary_id"] = itinerary_id
@@ -120,10 +131,14 @@ class EarlyActionHandler:
             self._task_store.save(task)
             self._trace_store.put(
                 RunTrace(
-                    session_id=session_id, user_id=memory_scope,
-                    user_message=message, reply=reply,
-                    intent=prep.intent.intent.value, goal=prep.intent.goal,
-                    tools=["generate_itinerary_overview"], memory_context="",
+                    session_id=session_id,
+                    user_id=memory_scope,
+                    user_message=message,
+                    reply=reply,
+                    intent=prep.intent.intent.value,
+                    goal=prep.intent.goal,
+                    tools=["generate_itinerary_overview"],
+                    memory_context="",
                     trace_steps=[],
                     events=[{"kind": "direct_tool_call", "message": "generate_itinerary_overview called directly"}],
                 )
@@ -193,7 +208,9 @@ class EarlyActionHandler:
         if kind == "fast_reply":
             system = payload
             reply = ""
-            async for chunk in self._llm.stream_complete(system=system, messages=[{"role": "user", "content": message}]):
+            async for chunk in self._llm.stream_complete(
+                system=system, messages=[{"role": "user", "content": message}]
+            ):
                 reply += chunk
                 yield {"type": "chunk", "data": chunk}
             session.append("assistant", reply)
@@ -207,7 +224,10 @@ class EarlyActionHandler:
         if kind == "itinerary_confirm":
             ops_result = payload
             reply, itinerary_id = await self._itinerary_generator.generate_itinerary(
-                session=session, session_id=session_id, user_id=memory_scope, ops_result=ops_result,
+                session=session,
+                session_id=session_id,
+                user_id=memory_scope,
+                ops_result=ops_result,
             )
             if itinerary_id:
                 task.metadata["last_itinerary_id"] = itinerary_id

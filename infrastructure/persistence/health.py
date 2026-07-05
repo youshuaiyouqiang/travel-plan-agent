@@ -22,6 +22,7 @@ def check_health() -> HealthStatus:
     # P2-14：检查 SQLite（主存储，必检）
     try:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         conn.execute("SELECT 1").fetchone()
         results["sqlite"] = "ok"

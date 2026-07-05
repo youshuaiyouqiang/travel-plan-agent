@@ -88,7 +88,11 @@ class SessionManager:
             "delegation_started_at=excluded.delegation_started_at, "
             "delegation_last_interaction=excluded.delegation_last_interaction",
             (
-                session.session_id, session.user_id, session.summary, session.created_at, session.updated_at,
+                session.session_id,
+                session.user_id,
+                session.summary,
+                session.created_at,
+                session.updated_at,
                 json_dumps(session.disclosed_tools),
                 session.delegation_agent_id,
                 session.delegation_started_at,
@@ -125,6 +129,7 @@ class SessionManager:
         if not session:
             return None
         from dataclasses import asdict
+
         return {
             "session_id": session.session_id,
             "summary": session.summary,
@@ -170,6 +175,7 @@ class SessionManager:
     def set_delegation(self, session_id: str, agent_id: str) -> None:
         """设置委派上下文。"""
         import time
+
         session = self.get(session_id)
         session.delegation_agent_id = agent_id
         session.delegation_started_at = time.time()
@@ -224,7 +230,9 @@ class SessionManager:
         except (KeyError, IndexError):
             pass
         try:
-            delegation_last_interaction = row["delegation_last_interaction"] if "delegation_last_interaction" in row.keys() else None
+            delegation_last_interaction = (
+                row["delegation_last_interaction"] if "delegation_last_interaction" in row.keys() else None
+            )
         except (KeyError, IndexError):
             pass
 

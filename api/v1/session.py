@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from application.exceptions import (
     ConflictException,

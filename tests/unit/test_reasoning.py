@@ -1,4 +1,5 @@
 """Tests for core/reasoning.py — ReasoningEngine, TraceStep, parsing logic"""
+
 import json
 
 import pytest
@@ -122,9 +123,7 @@ class TestReasoningEngine:
 
     def _setup_mock_responses(self, mock_llm, text_responses):
         mock_llm.complete.side_effect = text_responses
-        mock_llm.complete_with_tools.side_effect = [
-            self._text_to_llm_response(t) for t in text_responses
-        ]
+        mock_llm.complete_with_tools.side_effect = [self._text_to_llm_response(t) for t in text_responses]
 
     @pytest.mark.asyncio
     async def test_final_answer_immediately(self):
@@ -146,10 +145,12 @@ class TestReasoningEngine:
         """LLM calls a tool, then returns a final answer."""
         engine, mock_llm = self._make_engine()
 
-        tool_call_response = json.dumps({
-            "tool_calls": [{"name": "echo_tool", "arguments": {"text": "hello"}}],
-            "text": "Let me echo that",
-        })
+        tool_call_response = json.dumps(
+            {
+                "tool_calls": [{"name": "echo_tool", "arguments": {"text": "hello"}}],
+                "text": "Let me echo that",
+            }
+        )
         final_response = "The echo result is: echo: hello"
 
         self._setup_mock_responses(mock_llm, [tool_call_response, final_response])
@@ -168,11 +169,14 @@ class TestReasoningEngine:
         engine should retry to force tool usage."""
         engine, mock_llm = self._make_engine()
 
-        self._setup_mock_responses(mock_llm, [
-            "Just a short answer.",
-            "Still no tool used but longer grounded answer.",
-            "Final accepted answer after forced retries.",
-        ])
+        self._setup_mock_responses(
+            mock_llm,
+            [
+                "Just a short answer.",
+                "Still no tool used but longer grounded answer.",
+                "Final accepted answer after forced retries.",
+            ],
+        )
 
         result = await engine.run(
             system_prompt="You are a helpful assistant.",
@@ -193,10 +197,12 @@ class TestReasoningEngine:
         ask_spec = ToolSpec(name="ask_user_tool", description="Ask user", category="Ask User")
         engine._tool_registry.register(bind_tool(ask_spec, _ask_handler))
 
-        tool_call_response = json.dumps({
-            "tool_calls": [{"name": "ask_user_tool", "arguments": {"question": "name?"}}],
-            "text": "Need more info",
-        })
+        tool_call_response = json.dumps(
+            {
+                "tool_calls": [{"name": "ask_user_tool", "arguments": {"question": "name?"}}],
+                "text": "Need more info",
+            }
+        )
         self._setup_mock_responses(mock_llm, [tool_call_response])
 
         with pytest.raises(AskUserNeeded) as exc_info:
@@ -218,10 +224,12 @@ class TestReasoningEngine:
         risky_spec = ToolSpec(name="run_shell", description="Run shell", category="Shell")
         engine._tool_registry.register(bind_tool(risky_spec, _risky_handler))
 
-        tool_call_response = json.dumps({
-            "tool_calls": [{"name": "run_shell", "arguments": {"command": "rm test.txt"}}],
-            "text": "Will delete file",
-        })
+        tool_call_response = json.dumps(
+            {
+                "tool_calls": [{"name": "run_shell", "arguments": {"command": "rm test.txt"}}],
+                "text": "Will delete file",
+            }
+        )
         self._setup_mock_responses(mock_llm, [tool_call_response])
 
         with pytest.raises(ConfirmationNeeded) as exc_info:
@@ -237,10 +245,12 @@ class TestReasoningEngine:
         """When the same tool call pattern is repeated 3+ times, engine should detect it."""
         engine, mock_llm = self._make_engine()
 
-        same_call = json.dumps({
-            "tool_calls": [{"name": "echo_tool", "arguments": {"text": "same"}}],
-            "text": "Trying again",
-        })
+        same_call = json.dumps(
+            {
+                "tool_calls": [{"name": "echo_tool", "arguments": {"text": "same"}}],
+                "text": "Trying again",
+            }
+        )
         self._setup_mock_responses(mock_llm, [same_call, same_call, same_call, "Final answer after duplicates"])
 
         result = await engine.run(
@@ -256,10 +266,15 @@ class TestReasoningEngine:
         """When max iterations is reached, should return a stop message."""
         engine, mock_llm = self._make_engine()
 
-        responses = [json.dumps({
-            "tool_calls": [{"name": "echo_tool", "arguments": {"text": f"call {i}"}}],
-            "text": "Keep going",
-        }) for i in range(20)]
+        responses = [
+            json.dumps(
+                {
+                    "tool_calls": [{"name": "echo_tool", "arguments": {"text": f"call {i}"}}],
+                    "text": "Keep going",
+                }
+            )
+            for i in range(20)
+        ]
         self._setup_mock_responses(mock_llm, responses)
 
         result = await engine.run(

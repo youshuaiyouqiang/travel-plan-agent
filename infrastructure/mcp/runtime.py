@@ -16,17 +16,13 @@ from infrastructure.tools.base import ToolHandler, ToolSpec, bind_tool
 MCPAdapter = Callable[[dict], Awaitable[dict]]
 _SEARCH_HEADERS = {
     "user-agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     )
 }
 
 
 def _missing_dependency_message(package: str) -> str:
-    return (
-        f"missing dependency: {package}. "
-        f"Install it with `pip install {package}` and restart Claw."
-    )
+    return f"missing dependency: {package}. Install it with `pip install {package}` and restart Claw."
 
 
 def _normalize_max_results(value: Any, default: int = 5) -> int:
@@ -294,9 +290,7 @@ async def _run_news_search(arguments: dict) -> dict:
 
 _ARXIV_API_URL = "https://export.arxiv.org/api/query"
 _ARXIV_S2_URL = "https://api.semanticscholar.org/graph/v1/paper"
-_ARXIV_HEADERS = {
-    "User-Agent": "claw7-research/1.0 (arxiv-mcp-adapter; github.com/user/claw7)"
-}
+_ARXIV_HEADERS = {"User-Agent": "claw7-research/1.0 (arxiv-mcp-adapter; github.com/user/claw7)"}
 _ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 _S2_FIELDS = (
     "title,year,authors,externalIds,"
@@ -313,6 +307,7 @@ async def _arxiv_rate_limit() -> None:
     global _arxiv_last_request
     async with _arxiv_lock:
         import time
+
         elapsed = time.monotonic() - _arxiv_last_request
         if elapsed < 3.0:
             await asyncio.sleep(3.0 - elapsed)
@@ -322,6 +317,7 @@ async def _arxiv_rate_limit() -> None:
 def _parse_arxiv_atom(xml_text: str) -> list[dict]:
     """解析 arXiv Atom XML 为论文列表。"""
     import xml.etree.ElementTree as ET
+
     results: list[dict] = []
     try:
         root = ET.fromstring(xml_text)
@@ -345,7 +341,9 @@ def _parse_arxiv_atom(xml_text: str) -> list[dict]:
                 authors.append(name_elem.text)
 
         summary_elem = entry.find("atom:summary", _ARXIV_NS)
-        abstract = summary_elem.text.strip().replace("\n", " ") if summary_elem is not None and summary_elem.text else ""
+        abstract = (
+            summary_elem.text.strip().replace("\n", " ") if summary_elem is not None and summary_elem.text else ""
+        )
 
         categories = []
         for cat in entry.findall("arxiv:primary_category", _ARXIV_NS):
@@ -363,15 +361,17 @@ def _parse_arxiv_atom(xml_text: str) -> list[dict]:
         link_elem = entry.find('atom:link[@title="pdf"]', _ARXIV_NS)
         pdf_url = link_elem.get("href") if link_elem is not None else f"http://arxiv.org/pdf/{paper_id}"
 
-        results.append({
-            "id": short_id,
-            "title": title,
-            "authors": authors,
-            "abstract": abstract,
-            "categories": categories,
-            "published": published,
-            "url": pdf_url,
-        })
+        results.append(
+            {
+                "id": short_id,
+                "title": title,
+                "authors": authors,
+                "abstract": abstract,
+                "categories": categories,
+                "published": published,
+                "url": pdf_url,
+            }
+        )
     return results
 
 
@@ -411,8 +411,11 @@ async def _run_arxiv_search(arguments: dict) -> dict:
         parts.append(f"({cat_filter})")
     if date_from or date_to:
         import time as tmod
+
         start = tmod.strftime("%Y%m%d0000", tmod.strptime(date_from, "%Y-%m-%d")) if date_from else "199107010000"
-        end = tmod.strftime("%Y%m%d2359", tmod.strptime(date_to, "%Y-%m-%d")) if date_to else tmod.strftime("%Y%m%d2359")
+        end = (
+            tmod.strftime("%Y%m%d2359", tmod.strptime(date_to, "%Y-%m-%d")) if date_to else tmod.strftime("%Y%m%d2359")
+        )
         parts.append(f"submittedDate:[{start}+TO+{end}]")
 
     search_query = " AND ".join(parts)
@@ -498,6 +501,7 @@ async def _run_citation_graph(arguments: dict) -> dict:
 
     try:
         from urllib.parse import quote
+
         s2_id = quote(f"ARXIV:{paper_id}")
         url = f"{_ARXIV_S2_URL}/{s2_id}?fields={_S2_FIELDS}"
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -510,13 +514,15 @@ async def _run_citation_graph(arguments: dict) -> dict:
             for item in items or []:
                 ext = item.get("externalIds") or {}
                 authors = [a.get("name", "") for a in item.get("authors", [])]
-                result.append({
-                    "paper_id": item.get("paperId"),
-                    "title": item.get("title", ""),
-                    "year": item.get("year"),
-                    "authors": authors,
-                    "arxiv_id": ext.get("ArXiv"),
-                })
+                result.append(
+                    {
+                        "paper_id": item.get("paperId"),
+                        "title": item.get("title", ""),
+                        "year": item.get("year"),
+                        "authors": authors,
+                        "arxiv_id": ext.get("ArXiv"),
+                    }
+                )
             return result
 
         citations = normalize(data.get("citations", []))
@@ -616,8 +622,7 @@ class MCPProxyRuntime:
             return {
                 "is_error": True,
                 "content": (
-                    "MCP tool is cataloged but no runtime adapter is configured yet: "
-                    f"{server_identifier}.{tool_name}"
+                    f"MCP tool is cataloged but no runtime adapter is configured yet: {server_identifier}.{tool_name}"
                 ),
                 "adapter_available": False,
             }
@@ -643,7 +648,4 @@ class MCPProxyRuntime:
 def build_mcp_proxy_tools(catalog: MCPCatalog, runtime: MCPProxyRuntime | None = None) -> list:
     proxy_runtime = runtime or MCPProxyRuntime(catalog=catalog)
     specs = {spec.name: spec for spec in proxy_runtime.build_specs()}
-    return [
-        bind_tool(specs[name], handler)
-        for name, handler in proxy_runtime.build_handlers().items()
-    ]
+    return [bind_tool(specs[name], handler) for name, handler in proxy_runtime.build_handlers().items()]

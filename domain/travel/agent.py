@@ -36,7 +36,7 @@ class TravelAgent(BaseAgent):
 
     def __getattr__(self, name: str):
         """委托未定义的公共方法到底层 Agent（会话/调试/记忆等），保持向后兼容。"""
-        if name.startswith('_'):
+        if name.startswith("_"):
             raise AttributeError(name)
         return getattr(self._agent, name)
 
@@ -88,9 +88,10 @@ class TravelAgent(BaseAgent):
         # 方案 2（过渡兜底）：从文本中正则提取 — TODO 后期废弃
         if not itinerary_id:
             import re
+
             # 仅在明确包含"行程概览已生成"等关键词时才提取，降低误匹配
-            if '行程概览已生成' in reply or 'itinerary_id' in reply:
-                match = re.search(r'([a-f0-9]{16})', reply, re.IGNORECASE)
+            if "行程概览已生成" in reply or "itinerary_id" in reply:
+                match = re.search(r"([a-f0-9]{16})", reply, re.IGNORECASE)
                 if match:
                     itinerary_id = match.group(1)
 
@@ -131,7 +132,9 @@ class TravelAgent(BaseAgent):
 
         return result
 
-    async def chat_stream(self, *, session_id: str, message: str, user_id: str | None = None, **kwargs) -> AsyncGenerator[dict, None]:
+    async def chat_stream(
+        self, *, session_id: str, message: str, user_id: str | None = None, **kwargs
+    ) -> AsyncGenerator[dict, None]:
         # 先发路由事件
         yield {"type": "route", "data": "travel"}
 
@@ -156,7 +159,7 @@ class TravelAgent(BaseAgent):
         anchor_to_inject = self._inject_multi_plan_anchor(reply_text)
         if anchor_to_inject != reply_text:
             # 锚点被追加了，把增量发出去
-            added = anchor_to_inject[len(reply_text):]
+            added = anchor_to_inject[len(reply_text) :]
             if added:
                 yield {"type": "chunk", "data": added}
                 reply_text = anchor_to_inject

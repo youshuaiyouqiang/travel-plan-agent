@@ -1,4 +1,5 @@
 """Tests for core/memory_extractor.py and core/memory_distiller.py"""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -132,10 +133,15 @@ class TestMemoryExtractor:
 
     def test_save_extracted(self, extractor):
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         conn.execute(
             "INSERT INTO conversations (session_id, user_id, summary, created_at) VALUES (?, ?, ?, datetime('now'))",
-            ("s1", "u1", "test", ),
+            (
+                "s1",
+                "u1",
+                "test",
+            ),
         )
         conn.commit()
         conv_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
@@ -153,10 +159,15 @@ class TestMemoryExtractor:
 
     def test_save_extracted_dedup(self, extractor):
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         conn.execute(
             "INSERT INTO conversations (session_id, user_id, summary, created_at) VALUES (?, ?, ?, datetime('now'))",
-            ("s1", "u1", "test", ),
+            (
+                "s1",
+                "u1",
+                "test",
+            ),
         )
         conn.commit()
         conv_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
@@ -196,6 +207,7 @@ class TestMemoryDistiller:
     def _seed_data_for_distillation(self, user_id="u1"):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
 
@@ -239,6 +251,7 @@ class TestMemoryDistiller:
     def test_find_candidates_no_match(self, distiller):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         conn.execute(
@@ -255,27 +268,25 @@ class TestMemoryDistiller:
 
     def test_run_distillation(self, distiller):
         from infrastructure.persistence.database import get_connection
+
         self._seed_data_for_distillation("u1")
 
         count = distiller.run_distillation("u1")
         assert count == 1
 
         conn = get_connection()
-        ltm = conn.execute(
-            "SELECT * FROM long_term_memories WHERE user_id = 'u1'"
-        ).fetchone()
+        ltm = conn.execute("SELECT * FROM long_term_memories WHERE user_id = 'u1'").fetchone()
         assert ltm is not None
         assert ltm["content"] == "喜欢吃辣"
         assert ltm["status"] == "active"
 
-        stm = conn.execute(
-            "SELECT * FROM short_term_memories WHERE user_id = 'u1'"
-        ).fetchone()
+        stm = conn.execute("SELECT * FROM short_term_memories WHERE user_id = 'u1'").fetchone()
         assert stm is None
 
     def test_run_distillation_dedup_ltm(self, distiller):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
 
@@ -306,6 +317,7 @@ class TestMemoryDistiller:
     def test_run_decay_stale(self, distiller, monkeypatch):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime, timedelta
+
         conn = get_connection()
         old_date = (datetime.utcnow() - timedelta(days=100)).isoformat()
         now = datetime.utcnow().isoformat()
@@ -329,6 +341,7 @@ class TestMemoryDistiller:
     def test_run_decay_deprecated(self, distiller, monkeypatch):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime, timedelta
+
         conn = get_connection()
         old_date = (datetime.utcnow() - timedelta(days=130)).isoformat()
         now = datetime.utcnow().isoformat()
@@ -352,6 +365,7 @@ class TestMemoryDistiller:
     def test_run_decay_stm_expired(self, distiller, monkeypatch):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime, timedelta
+
         conn = get_connection()
         old_date = (datetime.utcnow() - timedelta(days=45)).isoformat()
         now = datetime.utcnow().isoformat()
@@ -375,6 +389,7 @@ class TestMemoryDistiller:
     def test_run_decay_active_not_decayed(self, distiller, monkeypatch):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
 

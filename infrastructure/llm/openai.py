@@ -180,9 +180,7 @@ class OpenAILLM:
                 args = json.loads(tc.function.arguments) if tc.function.arguments else {}
             except (json.JSONDecodeError, ValueError):
                 args = {}
-            parsed_calls.append(
-                ToolCallResult(id=tc.id, name=tc.function.name, arguments=args)
-            )
+            parsed_calls.append(ToolCallResult(id=tc.id, name=tc.function.name, arguments=args))
 
         return LLMResponse(
             content=content,
@@ -192,9 +190,7 @@ class OpenAILLM:
 
     async def complete_json(self, *, system: str, user: str) -> dict[str, Any]:
         start = time.monotonic()
-        text: str = await self.complete(
-            system=system, messages=[{"role": "user", "content": user}]
-        )
+        text: str = await self.complete(system=system, messages=[{"role": "user", "content": user}])
         duration_ms = int((time.monotonic() - start) * 1000)
 
         if self._audit_logger:

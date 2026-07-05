@@ -1,4 +1,5 @@
 """Tests for core/task_state.py — TaskStatus, TaskRecord, TaskStateStore"""
+
 import pytest
 
 from domain.user.session.task_state import TaskStatus, TaskRecord, TaskStateStore

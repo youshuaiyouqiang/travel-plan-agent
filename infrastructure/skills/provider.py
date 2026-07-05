@@ -61,7 +61,7 @@ class FileSkillProvider(SkillProvider):
 
         try:
             content = skill_md.read_text(encoding="utf-8")
-            fm_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+            fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
             if fm_match:
                 fm = yaml.safe_load(fm_match.group(1))
                 full_name = fm.get("name", "")

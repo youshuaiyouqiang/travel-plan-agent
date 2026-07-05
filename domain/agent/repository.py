@@ -20,8 +20,15 @@ class CustomAgentRepository:
     """
 
     _ALLOWED_FIELDS = {
-        "name", "description", "icon", "system_prompt", "skills",
-        "mcp_servers", "welcome_message", "temperature", "is_public",
+        "name",
+        "description",
+        "icon",
+        "system_prompt",
+        "skills",
+        "mcp_servers",
+        "welcome_message",
+        "temperature",
+        "is_public",
         "status",
     }
 
@@ -37,7 +44,8 @@ class CustomAgentRepository:
                     mcp_servers, status, welcome_message, temperature, is_public, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    agent_id, user_id,
+                    agent_id,
+                    user_id,
                     fields.get("name", ""),
                     fields.get("description", ""),
                     fields.get("icon", "🤖"),
@@ -48,7 +56,8 @@ class CustomAgentRepository:
                     fields.get("welcome_message", ""),
                     fields.get("temperature", 0.7),
                     fields.get("is_public", False),
-                    now, now,
+                    now,
+                    now,
                 ),
             )
             conn.commit()
@@ -60,9 +69,7 @@ class CustomAgentRepository:
     def get(self, agent_id: str) -> Optional[AgentConfig]:
         conn = get_connection()
         try:
-            row = conn.execute(
-                "SELECT * FROM custom_agents WHERE id = ?", (agent_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM custom_agents WHERE id = ?", (agent_id,)).fetchone()
         finally:
             conn.close()
         return self._row_to_config(row) if row else None
@@ -117,9 +124,7 @@ class CustomAgentRepository:
 
         conn = get_connection()
         try:
-            conn.execute(
-                f"UPDATE custom_agents SET {set_clause} WHERE id = ?", values
-            )
+            conn.execute(f"UPDATE custom_agents SET {set_clause} WHERE id = ?", values)
             conn.commit()
         finally:
             conn.close()
@@ -128,9 +133,7 @@ class CustomAgentRepository:
     def delete(self, agent_id: str) -> bool:
         conn = get_connection()
         try:
-            cursor = conn.execute(
-                "DELETE FROM custom_agents WHERE id = ?", (agent_id,)
-            )
+            cursor = conn.execute("DELETE FROM custom_agents WHERE id = ?", (agent_id,))
             conn.commit()
             return cursor.rowcount > 0
         finally:

@@ -22,10 +22,6 @@ class ToolCatalog:
     def list_specs(self, categories: list[str] | None = None) -> list[ToolSpec]:
         if not categories:
             return sorted(self._specs.values(), key=lambda item: item.name)
-        allowed = [
-            spec
-            for spec in self._specs.values()
-            if spec.category in categories or spec.name in categories
-        ]
+        allowed = [spec for spec in self._specs.values() if spec.category in categories or spec.name in categories]
         target = allowed or list(self._specs.values())
         return sorted(target, key=lambda item: item.name)

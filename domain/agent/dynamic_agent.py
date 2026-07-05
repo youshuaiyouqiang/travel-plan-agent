@@ -1,9 +1,8 @@
 from __future__ import annotations
-import json
+
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Any
 
 from domain.agent.base import BaseAgent
 from domain.agent.schema import AgentConfig
@@ -11,7 +10,6 @@ from infrastructure.llm.openai import OpenAILLM
 from infrastructure.skills.provider import SkillProvider
 from infrastructure.tools.executor import ToolExecutor
 from infrastructure.tools.registry import ToolRegistry
-from infrastructure.tools.base import bind_tool
 from infrastructure.mcp.runtime import MCPProxyRuntime
 from domain.user.session.manager import SessionManager
 from domain.shared.audit.logger import AuditLogger
@@ -77,7 +75,10 @@ class DynamicAgent(BaseAgent):
 
         logger.info(
             "DynamicAgent [%s] initialized: skills=%s mcp=%s resolved_tools=%s",
-            config.id, config.skills, config.mcp_servers, self._tool_names,
+            config.id,
+            config.skills,
+            config.mcp_servers,
+            self._tool_names,
         )
 
     @property
@@ -162,9 +163,14 @@ class DynamicAgent(BaseAgent):
             logger.warning("Prompt injection detected: %s", warnings)
             if self._audit_logger:
                 self._audit_logger.log_api_boundary(
-                    session_id=session_id, user_id=user_id or "", trace_id=trace_id,
-                    direction="request", endpoint="dynamic_agent.chat", method="INTERNAL",
-                    payload=f"prompt_injection_blocked: {warnings}", agent_id=self._config.id,
+                    session_id=session_id,
+                    user_id=user_id or "",
+                    trace_id=trace_id,
+                    direction="request",
+                    endpoint="dynamic_agent.chat",
+                    method="INTERNAL",
+                    payload=f"prompt_injection_blocked: {warnings}",
+                    agent_id=self._config.id,
                 )
         message = cleaned
 
@@ -227,9 +233,14 @@ class DynamicAgent(BaseAgent):
             logger.warning("Prompt injection detected: %s", warnings)
             if self._audit_logger:
                 self._audit_logger.log_api_boundary(
-                    session_id=session_id, user_id=user_id or "", trace_id=trace_id,
-                    direction="request", endpoint="dynamic_agent.chat_stream", method="INTERNAL",
-                    payload=f"prompt_injection_blocked: {warnings}", agent_id=self._config.id,
+                    session_id=session_id,
+                    user_id=user_id or "",
+                    trace_id=trace_id,
+                    direction="request",
+                    endpoint="dynamic_agent.chat_stream",
+                    method="INTERNAL",
+                    payload=f"prompt_injection_blocked: {warnings}",
+                    agent_id=self._config.id,
                 )
         message = cleaned
 
@@ -262,7 +273,7 @@ class DynamicAgent(BaseAgent):
             ):
                 if chunk.startswith("__status__:"):
                     # 状态通知，转为 tool_status 事件
-                    yield {"type": "tool_status", "data": chunk[len("__status__:"):]}
+                    yield {"type": "tool_status", "data": chunk[len("__status__:") :]}
                 else:
                     full_reply += chunk
                     yield {"type": "chunk", "data": chunk}

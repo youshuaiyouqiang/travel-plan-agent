@@ -94,11 +94,7 @@ class MCPCatalog:
                             description=str(tool_raw.get("description", "")),
                             input_schema=dict(tool_raw.get("inputSchema", {})),
                             proxy_name=_proxy_name(
-                                str(
-                                    metadata.get("serverIdentifier")
-                                    or metadata.get("identifier")
-                                    or server_dir.name
-                                ),
+                                str(metadata.get("serverIdentifier") or metadata.get("identifier") or server_dir.name),
                                 str(tool_raw.get("name", tool_file.stem)),
                             ),
                         )
@@ -106,11 +102,7 @@ class MCPCatalog:
 
             self._servers.append(
                 MCPServerInfo(
-                    identifier=str(
-                        metadata.get("serverIdentifier")
-                        or metadata.get("identifier")
-                        or server_dir.name
-                    ),
+                    identifier=str(metadata.get("serverIdentifier") or metadata.get("identifier") or server_dir.name),
                     name=str(metadata.get("serverName") or metadata.get("name") or server_dir.name),
                     description=str(metadata.get("serverDescription", "")),
                     instructions=instructions,
@@ -218,5 +210,3 @@ class MCPCatalog:
                 score += 1
 
         return score
-
-

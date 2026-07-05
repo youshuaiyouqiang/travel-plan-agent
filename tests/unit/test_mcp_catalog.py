@@ -1,4 +1,5 @@
 """Tests for core/mcp_catalog.py — MCPCatalog, MCPToolRef, tool selection"""
+
 import json
 from pathlib import Path
 
@@ -20,7 +21,7 @@ class TestHelperFunctions:
     def test_tokenize(self):
         tokens = _tokenize("search for AI agent news")
         assert "search" in tokens
-        assert "for" in tokens    # "for" is 3 chars, {3,} matches >= 3
+        assert "for" in tokens  # "for" is 3 chars, {3,} matches >= 3
         assert "agent" in tokens
         assert "news" in tokens
         # "AI" (lowercase "ai") is 2 chars, too short for {3,}
@@ -45,12 +46,8 @@ class TestMCPCatalog:
             "serverName": "Test Server",
             "serverDescription": "A mock MCP server for testing",
         }
-        (server_dir / "SERVER_METADATA.json").write_text(
-            json.dumps(metadata), encoding="utf-8"
-        )
-        (server_dir / "INSTRUCTIONS.md").write_text(
-            "This is a test MCP server.", encoding="utf-8"
-        )
+        (server_dir / "SERVER_METADATA.json").write_text(json.dumps(metadata), encoding="utf-8")
+        (server_dir / "INSTRUCTIONS.md").write_text("This is a test MCP server.", encoding="utf-8")
 
         tools_dir = server_dir / "tools"
         tools_dir.mkdir()
@@ -60,18 +57,14 @@ class TestMCPCatalog:
             "description": "Search for information",
             "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}},
         }
-        (tools_dir / "search.json").write_text(
-            json.dumps(tool1), encoding="utf-8"
-        )
+        (tools_dir / "search.json").write_text(json.dumps(tool1), encoding="utf-8")
 
         tool2 = {
             "name": "calculate",
             "description": "Calculate mathematical expressions",
             "inputSchema": {"type": "object", "properties": {"expression": {"type": "string"}}},
         }
-        (tools_dir / "calculate.json").write_text(
-            json.dumps(tool2), encoding="utf-8"
-        )
+        (tools_dir / "calculate.json").write_text(json.dumps(tool2), encoding="utf-8")
 
         return tmp_path
 

@@ -121,16 +121,24 @@ class TaskStateStore:
             "latest_reply=excluded.latest_reply, pending_prompt=excluded.pending_prompt, "
             "trace_summary=excluded.trace_summary, metadata=excluded.metadata, updated_at=excluded.updated_at",
             (
-                task.session_id, task.user_id, task.status.value, task.goal,
-                task.latest_user_message, task.latest_reply, task.pending_prompt,
-                task.trace_summary, _json_dumps(task.metadata),
-                task.created_at, task.updated_at,
+                task.session_id,
+                task.user_id,
+                task.status.value,
+                task.goal,
+                task.latest_user_message,
+                task.latest_reply,
+                task.pending_prompt,
+                task.trace_summary,
+                _json_dumps(task.metadata),
+                task.created_at,
+                task.updated_at,
             ),
         )
         conn.commit()
 
     def snapshot(self, session_id: str, *, user_id: str) -> dict[str, Any]:
         from dataclasses import asdict
+
         task = self.get(session_id, user_id=user_id)
         return asdict(task)
 

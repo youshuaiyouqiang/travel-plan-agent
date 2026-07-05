@@ -43,6 +43,7 @@ from infrastructure.skills.provider import FileSkillProvider, SkillProvider
 @dataclass
 class AppContainer:
     """依赖注入容器 — 持有总调度及供 API 路由使用的依赖。"""
+
     orchestrator: OrchestratorAgent
     skill_provider: SkillProvider
     builtin_configs: list[AgentConfig] = field(default_factory=list)
@@ -144,12 +145,14 @@ def build_orchestrator() -> AppContainer:
     primary_llm = OpenAILLM(audit_logger=audit_logger)
     fallback_providers = []
     if settings.fallback_api_key:
-        fallback_providers.append(OpenAILLM(
-            audit_logger=audit_logger,
-            api_key=settings.fallback_api_key,
-            base_url=settings.fallback_base_url,
-            model=settings.fallback_model or None,
-        ))
+        fallback_providers.append(
+            OpenAILLM(
+                audit_logger=audit_logger,
+                api_key=settings.fallback_api_key,
+                base_url=settings.fallback_base_url,
+                model=settings.fallback_model or None,
+            )
+        )
     if fallback_providers:
         llm = FallbackLLM(providers=[primary_llm] + fallback_providers)
     else:

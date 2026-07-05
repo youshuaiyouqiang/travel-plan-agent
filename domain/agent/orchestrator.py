@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 
 # ===== 委派上下文 =====
 
+
 @dataclass
 class DelegationContext:
     """委派上下文 — 跟踪当前会话的活跃委派状态。"""
+
     agent_id: str
     status: str = "active"  # "active" | "completed" | "released"
     started_at: float = 0.0
@@ -92,9 +94,24 @@ class OrchestratorAgent(BaseAgent):
 
     # Tier 0：规则快路径
     _FAST_CHAT: set[str] = {
-        "你好", "hello", "hi", "谢谢", "thanks", "收到",
-        "嗯", "哦", "哈", "嘿", "好的", "ok", "okay",
-        "bye", "再见", "拜拜", "晚安", "早安",
+        "你好",
+        "hello",
+        "hi",
+        "谢谢",
+        "thanks",
+        "收到",
+        "嗯",
+        "哦",
+        "哈",
+        "嘿",
+        "好的",
+        "ok",
+        "okay",
+        "bye",
+        "再见",
+        "拜拜",
+        "晚安",
+        "早安",
     }
 
     def __init__(
@@ -114,7 +131,7 @@ class OrchestratorAgent(BaseAgent):
 
         # 云合配置（从 YAML 加载，运行时注入可用智能体列表）
         self._yunhe_config = self._builtin_configs.get("yunhe")
-        self._yunhe_mode = (default_agent == "yunhe" and self._yunhe_config is not None)
+        self._yunhe_mode = default_agent == "yunhe" and self._yunhe_config is not None
 
         # Agent 实例缓存
         # P2-7：缓存 key 改为 (agent_id, user_id or "")，避免跨用户复用 agent 实例
@@ -132,7 +149,8 @@ class OrchestratorAgent(BaseAgent):
 
         logger.info(
             "OrchestratorAgent: default=%s yunhe_mode=%s",
-            self._default, self._yunhe_mode,
+            self._default,
+            self._yunhe_mode,
         )
 
     # ===== 接口 =====
@@ -153,7 +171,7 @@ class OrchestratorAgent(BaseAgent):
         即使 default_agent="yunhe"，list_user_sessions/list_mcp_servers 等
         工具方法仍委托给 travel agent 的底层实现（domain/travel/core.py:Agent）。
         """
-        if name.startswith('_'):
+        if name.startswith("_"):
             raise AttributeError(name)
         agent = self._get_or_create_agent(self._utility_agent_id, None)
         return getattr(agent, name)
@@ -191,7 +209,12 @@ class OrchestratorAgent(BaseAgent):
         try:
             resp = await self._llm.complete(
                 system="你是 Claw 系统的智能路由器。判断用户消息应该交给哪个专业智能体处理。只返回智能体 ID，不要解释。无法判断返回默认值。",
-                messages=[{"role": "user", "content": f"可用智能体：\n{agents_desc}\n\n默认：{self._utility_agent_id}\n\n用户消息：{message}"}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"可用智能体：\n{agents_desc}\n\n默认：{self._utility_agent_id}\n\n用户消息：{message}",
+                    }
+                ],
             )
             agent_id = resp.strip().lower()
             if not self._agent_exists(agent_id, user_id):
@@ -226,10 +249,7 @@ class OrchestratorAgent(BaseAgent):
 
         if len(self._agent_cache) >= self._MAX_CACHE_SIZE:
             # 清理：保留 builtin agent（其 key 的 agent_id 在 _builtin_configs）
-            self._agent_cache = {
-                k: v for k, v in self._agent_cache.items()
-                if k[0] in self._builtin_configs
-            }
+            self._agent_cache = {k: v for k, v in self._agent_cache.items() if k[0] in self._builtin_configs}
         self._agent_cache[cache_key] = agent
         return agent
 
@@ -251,8 +271,7 @@ class OrchestratorAgent(BaseAgent):
 
     # ===== 云合模式：直接回复（不注入 tools） =====
 
-    async def _direct_reply(self, session_id: str, message: str,
-                            user_id: str | None) -> AsyncGenerator[dict, None]:
+    async def _direct_reply(self, session_id: str, message: str, user_id: str | None) -> AsyncGenerator[dict, None]:
         """直接 LLM 回复（不注入 tools，省 token）。"""
         system_prompt = self._build_yunhe_prompt(user_id)
         try:
@@ -325,7 +344,9 @@ class OrchestratorAgent(BaseAgent):
                 agent = self._get_or_create_agent(routed_id, user_id)
                 yield {"type": "route", "data": routed_id}
                 async for event in agent.chat_stream(
-                    session_id=session_id, message=message, user_id=user_id,
+                    session_id=session_id,
+                    message=message,
+                    user_id=user_id,
                 ):
                     yield event
                 return
@@ -345,11 +366,13 @@ class OrchestratorAgent(BaseAgent):
                     delegated_message = tool_call.arguments.get("message", message)
 
                     if not self._agent_exists(agent_id, user_id):
-                        working_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id or str(uuid.uuid4()),
-                            "content": json.dumps({"error": f"智能体 {agent_id} 不存在"}),
-                        })
+                        working_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id or str(uuid.uuid4()),
+                                "content": json.dumps({"error": f"智能体 {agent_id} 不存在"}),
+                            }
+                        )
                         continue
 
                     # 流式输出委派事件
@@ -366,11 +389,13 @@ class OrchestratorAgent(BaseAgent):
                         )
                     except Exception as e:
                         logger.error("Delegation to %s failed: %s", agent_id, e)
-                        working_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id or str(uuid.uuid4()),
-                            "content": json.dumps({"error": f"委派失败: {e}"}),
-                        })
+                        working_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id or str(uuid.uuid4()),
+                                "content": json.dumps({"error": f"委派失败: {e}"}),
+                            }
+                        )
                         continue
 
                     delegation_count += 1
@@ -398,22 +423,26 @@ class OrchestratorAgent(BaseAgent):
                         return
 
                     # final_answer: 将结果回传云合 LLM
-                    working_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id or str(uuid.uuid4()),
-                        "content": json.dumps({"agent": agent_id, "reply": reply[:4000]}, ensure_ascii=False),
-                    })
+                    working_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id or str(uuid.uuid4()),
+                            "content": json.dumps({"agent": agent_id, "reply": reply[:4000]}, ensure_ascii=False),
+                        }
+                    )
 
                     # 流式输出子智能体回复
                     yield {"type": "chunk", "data": reply}
 
                 elif tool_call.name == "list_available_agents":
                     agents_desc = self._get_all_descriptions(user_id)
-                    working_messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id or str(uuid.uuid4()),
-                        "content": json.dumps({"agents": agents_desc}, ensure_ascii=False),
-                    })
+                    working_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id or str(uuid.uuid4()),
+                            "content": json.dumps({"agents": agents_desc}, ensure_ascii=False),
+                        }
+                    )
 
             # 继续循环，让云合 LLM 看到委派结果后做下一步决策
             if delegation_count >= self._MAX_DELEGATIONS:
@@ -481,27 +510,34 @@ class OrchestratorAgent(BaseAgent):
 
     # ===== 主入口 =====
 
-    async def chat(self, *, session_id: str, message: str,
-                   user_id: str | None = None, agent_id: str | None = None,
-                   trace_id: str = "") -> dict:
+    async def chat(
+        self,
+        *,
+        session_id: str,
+        message: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        trace_id: str = "",
+    ) -> dict:
         # 云合模式：指定 agent_id 或非 yunhe 模式时路由
         if agent_id:
             agent = self._get_or_create_agent(agent_id, user_id)
-            return await agent.chat(session_id=session_id, message=message,
-                                    user_id=user_id, trace_id=trace_id)
+            return await agent.chat(session_id=session_id, message=message, user_id=user_id, trace_id=trace_id)
 
         if not self._yunhe_mode:
             routed_id = await self._route(message, user_id)
             agent = self._get_or_create_agent(routed_id, user_id)
-            return await agent.chat(session_id=session_id, message=message,
-                                    user_id=user_id, trace_id=trace_id)
+            return await agent.chat(session_id=session_id, message=message, user_id=user_id, trace_id=trace_id)
 
         # 云合模式：收集 chat_stream 事件，合成 dict 返回值
         reply_parts: list[str] = []
         status = "final_answer"
         async for event in self.chat_stream(
-            session_id=session_id, message=message,
-            user_id=user_id, agent_id=agent_id, trace_id=trace_id,
+            session_id=session_id,
+            message=message,
+            user_id=user_id,
+            agent_id=agent_id,
+            trace_id=trace_id,
         ):
             if event.get("type") == "chunk":
                 reply_parts.append(str(event.get("data", "")))
@@ -515,14 +551,23 @@ class OrchestratorAgent(BaseAgent):
             "agent_actions": [],
         }
 
-    async def chat_stream(self, *, session_id: str, message: str,
-                          user_id: str | None = None, agent_id: str | None = None,
-                          trace_id: str = "") -> AsyncGenerator[dict, None]:
+    async def chat_stream(
+        self,
+        *,
+        session_id: str,
+        message: str,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        trace_id: str = "",
+    ) -> AsyncGenerator[dict, None]:
         # 1. 指定 agent_id → 直接路由
         if agent_id:
             agent = self._get_or_create_agent(agent_id, user_id)
             async for event in agent.chat_stream(
-                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id,
+                session_id=session_id,
+                message=message,
+                user_id=user_id,
+                trace_id=trace_id,
             ):
                 yield event
             return
@@ -532,7 +577,10 @@ class OrchestratorAgent(BaseAgent):
             routed_id = await self._route(message, user_id)
             agent = self._get_or_create_agent(routed_id, user_id)
             async for event in agent.chat_stream(
-                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id,
+                session_id=session_id,
+                message=message,
+                user_id=user_id,
+                trace_id=trace_id,
             ):
                 yield event
             return
@@ -544,7 +592,10 @@ class OrchestratorAgent(BaseAgent):
         if ctx and ctx.is_active() and not self._is_delegation_expired(ctx):
             logger.info("Yunhe: forwarding to delegated agent %s", ctx.agent_id)
             async for event in self._forward_to_delegated_agent(
-                ctx, session_id, message, user_id,
+                ctx,
+                session_id,
+                message,
+                user_id,
             ):
                 yield event
             return

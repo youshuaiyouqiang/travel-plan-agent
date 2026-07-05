@@ -1,4 +1,5 @@
 """Tests for api/server.py — FastAPI endpoints"""
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
@@ -133,6 +134,7 @@ class TestRealServerStructure:
     def test_all_routes_exist(self):
         try:
             from api.server import app as real_app
+
             route_paths = [route.path for route in real_app.routes]
             assert "/api/chat" in route_paths
             assert "/api/auth/register" in route_paths

@@ -76,8 +76,10 @@ class Agent:
         self._mcp_catalog = mcp_catalog or MCPCatalog(settings.mcp_servers_dir)
         self._mcp_runtime = mcp_runtime
         self._reasoning = ReasoningEngine(
-            llm=llm, tool_registry=tool_registry,
-            tool_executor=tool_executor, audit_logger=audit_logger,
+            llm=llm,
+            tool_registry=tool_registry,
+            tool_executor=tool_executor,
+            audit_logger=audit_logger,
         )
         self._ops_classifier = ops_classifier
         self._emotion_detector = emotion_detector
@@ -87,32 +89,68 @@ class Agent:
         # Service objects
         self._cache_manager = CacheManager(reasoning=self._reasoning, dual_memory=self._dual_memory)
         self._prompt_helper = PromptHelper(dual_memory=self._dual_memory)
-        self._itinerary_generator = ItineraryGenerator(llm=self._llm, session_store=self._session_store, dual_memory=self._dual_memory)
-        self._memory_processor = MemoryProcessor(dual_memory=self._dual_memory, memory_extractor=self._memory_extractor, memory_distiller=self._memory_distiller)
+        self._itinerary_generator = ItineraryGenerator(
+            llm=self._llm, session_store=self._session_store, dual_memory=self._dual_memory
+        )
+        self._memory_processor = MemoryProcessor(
+            dual_memory=self._dual_memory,
+            memory_extractor=self._memory_extractor,
+            memory_distiller=self._memory_distiller,
+        )
         self._early_action_handler = EarlyActionHandler(
-            llm=self._llm, memory=self._memory, session_store=self._session_store,
-            task_store=self._task_store, trace_store=self._trace_store,
-            itinerary_generator=self._itinerary_generator, memory_processor=self._memory_processor,
+            llm=self._llm,
+            memory=self._memory,
+            session_store=self._session_store,
+            task_store=self._task_store,
+            trace_store=self._trace_store,
+            itinerary_generator=self._itinerary_generator,
+            memory_processor=self._memory_processor,
         )
         self._context_preparer = ContextPreparer(
-            llm=self._llm, reasoning=self._reasoning, session_store=self._session_store,
-            task_store=self._task_store, ops_classifier=self._ops_classifier,
-            emotion_detector=self._emotion_detector, prompt_builder=self._prompt_builder,
-            context_manager=self._context_manager, dual_memory=self._dual_memory,
-            mcp_catalog=self._mcp_catalog, mcp_runtime=self._mcp_runtime,
-            tool_registry=self._tool_registry, profile_manager=self._profile_manager,
-            audit_logger=self._audit_logger, cache_manager=self._cache_manager,
-            prompt_helper=self._prompt_helper, itinerary_generator=self._itinerary_generator,
+            llm=self._llm,
+            reasoning=self._reasoning,
+            session_store=self._session_store,
+            task_store=self._task_store,
+            ops_classifier=self._ops_classifier,
+            emotion_detector=self._emotion_detector,
+            prompt_builder=self._prompt_builder,
+            context_manager=self._context_manager,
+            dual_memory=self._dual_memory,
+            mcp_catalog=self._mcp_catalog,
+            mcp_runtime=self._mcp_runtime,
+            tool_registry=self._tool_registry,
+            profile_manager=self._profile_manager,
+            audit_logger=self._audit_logger,
+            cache_manager=self._cache_manager,
+            prompt_helper=self._prompt_helper,
+            itinerary_generator=self._itinerary_generator,
             memory=self._memory,
         )
 
     ChatPreparation = ChatPreparation
 
-    async def _prepare_chat_context(self, *, session_id: str, user_id: str | None, message: str, memory_scope: str, trace_id: str) -> ChatPreparation:
+    async def _prepare_chat_context(
+        self, *, session_id: str, user_id: str | None, message: str, memory_scope: str, trace_id: str
+    ) -> ChatPreparation:
         self._tool_executor.set_audit_context(session_id=session_id, user_id=memory_scope, trace_id=trace_id)
-        return await self._context_preparer.prepare(session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id)
+        return await self._context_preparer.prepare(
+            session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id
+        )
 
-    async def _finalize_chat(self, *, session_id: str, user_id: str | None, memory_scope: str, trace_id: str, start_time: float, message: str, prep: ChatPreparation, reply: str, status: str, events: list[dict]) -> None:
+    async def _finalize_chat(
+        self,
+        *,
+        session_id: str,
+        user_id: str | None,
+        memory_scope: str,
+        trace_id: str,
+        start_time: float,
+        message: str,
+        prep: ChatPreparation,
+        reply: str,
+        status: str,
+        events: list[dict],
+    ) -> None:
         session, task, intent, emotion_result = prep.session, prep.task, prep.intent, prep.emotion_result
         session.append("assistant", reply)
         self._memory.refresh_summary(session)
@@ -122,22 +160,57 @@ class Agent:
         self._cache_manager.cache_results_from_trace(task)
         task.trace_summary = self._summarize_trace()
         self._task_store.save(task)
-        self._trace_store.put(RunTrace(session_id=session_id, user_id=memory_scope, user_message=message, reply=reply, intent=intent.intent.value, goal=intent.goal, tools=prep.tools, memory_context=prep.memory_context, trace_steps=list(self._reasoning.last_trace), events=events))
+        self._trace_store.put(
+            RunTrace(
+                session_id=session_id,
+                user_id=memory_scope,
+                user_message=message,
+                reply=reply,
+                intent=intent.intent.value,
+                goal=intent.goal,
+                tools=prep.tools,
+                memory_context=prep.memory_context,
+                trace_steps=list(self._reasoning.last_trace),
+                events=events,
+            )
+        )
         logger.info("Agent reasoning complete: session_id=%s user_id=%s", session_id, memory_scope)
         if self._audit_logger:
-            self._audit_logger.log_session_complete(session_id=session_id, user_id=memory_scope, trace_id=trace_id, user_message=message, reply=reply, intent=intent.intent.value, emotion=emotion_result.emotion.value if emotion_result else "none", total_duration_ms=int((time.monotonic() - start_time) * 1000), trace_summary=self._summarize_trace())
+            self._audit_logger.log_session_complete(
+                session_id=session_id,
+                user_id=memory_scope,
+                trace_id=trace_id,
+                user_message=message,
+                reply=reply,
+                intent=intent.intent.value,
+                emotion=emotion_result.emotion.value if emotion_result else "none",
+                total_duration_ms=int((time.monotonic() - start_time) * 1000),
+                trace_summary=self._summarize_trace(),
+            )
         await self._memory_processor.process(session, session_id, memory_scope, user_id)
 
-    async def chat(self, *, session_id: str, message: str, user_id: str | None = None, trace_id: str = "") -> dict[str, str]:
+    async def chat(
+        self, *, session_id: str, message: str, user_id: str | None = None, trace_id: str = ""
+    ) -> dict[str, str]:
         memory_scope = str(user_id or session_id)
         trace_id = trace_id or uuid.uuid4().hex[:16]
         start_time = time.monotonic()
-        logger.info("Agent chat start: session_id=%s user_id=%s trace_id=%s message=%s", session_id, user_id or session_id, trace_id, message[:100])
+        logger.info(
+            "Agent chat start: session_id=%s user_id=%s trace_id=%s message=%s",
+            session_id,
+            user_id or session_id,
+            trace_id,
+            message[:100],
+        )
 
-        prep = await self._prepare_chat_context(session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id)
+        prep = await self._prepare_chat_context(
+            session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id
+        )
 
         # 处理早退动作
-        early_result = await self._early_action_handler.handle(prep=prep, session_id=session_id, user_id=user_id, memory_scope=memory_scope, message=message)
+        early_result = await self._early_action_handler.handle(
+            prep=prep, session_id=session_id, user_id=user_id, memory_scope=memory_scope, message=message
+        )
         if early_result is not None:
             return early_result
 
@@ -145,7 +218,12 @@ class Agent:
         task = prep.task
         status = "completed"
         try:
-            reply = await self._reasoning.run(system_prompt=prep.system, user_message=message, force_tool=prep.intent.force_tool, conversation_history=prep.conversation_history)
+            reply = await self._reasoning.run(
+                system_prompt=prep.system,
+                user_message=message,
+                force_tool=prep.intent.force_tool,
+                conversation_history=prep.conversation_history,
+            )
         except AskUserNeeded as exc:
             reply = exc.question
             status = "needs_user_input"
@@ -156,26 +234,61 @@ class Agent:
             task.mark_waiting(status=TaskStatus.NEEDS_CONFIRMATION, prompt=exc.prompt, reply=reply)
 
         events = [
-            {"kind": "context", "message": "Prepared context", "payload": {"trimmed": prep.prompt_context.prepared_context.was_trimmed}},
-            {"kind": "memory", "message": "Built memory context", "payload": {"has_memory": bool(prep.memory_context), "scope_id": memory_scope}},
-            {"kind": "mcp", "message": "Built MCP context", "payload": {"has_mcp": bool(prep.mcp_context), "selected_tools": [ref.proxy_name for ref in prep.selected_mcp_tools], "connected_tools": [ref.proxy_name for ref in prep.connected_mcp_tools]}},
+            {
+                "kind": "context",
+                "message": "Prepared context",
+                "payload": {"trimmed": prep.prompt_context.prepared_context.was_trimmed},
+            },
+            {
+                "kind": "memory",
+                "message": "Built memory context",
+                "payload": {"has_memory": bool(prep.memory_context), "scope_id": memory_scope},
+            },
+            {
+                "kind": "mcp",
+                "message": "Built MCP context",
+                "payload": {
+                    "has_mcp": bool(prep.mcp_context),
+                    "selected_tools": [ref.proxy_name for ref in prep.selected_mcp_tools],
+                    "connected_tools": [ref.proxy_name for ref in prep.connected_mcp_tools],
+                },
+            },
             {"kind": "result", "message": "Agent run finished", "payload": {"status": status}},
         ]
-        await self._finalize_chat(session_id=session_id, user_id=user_id, memory_scope=memory_scope, trace_id=trace_id, start_time=start_time, message=message, prep=prep, reply=reply, status=status, events=events)
+        await self._finalize_chat(
+            session_id=session_id,
+            user_id=user_id,
+            memory_scope=memory_scope,
+            trace_id=trace_id,
+            start_time=start_time,
+            message=message,
+            prep=prep,
+            reply=reply,
+            status=status,
+            events=events,
+        )
         return {"status": status, "reply": reply, "trace_id": trace_id}
 
-    async def chat_stream(self, *, session_id: str, message: str, user_id: str | None = None, trace_id: str = "") -> AsyncGenerator[dict[str, str], None]:
+    async def chat_stream(
+        self, *, session_id: str, message: str, user_id: str | None = None, trace_id: str = ""
+    ) -> AsyncGenerator[dict[str, str], None]:
         """流式聊天：工具调用阶段同步执行，最终回复阶段逐 token 流式输出。"""
         memory_scope = str(user_id or session_id)
         trace_id = trace_id or uuid.uuid4().hex[:16]
         start_time = time.monotonic()
-        logger.info("Agent chat_stream start: session_id=%s user_id=%s trace_id=%s", session_id, user_id or session_id, trace_id)
+        logger.info(
+            "Agent chat_stream start: session_id=%s user_id=%s trace_id=%s", session_id, user_id or session_id, trace_id
+        )
 
-        prep = await self._prepare_chat_context(session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id)
+        prep = await self._prepare_chat_context(
+            session_id=session_id, user_id=user_id, message=message, memory_scope=memory_scope, trace_id=trace_id
+        )
 
         # 处理早退动作（流式）
         early_handled = False
-        async for event in self._early_action_handler.handle_stream(prep=prep, session_id=session_id, user_id=user_id, memory_scope=memory_scope, message=message):
+        async for event in self._early_action_handler.handle_stream(
+            prep=prep, session_id=session_id, user_id=user_id, memory_scope=memory_scope, message=message
+        ):
             yield event
             early_handled = True
         if early_handled:
@@ -187,9 +300,14 @@ class Agent:
         status = "completed"
         full_reply = ""
         try:
-            async for chunk in self._reasoning.run_stream(system_prompt=prep.system, user_message=message, force_tool=prep.intent.force_tool, conversation_history=prep.conversation_history):
+            async for chunk in self._reasoning.run_stream(
+                system_prompt=prep.system,
+                user_message=message,
+                force_tool=prep.intent.force_tool,
+                conversation_history=prep.conversation_history,
+            ):
                 if chunk.startswith("__status__:"):
-                    yield {"type": "tool_status", "data": chunk[len("__status__:"):]}
+                    yield {"type": "tool_status", "data": chunk[len("__status__:") :]}
                 else:
                     full_reply += chunk
                     yield {"type": "chunk", "data": chunk}
@@ -205,7 +323,18 @@ class Agent:
             yield {"type": "chunk", "data": full_reply}
 
         events = [{"kind": "stream_result", "message": "Stream run finished", "payload": {"status": status}}]
-        await self._finalize_chat(session_id=session_id, user_id=user_id, memory_scope=memory_scope, trace_id=trace_id, start_time=start_time, message=message, prep=prep, reply=full_reply, status=status, events=events)
+        await self._finalize_chat(
+            session_id=session_id,
+            user_id=user_id,
+            memory_scope=memory_scope,
+            trace_id=trace_id,
+            start_time=start_time,
+            message=message,
+            prep=prep,
+            reply=full_reply,
+            status=status,
+            events=events,
+        )
         yield {"type": "done", "data": status, "trace_id": trace_id}
 
     # ===== 查询/快照 =====
@@ -226,10 +355,20 @@ class Agent:
     def list_mcp_servers(self) -> list[dict]:
         return [
             {
-                "identifier": server.identifier, "name": server.name,
-                "description": server.description, "instructions": server.instructions,
+                "identifier": server.identifier,
+                "name": server.name,
+                "description": server.description,
+                "instructions": server.instructions,
                 "tools": [
-                    {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema, "proxy_name": tool.proxy_name, "adapter_available": bool(self._mcp_runtime and self._mcp_runtime.adapter_available(tool.proxy_name))}
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "input_schema": tool.input_schema,
+                        "proxy_name": tool.proxy_name,
+                        "adapter_available": bool(
+                            self._mcp_runtime and self._mcp_runtime.adapter_available(tool.proxy_name)
+                        ),
+                    }
                     for tool in server.tools
                 ],
             }
@@ -238,7 +377,14 @@ class Agent:
 
     def select_mcp_tools(self, query: str, limit: int = 4) -> list[dict]:
         return [
-            {"server_identifier": ref.server_identifier, "server_name": ref.server_name, "tool_name": ref.tool_name, "proxy_name": ref.proxy_name, "description": ref.description, "adapter_available": bool(self._mcp_runtime and self._mcp_runtime.adapter_available(ref.proxy_name))}
+            {
+                "server_identifier": ref.server_identifier,
+                "server_name": ref.server_name,
+                "tool_name": ref.tool_name,
+                "proxy_name": ref.proxy_name,
+                "description": ref.description,
+                "adapter_available": bool(self._mcp_runtime and self._mcp_runtime.adapter_available(ref.proxy_name)),
+            }
             for ref in self._mcp_catalog.select_tool_refs(query, limit=limit)
         ]
 
@@ -246,6 +392,7 @@ class Agent:
 
     def list_user_sessions(self, user_id: str) -> list[dict]:
         from infrastructure.persistence.session_repository import SessionRepository
+
         return SessionRepository.list_by_user(user_id)
 
     def delete_session(self, session_id: str, *, user_id: str) -> None:
@@ -253,6 +400,7 @@ class Agent:
         if task.user_id != user_id:
             return
         from infrastructure.persistence.session_repository import SessionRepository
+
         SessionRepository.delete(session_id)
         self._session_store._sessions.pop(session_id, None)
         self._task_store._tasks.pop(session_id, None)

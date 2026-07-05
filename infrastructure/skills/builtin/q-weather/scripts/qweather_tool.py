@@ -33,12 +33,12 @@ async def http_get(url: str, params: dict) -> dict:
 
         full_url = f"{url}?{urlencode(params)}"
         req = Request(full_url)
-        req.add_header('Accept-Encoding', 'gzip, deflate')
-        req.add_header('User-Agent', 'QWeatherTool/1.0')
+        req.add_header("Accept-Encoding", "gzip, deflate")
+        req.add_header("User-Agent", "QWeatherTool/1.0")
 
         try:
             with urlopen(req, timeout=15) as response:
-                data = response.read().decode('utf-8')
+                data = response.read().decode("utf-8")
                 return json.loads(data)
         except HTTPError as e:
             return {"code": str(e.code), "message": str(e.reason)}
@@ -48,6 +48,7 @@ async def http_get(url: str, params: dict) -> dict:
         # 如果 urllib 失败，尝试使用 httpx（如果已安装）
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(url, params=params)
                 return response.json()
@@ -225,7 +226,7 @@ async def main():
   %(prog)s now "北京"
   %(prog)s daily "上海" --days 7
   %(prog)s hourly "101010100" --hours 24
-        """.replace("%(prog)s", "qweather_tool.py")
+        """.replace("%(prog)s", "qweather_tool.py"),
     )
     subparsers = parser.add_subparsers(dest="command", help="子命令")
 

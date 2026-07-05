@@ -17,69 +17,172 @@ logger = logging.getLogger(__name__)
 
 _TRAVEL_PATTERNS: dict[TravelIntentType, list[str]] = {
     TravelIntentType.TRIP_PLANNING: [
-        "想去", "计划去", "帮我规划", "行程", "几天", "旅游攻略",
-        "怎么安排", "旅行计划", "出游", "度假",
-        "出发地", "目的地", "出发日期", "返程",
-        "人数", "成人", "老人", "儿童", "总预算",
-        "偏好", "日游", "天行程", "晚行程",
+        "想去",
+        "计划去",
+        "帮我规划",
+        "行程",
+        "几天",
+        "旅游攻略",
+        "怎么安排",
+        "旅行计划",
+        "出游",
+        "度假",
+        "出发地",
+        "目的地",
+        "出发日期",
+        "返程",
+        "人数",
+        "成人",
+        "老人",
+        "儿童",
+        "总预算",
+        "偏好",
+        "日游",
+        "天行程",
+        "晚行程",
     ],
     TravelIntentType.DESTINATION_SEARCH: [
-        "去哪玩", "推荐目的地", "适合去哪", "有什么好玩的",
-        "旅游地点", "景点推荐", "小众目的地",
+        "去哪玩",
+        "推荐目的地",
+        "适合去哪",
+        "有什么好玩的",
+        "旅游地点",
+        "景点推荐",
+        "小众目的地",
     ],
     TravelIntentType.FLIGHT_SEARCH: [
-        "机票", "航班", "飞机", "特价机票", "直飞",
-        "转机", "廉价航空", "机票价格",
+        "机票",
+        "航班",
+        "飞机",
+        "特价机票",
+        "直飞",
+        "转机",
+        "廉价航空",
+        "机票价格",
     ],
     TravelIntentType.HOTEL_SEARCH: [
-        "酒店", "住宿", "民宿", "旅馆", "住哪",
-        "青旅", "度假村", "公寓",
+        "酒店",
+        "住宿",
+        "民宿",
+        "旅馆",
+        "住哪",
+        "青旅",
+        "度假村",
+        "公寓",
     ],
     TravelIntentType.ATTRACTION_SEARCH: [
-        "景点", "打卡", "必去", "网红", "地标",
-        "博物馆", "主题公园", "自然风光",
+        "景点",
+        "打卡",
+        "必去",
+        "网红",
+        "地标",
+        "博物馆",
+        "主题公园",
+        "自然风光",
     ],
     TravelIntentType.WEATHER_CHECK: [
-        "天气", "气温", "下雨", "穿什么", "冷不冷",
-        "热不热", "防晒", "雨季",
+        "天气",
+        "气温",
+        "下雨",
+        "穿什么",
+        "冷不冷",
+        "热不热",
+        "防晒",
+        "雨季",
     ],
     TravelIntentType.BUDGET_CALC: [
-        "预算", "花费", "多少钱", "费用", "贵不贵",
-        "穷游", "性价比", "人均",
+        "预算",
+        "花费",
+        "多少钱",
+        "费用",
+        "贵不贵",
+        "穷游",
+        "性价比",
+        "人均",
     ],
     TravelIntentType.ITINERARY_ADJUST: [
-        "改行程", "换计划", "调整", "取消", "延期",
-        "改签", "退订", "不满意", "不太满意", "换个方案",
-        "重新规划", "重新安排", "换一个", "不好",
+        "改行程",
+        "换计划",
+        "调整",
+        "取消",
+        "延期",
+        "改签",
+        "退订",
+        "不满意",
+        "不太满意",
+        "换个方案",
+        "重新规划",
+        "重新安排",
+        "换一个",
+        "不好",
     ],
     TravelIntentType.ITINERARY_CONFIRM: [
-        "满意", "就这样", "确认", "没问题",
-        "好的就这样", "ok", "OK", "确认行程",
-        "生成概览", "生成行程概览",
+        "满意",
+        "就这样",
+        "确认",
+        "没问题",
+        "好的就这样",
+        "ok",
+        "OK",
+        "确认行程",
+        "生成概览",
+        "生成行程概览",
     ],
     TravelIntentType.VISA_INFO: [
-        "签证", "护照", "入境", "免签", "落地签",
-        "签证材料", "签证费用",
+        "签证",
+        "护照",
+        "入境",
+        "免签",
+        "落地签",
+        "签证材料",
+        "签证费用",
     ],
     TravelIntentType.FOOD_RECOMMEND: [
-        "美食", "餐厅", "小吃", "吃什么", "特色菜",
-        "米其林", "夜市", "当地美食",
+        "美食",
+        "餐厅",
+        "小吃",
+        "吃什么",
+        "特色菜",
+        "米其林",
+        "夜市",
+        "当地美食",
     ],
     TravelIntentType.TRAVEL_TIPS: [
-        "注意事项", "避坑", "贴士", "攻略", "禁忌",
-        "安全", "防骗",
+        "注意事项",
+        "避坑",
+        "贴士",
+        "攻略",
+        "禁忌",
+        "安全",
+        "防骗",
     ],
     TravelIntentType.CURRENCY_CONVERT: [
-        "汇率", "换汇", "货币", "人民币", "美元",
-        "欧元", "日元", "泰铢",
+        "汇率",
+        "换汇",
+        "货币",
+        "人民币",
+        "美元",
+        "欧元",
+        "日元",
+        "泰铢",
     ],
     TravelIntentType.TRAVEL_COMPANION: [
-        "结伴", "同行", "拼团", "找人", "一起",
+        "结伴",
+        "同行",
+        "拼团",
+        "找人",
+        "一起",
         "组队",
     ],
     TravelIntentType.EMERGENCY_HELP: [
-        "紧急", "求助", "丢失", "被盗", "大使馆",
-        "报警", "急救", "领事馆",
+        "紧急",
+        "求助",
+        "丢失",
+        "被盗",
+        "大使馆",
+        "报警",
+        "急救",
+        "领事馆",
     ],
 }
 
@@ -147,9 +250,9 @@ class TravelIntentResult:
     detected_destination: str = ""
     raw_output: str = ""
     # ★ 多方案修改元数据
-    modification_scope: str = ""          # "local_reorder" | "partial_research" | "full_research" | ""
+    modification_scope: str = ""  # "local_reorder" | "partial_research" | "full_research" | ""
     affected_categories: list[str] = field(default_factory=list)  # ["hotel", "poi"] 等
-    target_plan: str = ""                 # "plan1" | "plan2" | ""
+    target_plan: str = ""  # "plan1" | "plan2" | ""
 
 
 def _extract_json(text: str) -> dict:
@@ -177,7 +280,9 @@ class TravelIntentClassifier:
 
     _FAST_CHAT = {"你好", "hello", "hi", "谢谢", "thanks", "收到", "嗯", "哦", "哈", "嘿"}
 
-    async def classify(self, message: str, conversation_history: list[dict[str, str]] | None = None) -> TravelIntentResult:
+    async def classify(
+        self, message: str, conversation_history: list[dict[str, str]] | None = None
+    ) -> TravelIntentResult:
         stripped = message.strip().lower()
         if stripped in self._FAST_CHAT or len(stripped) <= 1:
             return TravelIntentResult(
@@ -239,7 +344,9 @@ class TravelIntentClassifier:
     _CONFIRM_EXACT = {"行", "可以", "好的", "是的", "没错"}
     _NEGATION_WORDS = {"不太满意", "不满意", "不好", "不行", "不可以", "不太行", "不够好"}
 
-    def _keyword_classify(self, message: str, conversation_history: list[dict[str, str]] | None = None) -> TravelIntentResult | None:
+    def _keyword_classify(
+        self, message: str, conversation_history: list[dict[str, str]] | None = None
+    ) -> TravelIntentResult | None:
         lowered = message.lower()
         stripped = message.strip()
 
@@ -296,7 +403,9 @@ class TravelIntentClassifier:
             detected_destination=self._extract_destination(message),
         )
 
-    def _check_missing_info(self, message: str, intent: TravelIntentType, conversation_history: list[dict[str, str]] | None = None) -> list[str]:
+    def _check_missing_info(
+        self, message: str, intent: TravelIntentType, conversation_history: list[dict[str, str]] | None = None
+    ) -> list[str]:
         return self._regex_missing_info(message, intent, conversation_history=conversation_history)
 
     async def check_missing_info_with_context(
@@ -337,21 +446,20 @@ class TravelIntentClassifier:
             "你是旅行信息完整性检查器。根据对话历史判断用户是否已提供所有必要信息。\n"
             f"需要检查的字段：{field_desc}\n"
             "仅返回 JSON：\n"
-            '{\n'
+            "{\n"
             '  "missing": ["缺失的字段名列表"],\n'
             '  "reasoning": "简短判断理由"\n'
-            '}\n'
-            '规则：\n'
-            '- 中文数字也算（三天=3天，五日=5天）\n'
-            '- 相对时间也算（下个月、下周、五一、暑假）\n'
-            '- 对话历史中提到的信息也算已提供\n'
-            '- 如果信息足够，返回空列表\n'
-            '- 仅输出 JSON'
+            "}\n"
+            "规则：\n"
+            "- 中文数字也算（三天=3天，五日=5天）\n"
+            "- 相对时间也算（下个月、下周、五一、暑假）\n"
+            "- 对话历史中提到的信息也算已提供\n"
+            "- 如果信息足够，返回空列表\n"
+            "- 仅输出 JSON"
         )
 
         history_text = "\n".join(
-            f"{turn.get('role', 'user')}: {turn.get('content', '')}"
-            for turn in conversation_history[-6:]
+            f"{turn.get('role', 'user')}: {turn.get('content', '')}" for turn in conversation_history[-6:]
         )
 
         # 正则检查作为回退基准，LLM 失败时返回正则结果
@@ -365,7 +473,9 @@ class TravelIntentClassifier:
             data = _extract_json(text)
             missing = data.get("missing", [])
             result = [str(m) for m in missing if str(m) in fields]
-            logger.info("LLM missing_info check: fields=%s missing=%s reasoning=%s", fields, result, data.get("reasoning", ""))
+            logger.info(
+                "LLM missing_info check: fields=%s missing=%s reasoning=%s", fields, result, data.get("reasoning", "")
+            )
             return result
         except Exception as e:
             logger.warning("LLM missing_info check failed, falling back to regex: %s", e)
@@ -377,13 +487,55 @@ class TravelIntentClassifier:
     ]
 
     _KNOWN_DESTINATIONS = {
-        "云南", "昆明", "大理", "丽江", "西双版纳", "香格里拉",
-        "北京", "上海", "广州", "深圳", "成都", "杭州", "南京", "武汉",
-        "西安", "重庆", "长沙", "厦门", "三亚", "海口", "桂林", "阳朔",
-        "西藏", "拉萨", "新疆", "乌鲁木齐", "青岛", "大连", "苏州",
-        "黄山", "九寨沟", "张家界", "凤凰古城", "峨眉山", "稻城亚丁",
-        "泰国", "日本", "韩国", "新加坡", "马来西亚", "越南", "巴厘岛",
-        "马尔代夫", "普吉岛", "东京", "大阪", "京都", "首尔", "曼谷",
+        "云南",
+        "昆明",
+        "大理",
+        "丽江",
+        "西双版纳",
+        "香格里拉",
+        "北京",
+        "上海",
+        "广州",
+        "深圳",
+        "成都",
+        "杭州",
+        "南京",
+        "武汉",
+        "西安",
+        "重庆",
+        "长沙",
+        "厦门",
+        "三亚",
+        "海口",
+        "桂林",
+        "阳朔",
+        "西藏",
+        "拉萨",
+        "新疆",
+        "乌鲁木齐",
+        "青岛",
+        "大连",
+        "苏州",
+        "黄山",
+        "九寨沟",
+        "张家界",
+        "凤凰古城",
+        "峨眉山",
+        "稻城亚丁",
+        "泰国",
+        "日本",
+        "韩国",
+        "新加坡",
+        "马来西亚",
+        "越南",
+        "巴厘岛",
+        "马尔代夫",
+        "普吉岛",
+        "东京",
+        "大阪",
+        "京都",
+        "首尔",
+        "曼谷",
     }
 
     def _extract_destination(self, message: str) -> str:
@@ -400,7 +552,9 @@ class TravelIntentClassifier:
 
         return ""
 
-    def _regex_missing_info(self, message: str, intent: TravelIntentType, conversation_history: list[dict[str, str]] | None = None) -> list[str]:
+    def _regex_missing_info(
+        self, message: str, intent: TravelIntentType, conversation_history: list[dict[str, str]] | None = None
+    ) -> list[str]:
         combined = message
         if conversation_history:
             # 拼接历史消息和当前消息，确保当前消息的内容也被检查
@@ -408,25 +562,39 @@ class TravelIntentClassifier:
         compacted = re.sub(r"(\d)\s+(天|日|号|月|晚|人)", r"\1\2", combined)
         missing: list[str] = []
         if intent == TravelIntentType.TRIP_PLANNING:
-            if not re.search(r"去|到|飞|前往|云南|北京|上海|成都|三亚|西藏|新疆|杭州|西安|厦门|桂林|丽江|大理|昆明|西双版纳|香格里拉|目的地", compacted):
+            if not re.search(
+                r"去|到|飞|前往|云南|北京|上海|成都|三亚|西藏|新疆|杭州|西安|厦门|桂林|丽江|大理|昆明|西双版纳|香格里拉|目的地",
+                compacted,
+            ):
                 missing.append("destination")
-            if not re.search(r"从|出发|南京|北京|上海|广州|深圳|成都|杭州|合肥|武汉|长沙|重庆|昆明|厦门|青岛|大连|苏州", compacted):
+            if not re.search(
+                r"从|出发|南京|北京|上海|广州|深圳|成都|杭州|合肥|武汉|长沙|重庆|昆明|厦门|青岛|大连|苏州", compacted
+            ):
                 missing.append("origin")
             if not re.search(r"\d+天|[一两三四五六七八九十]+天|几天|多久|日游|\d+晚", compacted):
                 missing.append("duration")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|五一|十一|暑假|寒假|春节|国庆|出发日期|日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
+            if not re.search(
+                r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|五一|十一|暑假|寒假|春节|国庆|出发日期|日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚",
+                compacted,
+            ):
                 missing.append("dates")
         elif intent == TravelIntentType.FLIGHT_SEARCH:
             if not re.search(r"从|出发|南京|北京|上海|广州|深圳|成都|杭州|合肥", compacted):
                 missing.append("origin")
             if not re.search(r"到|去|飞|前往|云南|昆明|三亚|成都|西安|杭州", compacted):
                 missing.append("destination")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
+            if not re.search(
+                r"\d+月|\d+号|\d+日|什么时候|何时|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚",
+                compacted,
+            ):
                 missing.append("dates")
         elif intent == TravelIntentType.HOTEL_SEARCH:
             if not re.search(r"去|到|在|云南|昆明|三亚|成都|西安|杭州", compacted):
                 missing.append("destination")
-            if not re.search(r"\d+月|\d+号|\d+日|什么时候|何时|入住|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚", compacted):
+            if not re.search(
+                r"\d+月|\d+号|\d+日|什么时候|何时|入住|下周|下月|出发日期|明天|后天|大后天|这周末|本周末|下周末|今天|今晚",
+                compacted,
+            ):
                 missing.append("dates")
         elif intent == TravelIntentType.ATTRACTION_SEARCH:
             if not re.search(r"去|到|在|云南|昆明|三亚|成都|西安", combined):

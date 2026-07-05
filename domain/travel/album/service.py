@@ -71,6 +71,7 @@ def _match_day_index(taken_at: str | None, itinerary_id: str) -> int:
         return 0
     try:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         row = conn.execute(
             "SELECT start_date FROM itineraries WHERE id = ?",
@@ -117,7 +118,7 @@ async def _generate_ai_description(file_bytes: bytes, mime_type: str) -> tuple[s
                             "text": (
                                 "请用中文简要描述这张旅行照片的内容（一句话），"
                                 "并提取3-5个标签关键词。"
-                                "严格返回JSON格式：{\"description\": \"...\", \"tags\": [\"标签1\", \"标签2\"]}"
+                                '严格返回JSON格式：{"description": "...", "tags": ["标签1", "标签2"]}'
                             ),
                         },
                     ],
@@ -128,6 +129,7 @@ async def _generate_ai_description(file_bytes: bytes, mime_type: str) -> tuple[s
         text = response.choices[0].message.content or ""
         # 解析 JSON
         import re
+
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             data = json.loads(match.group(0))
@@ -140,15 +142,22 @@ async def _generate_ai_description(file_bytes: bytes, mime_type: str) -> tuple[s
 
 
 class AlbumService:
-
     def __init__(self):
         self.repo = AlbumRepository()
         self.album_dir = settings.data_dir / "album"
         self.album_dir.mkdir(parents=True, exist_ok=True)
 
-    async def upload(self, *, itinerary_id: str, user_id: str,
-                     file_name: str, file_bytes: bytes, mime_type: str,
-                     description: str = "", day_index: int = 0) -> Photo:
+    async def upload(
+        self,
+        *,
+        itinerary_id: str,
+        user_id: str,
+        file_name: str,
+        file_bytes: bytes,
+        mime_type: str,
+        description: str = "",
+        day_index: int = 0,
+    ) -> Photo:
         if mime_type not in ALLOWED_MIME:
             raise ValueError(f"不支持的文件类型: {mime_type}")
         if len(file_bytes) > MAX_FILE_SIZE:
@@ -157,6 +166,7 @@ class AlbumService:
         # 验证图片合法性
         try:
             from PIL import Image
+
             img = Image.open(io.BytesIO(file_bytes))
             img.verify()
         except Exception:
@@ -164,6 +174,7 @@ class AlbumService:
         # 重新打开用于后续操作（verify 后需重新加载）
         try:
             from PIL import Image as PILImage
+
             PILImage.open(io.BytesIO(file_bytes))
         except Exception:
             raise ValueError("文件不是有效的图片")
@@ -236,10 +247,15 @@ class AlbumService:
             raise ValueError("照片不存在")
         return photo
 
-    def update_photo(self, photo_id: int, *, description: str | None = None,
-                     day_index: int | None = None, tags: list[str] | None = None) -> bool:
-        return self.repo.update_photo(photo_id, description=description,
-                                      day_index=day_index, tags=tags)
+    def update_photo(
+        self,
+        photo_id: int,
+        *,
+        description: str | None = None,
+        day_index: int | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
+        return self.repo.update_photo(photo_id, description=description, day_index=day_index, tags=tags)
 
     def get_all_tags(self, itinerary_id: str) -> list[str]:
         return self.repo.get_all_tags(itinerary_id)
@@ -256,9 +272,7 @@ class AlbumService:
         from infrastructure.llm.openai import OpenAILLM
 
         conn = get_connection()
-        itin_row = conn.execute(
-            "SELECT * FROM itineraries WHERE id = ?", (itinerary_id,)
-        ).fetchone()
+        itin_row = conn.execute("SELECT * FROM itineraries WHERE id = ?", (itinerary_id,)).fetchone()
         if not itin_row:
             raise ValueError("行程不存在")
 
@@ -312,6 +326,7 @@ class AlbumService:
     def _create_thumbnail(self, src: Path, dst: Path) -> None:
         try:
             from PIL import Image
+
             img = Image.open(src)
             img.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE))
             img.save(dst)

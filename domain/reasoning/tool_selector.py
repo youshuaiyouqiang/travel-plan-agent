@@ -72,7 +72,4 @@ class ToolSelector:
     ) -> list[ToolSpec]:
         """按类别筛选工具。"""
         disclosed = already_disclosed or set()
-        return [
-            s for s in all_specs
-            if s.name not in disclosed and s.category.lower() == category.lower()
-        ]
+        return [s for s in all_specs if s.name not in disclosed and s.category.lower() == category.lower()]

@@ -20,8 +20,9 @@ def _run_amap(args: list[str]) -> dict:
         return {"is_error": True, "content": "AMAP_WEBSERVICE_KEY 环境变量未设置，无法使用高德地图服务"}
     cmd = ["python", _SCRIPT] + args
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
-                                env={**os.environ, "AMAP_WEBSERVICE_KEY": AMAP_KEY})
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, env={**os.environ, "AMAP_WEBSERVICE_KEY": AMAP_KEY}
+        )
         if result.returncode != 0:
             return {"is_error": True, "content": f"高德地图调用失败: {result.stderr[:500]}"}
         try:
@@ -29,7 +30,38 @@ def _run_amap(args: list[str]) -> dict:
             # 检查高德 API 返回的业务错误
             status = str(data.get("status", ""))
             infocode = str(data.get("infocode", ""))
-            if status == "0" or infocode in ("10009", "10001", "10002", "10003", "10004", "10005", "10006", "10007", "10008", "10010", "10011", "10012", "10013", "10014", "10015", "10016", "10017", "10019", "10020", "10021", "10022", "10023", "10024", "10025", "10026", "10027", "10028", "10029", "10030", "10031"):
+            if status == "0" or infocode in (
+                "10009",
+                "10001",
+                "10002",
+                "10003",
+                "10004",
+                "10005",
+                "10006",
+                "10007",
+                "10008",
+                "10010",
+                "10011",
+                "10012",
+                "10013",
+                "10014",
+                "10015",
+                "10016",
+                "10017",
+                "10019",
+                "10020",
+                "10021",
+                "10022",
+                "10023",
+                "10024",
+                "10025",
+                "10026",
+                "10027",
+                "10028",
+                "10029",
+                "10030",
+                "10031",
+            ):
                 info = data.get("info", "未知错误")
                 error_code = data.get("infocode", "")
                 logger.warning("Amap API error: info=%s infocode=%s", info, error_code)

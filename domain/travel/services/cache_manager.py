@@ -31,17 +31,43 @@ class CacheManager:
     }
 
     _CORE_CHANGE_KEYWORDS = [
-        "出发地", "从哪", "从哪出发", "从哪里", "换个出发",
-        "目的地", "去哪", "去哪里", "换个目的", "改去",
-        "出发日期", "出发时间", "改日期", "换个日期", "改时间",
-        "返程", "回程", "返回时间", "改返程",
+        "出发地",
+        "从哪",
+        "从哪出发",
+        "从哪里",
+        "换个出发",
+        "目的地",
+        "去哪",
+        "去哪里",
+        "换个目的",
+        "改去",
+        "出发日期",
+        "出发时间",
+        "改日期",
+        "换个日期",
+        "改时间",
+        "返程",
+        "回程",
+        "返回时间",
+        "改返程",
     ]
 
     _LOCAL_CHANGE_KEYWORDS = [
-        "换个酒店", "换酒店", "不住", "酒店不好",
-        "换个景点", "换景点", "不要这个景点", "景点不好",
-        "行程太紧", "太赶", "太累", "轻松一点",
-        "换个餐厅", "换餐厅", "不想吃",
+        "换个酒店",
+        "换酒店",
+        "不住",
+        "酒店不好",
+        "换个景点",
+        "换景点",
+        "不要这个景点",
+        "景点不好",
+        "行程太紧",
+        "太赶",
+        "太累",
+        "轻松一点",
+        "换个餐厅",
+        "换餐厅",
+        "不想吃",
     ]
 
     def __init__(
@@ -87,11 +113,7 @@ class CacheManager:
             return
 
         # ★ 优先使用 LLM 分类结果中的 modification_scope
-        if (
-            ops_result
-            and ops_result.intent == TravelIntentType.ITINERARY_ADJUST
-            and ops_result.modification_scope
-        ):
+        if ops_result and ops_result.intent == TravelIntentType.ITINERARY_ADJUST and ops_result.modification_scope:
             scope = ops_result.modification_scope
             categories = ops_result.affected_categories
 
@@ -102,7 +124,9 @@ class CacheManager:
             elif scope == "partial_research" and categories:
                 for cat in categories:
                     task.invalidate_cache(cat)
-                logger.info("Cache partial invalidated: %s (LLM classified) for session %s", categories, task.session_id)
+                logger.info(
+                    "Cache partial invalidated: %s (LLM classified) for session %s", categories, task.session_id
+                )
                 return
             elif scope == "local_reorder":
                 # 缓存不动，LLM 纯重排

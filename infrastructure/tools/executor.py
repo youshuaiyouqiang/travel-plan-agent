@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 import traceback as traceback_mod
-from infrastructure.tools.policy import ToolPolicy,PolicyMode
+from infrastructure.tools.policy import ToolPolicy, PolicyMode
 from infrastructure.tools.registry import ToolRegistry
 from domain.shared.audit.context import AuditContext
 from domain.shared.types import ToolCall
 
 logger = logging.getLogger(__name__)
+
 
 class ToolExecutor:
     def __init__(self, *, registry: ToolRegistry, policy: ToolPolicy, audit_logger=None) -> None:
@@ -123,5 +124,3 @@ class ToolExecutor:
                     error_traceback=tb_text,
                 )
         return results
-
-

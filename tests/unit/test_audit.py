@@ -45,6 +45,7 @@ class TestAuditLogger:
             trace_id="trace-1",
         )
         import datetime, json
+
         log_file = tmp_path / f"audit-{datetime.datetime.utcnow().strftime('%Y-%m-%d')}.jsonl"
         assert log_file.exists()
         line = log_file.read_text(encoding="utf-8").strip()
@@ -61,5 +62,6 @@ class TestAuditLogger:
             user_id="u1",
         )
         import datetime
+
         log_file = tmp_path / f"audit-{datetime.datetime.utcnow().strftime('%Y-%m-%d')}.jsonl"
         assert not log_file.exists()

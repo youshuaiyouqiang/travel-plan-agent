@@ -46,6 +46,7 @@ def answer_date_or_time_query(message: str) -> str | None:
     if any(marker in text for marker in date_markers) or "date" == lowered:
         return f"今天是{now.year}年{now.month}月{now.day}日，{weekday}。"
     if any(marker in text for marker in time_markers):
-        return f"现在是{now.year}年{now.month}月{now.day}日 {now.hour:02d}:{now.minute:02d}:{now.second:02d}，{weekday}。"
+        return (
+            f"现在是{now.year}年{now.month}月{now.day}日 {now.hour:02d}:{now.minute:02d}:{now.second:02d}，{weekday}。"
+        )
     return None
-

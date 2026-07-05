@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel, Field
 
 from application.dto.request.itinerary import (
     CheckinActivityRequest,
@@ -14,7 +13,6 @@ from application.dto.request.itinerary import (
     UpdateItineraryRequest,
 )
 from application.exceptions import (
-    ForbiddenException,
     NotFoundException,
     UnauthorizedException,
     ValidationException,
@@ -34,6 +32,7 @@ def _user_owns_itinerary(user_id: str, itin) -> bool:
         return True
     if itin.session_id:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         row = conn.execute(
             "SELECT 1 FROM tasks WHERE user_id = ? AND session_id = ? LIMIT 1",
@@ -43,6 +42,7 @@ def _user_owns_itinerary(user_id: str, itin) -> bool:
             return True
     if itin.user_id:
         from domain.user.auth.auth import UserStore
+
         us = UserStore()
         existing = us.get_by_id(itin.user_id)
         if not existing:
@@ -59,6 +59,7 @@ async def create_itinerary(req: CreateItineraryRequest, request: Request) -> dic
     days_data = req.days
     if days_data:
         from domain.travel.itinerary.schema import Itinerary as Itin, DayPlan, Activity
+
         itin = Itin(
             user_id=user_id,
             session_id=req.session_id,
@@ -115,6 +116,7 @@ async def list_itineraries(request: Request) -> dict:
     items = _itinerary_repo.list_itineraries(user_id)
     seen_ids = {i.id for i in items}
     from infrastructure.persistence.database import get_connection
+
     conn = get_connection()
     session_rows = conn.execute(
         "SELECT DISTINCT session_id FROM tasks WHERE user_id = ? AND session_id != ''",
@@ -130,6 +132,7 @@ async def list_itineraries(request: Request) -> dict:
         ).fetchall()
         for r in session_itins:
             from domain.travel.itinerary.schema import Itinerary
+
             itin = Itinerary.from_row(dict(r))
             if itin.id not in seen_ids:
                 items.append(itin)
@@ -150,39 +153,41 @@ async def compare_itineraries(req: CompareItinerariesRequest, request: Request) 
             continue
         total_budget = sum(a.cost for d in itin.days for a in d.activities)
         total_actual = sum(a.actual_cost for d in itin.days for a in d.activities)
-        results.append({
-            "id": itin.id,
-            "title": itin.title,
-            "destination": itin.destination,
-            "start_date": itin.start_date,
-            "end_date": itin.end_date,
-            "budget_text": itin.budget,
-            "budget_total": total_budget,
-            "actual_total": total_actual,
-            "days_count": len(itin.days),
-            "activities_count": sum(len(d.activities) for d in itin.days),
-            "days": [
-                {
-                    "day_index": d.day_index,
-                    "date": d.date,
-                    "title": d.title,
-                    "summary": d.summary,
-                    "budget": sum(a.cost for a in d.activities),
-                    "actual": sum(a.actual_cost for a in d.activities),
-                    "activities": [
-                        {
-                            "time_slot": a.time_slot,
-                            "title": a.title,
-                            "location": a.location,
-                            "cost": a.cost,
-                            "actual_cost": a.actual_cost,
-                        }
-                        for a in d.activities
-                    ],
-                }
-                for d in itin.days
-            ],
-        })
+        results.append(
+            {
+                "id": itin.id,
+                "title": itin.title,
+                "destination": itin.destination,
+                "start_date": itin.start_date,
+                "end_date": itin.end_date,
+                "budget_text": itin.budget,
+                "budget_total": total_budget,
+                "actual_total": total_actual,
+                "days_count": len(itin.days),
+                "activities_count": sum(len(d.activities) for d in itin.days),
+                "days": [
+                    {
+                        "day_index": d.day_index,
+                        "date": d.date,
+                        "title": d.title,
+                        "summary": d.summary,
+                        "budget": sum(a.cost for a in d.activities),
+                        "actual": sum(a.actual_cost for a in d.activities),
+                        "activities": [
+                            {
+                                "time_slot": a.time_slot,
+                                "title": a.title,
+                                "location": a.location,
+                                "cost": a.cost,
+                                "actual_cost": a.actual_cost,
+                            }
+                            for a in d.activities
+                        ],
+                    }
+                    for d in itin.days
+                ],
+            }
+        )
     if len(results) < 2:
         raise ValidationException("有效行程不足2个")
     return {"itineraries": results}
@@ -312,23 +317,25 @@ async def expense_summary(itinerary_id: str, request: Request) -> dict:
         day_actual = sum(a.actual_cost for a in day.activities)
         total_budget += day_budget
         total_actual += day_actual
-        day_summaries.append({
-            "day_index": day.day_index,
-            "date": day.date,
-            "title": day.title,
-            "budget": day_budget,
-            "actual": day_actual,
-            "activities": [
-                {
-                    "id": a.id,
-                    "title": a.title,
-                    "budget": a.cost,
-                    "actual": a.actual_cost,
-                    "checked_in": a.checked_in,
-                }
-                for a in day.activities
-            ],
-        })
+        day_summaries.append(
+            {
+                "day_index": day.day_index,
+                "date": day.date,
+                "title": day.title,
+                "budget": day_budget,
+                "actual": day_actual,
+                "activities": [
+                    {
+                        "id": a.id,
+                        "title": a.title,
+                        "budget": a.cost,
+                        "actual": a.actual_cost,
+                        "checked_in": a.checked_in,
+                    }
+                    for a in day.activities
+                ],
+            }
+        )
     budget_str = itin.budget or ""
     budget_num = 0.0
     for seg in budget_str.replace("约", "").replace("元", "").replace("/人", "").replace(",", "").split():

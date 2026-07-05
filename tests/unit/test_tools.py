@@ -1,4 +1,5 @@
 """Tests for tools layer — base, registry, catalog, policy, executor, interaction"""
+
 import pytest
 
 from infrastructure.tools.base import ToolSpec, Tool, ToolHandler, bind_tool
@@ -11,6 +12,7 @@ from domain.shared.types import ToolCall
 
 
 # ── base.py ──
+
 
 class TestToolSpec:
     def test_construction(self):
@@ -48,9 +50,11 @@ class TestBindTool:
 
 # ── registry.py ──
 
+
 class TestToolRegistry:
     def test_register_and_get(self):
         registry = ToolRegistry()
+
         async def handler(args: dict) -> dict:
             return {"content": "ok"}
 
@@ -66,6 +70,7 @@ class TestToolRegistry:
 
     def test_list_names_no_hints(self):
         registry = ToolRegistry()
+
         async def handler(args: dict) -> dict:
             return {"content": "ok"}
 
@@ -77,6 +82,7 @@ class TestToolRegistry:
 
     def test_list_names_with_hints(self):
         registry = ToolRegistry()
+
         async def handler(args: dict) -> dict:
             return {"content": "ok"}
 
@@ -89,6 +95,7 @@ class TestToolRegistry:
 
     def test_list_names_exclude_categories(self):
         registry = ToolRegistry()
+
         async def handler(args: dict) -> dict:
             return {"content": "ok"}
 
@@ -102,6 +109,7 @@ class TestToolRegistry:
 
 
 # ── catalog.py ──
+
 
 class TestToolCatalog:
     def test_register_and_list(self):
@@ -131,6 +139,7 @@ class TestToolCatalog:
 
 
 # ── policy.py ──
+
 
 class TestToolPolicy:
     def test_allow_normal_tool(self):
@@ -180,6 +189,7 @@ class TestPolicyDecision:
 
 
 # ── executor.py ──
+
 
 class TestToolExecutor:
     @pytest.mark.asyncio
@@ -289,6 +299,7 @@ class TestToolExecutor:
 
 
 # ── interaction.py ──
+
 
 class TestInteraction:
     def test_specs(self):

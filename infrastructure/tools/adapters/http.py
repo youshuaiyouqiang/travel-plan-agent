@@ -3,6 +3,7 @@ import httpx
 from config import settings
 from infrastructure.tools.base import ToolHandler, ToolSpec, bind_tool
 
+
 async def _fetch_url(arguments: dict) -> dict:
     if not settings.allow_http:
         return {"is_error": True, "content": "http disabled"}
@@ -33,6 +34,7 @@ async def _fetch_url(arguments: dict) -> dict:
         "url": str(response.url),
     }
 
+
 def get_http_specs() -> list[ToolSpec]:
     return [
         ToolSpec(
@@ -41,6 +43,8 @@ def get_http_specs() -> list[ToolSpec]:
             category="Web",
         )
     ]
+
+
 def get_http_handlers() -> dict[str, ToolHandler]:
     return {"fetch_url": _fetch_url}
 

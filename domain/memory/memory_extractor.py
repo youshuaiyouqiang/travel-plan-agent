@@ -97,15 +97,19 @@ class MemoryExtractor:
                 experience_tag = str(item.get("experience_tag", "")).strip().lower()
                 if experience_tag not in ("success", "failure"):
                     experience_tag = ""
-            extracted.append(ExtractedMemory(
-                category=category,
-                content=content,
-                experience_tag=experience_tag,
-            ))
+            extracted.append(
+                ExtractedMemory(
+                    category=category,
+                    content=content,
+                    experience_tag=experience_tag,
+                )
+            )
 
         logger.info(
             "Memory extraction: session=%s user=%s extracted=%d",
-            session_id, user_id, len(extracted),
+            session_id,
+            user_id,
+            len(extracted),
         )
         return extracted
 
@@ -143,8 +147,7 @@ class MemoryExtractor:
                     "(user_id, category, content, source_conv_id, experience_tag, "
                     "extraction_count, last_accessed_at, created_at) "
                     "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    (user_id, mem.category, mem.content, conversation_id,
-                     mem.experience_tag, now, now),
+                    (user_id, mem.category, mem.content, conversation_id, mem.experience_tag, now, now),
                 )
                 saved_ids.append(cursor.lastrowid)
 

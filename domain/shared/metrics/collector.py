@@ -47,9 +47,7 @@ def _init_metrics():
 
 def record_request(session_id: str, intent: str, status: str) -> None:
     if "request_count" in _collectors:
-        _collectors["request_count"].labels(
-            session_id=session_id, intent=intent, status=status
-        ).inc()
+        _collectors["request_count"].labels(session_id=session_id, intent=intent, status=status).inc()
 
 
 def observe_latency(intent: str, duration: float) -> None:

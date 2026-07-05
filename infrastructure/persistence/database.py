@@ -81,6 +81,7 @@ def _get_applied_versions(conn: Any) -> set[int]:
 # Migration upgrade / downgrade functions
 # ---------------------------------------------------------------------------
 
+
 def _upgrade_1(conn: Any) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(long_term_memories)").fetchall()}
     if "experience_tag" not in existing:
@@ -90,7 +91,9 @@ def _upgrade_1(conn: Any) -> None:
 
 
 def _downgrade_1(conn: Any) -> None:
-    logger.warning("Migration 1 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for experience_tag")
+    logger.warning(
+        "Migration 1 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for experience_tag"
+    )
 
 
 def _upgrade_2(conn: Any) -> None:
@@ -102,7 +105,9 @@ def _upgrade_2(conn: Any) -> None:
 
 
 def _downgrade_2(conn: Any) -> None:
-    logger.warning("Migration 2 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for actual_cost")
+    logger.warning(
+        "Migration 2 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for actual_cost"
+    )
 
 
 def _upgrade_3(conn: Any) -> None:
@@ -148,7 +153,9 @@ def _upgrade_4(conn: Any) -> None:
 
 
 def _downgrade_4(conn: Any) -> None:
-    logger.warning("Migration 4 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for mcp_servers / status")
+    logger.warning(
+        "Migration 4 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for mcp_servers / status"
+    )
 
 
 def _upgrade_5(conn: Any) -> None:
@@ -172,7 +179,9 @@ def _upgrade_5(conn: Any) -> None:
 
 
 def _downgrade_5(conn: Any) -> None:
-    logger.warning("Migration 5 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for delegation / disclosed columns")
+    logger.warning(
+        "Migration 5 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for delegation / disclosed columns"
+    )
 
 
 def _upgrade_6(conn: Any) -> None:
@@ -237,9 +246,7 @@ def _upgrade_8(conn: Any) -> None:
     if "user_id" not in s_cols:
         conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
         conn.commit()
-        rows = conn.execute(
-            "SELECT DISTINCT session_id, user_id FROM tasks WHERE user_id != ''"
-        ).fetchall()
+        rows = conn.execute("SELECT DISTINCT session_id, user_id FROM tasks WHERE user_id != ''").fetchall()
         for row in rows:
             conn.execute(
                 "UPDATE sessions SET user_id = ? WHERE session_id = ?",
@@ -252,7 +259,9 @@ def _upgrade_8(conn: Any) -> None:
 
 
 def _downgrade_8(conn: Any) -> None:
-    logger.warning("Migration 8 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for user_id (data migration, cannot reverse)")
+    logger.warning(
+        "Migration 8 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for user_id (data migration, cannot reverse)"
+    )
 
 
 def _upgrade_9(conn: Any) -> None:
@@ -276,7 +285,9 @@ def _upgrade_9(conn: Any) -> None:
 
 
 def _downgrade_9(conn: Any) -> None:
-    logger.warning("Migration 9 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for multi-plan columns")
+    logger.warning(
+        "Migration 9 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for multi-plan columns"
+    )
 
 
 def _upgrade_10(conn: Any) -> None:
@@ -292,7 +303,9 @@ def _upgrade_10(conn: Any) -> None:
 
 
 def _downgrade_10(conn: Any) -> None:
-    logger.warning("Migration 10 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for confirmed_plan / confirmed_at")
+    logger.warning(
+        "Migration 10 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for confirmed_plan / confirmed_at"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +402,7 @@ def _run_migrations(conn: Any) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def init_db(db_path: str | Path | None = None) -> None:
     conn = get_connection(db_path)
     conn.executescript(_SCHEMA)
@@ -438,12 +452,9 @@ def get_migration_status(conn: sqlite3.Connection | None = None) -> dict[str, An
     if conn is None:
         conn = get_connection()
     _ensure_migrations_table(conn)
-    rows = conn.execute(
-        "SELECT version, description, applied_at FROM schema_migrations ORDER BY version"
-    ).fetchall()
+    rows = conn.execute("SELECT version, description, applied_at FROM schema_migrations ORDER BY version").fetchall()
     applied = [
-        {"version": row["version"], "description": row["description"], "applied_at": row["applied_at"]}
-        for row in rows
+        {"version": row["version"], "description": row["description"], "applied_at": row["applied_at"]} for row in rows
     ]
     current_version = max((row["version"] for row in rows), default=0)
     pending = [m for m in _MIGRATIONS if m["version"] not in {row["version"] for row in rows}]
@@ -451,10 +462,7 @@ def get_migration_status(conn: sqlite3.Connection | None = None) -> dict[str, An
         "current_version": current_version,
         "applied": applied,
         "pending_count": len(pending),
-        "pending": [
-            {"version": m["version"], "description": m["description"]}
-            for m in pending
-        ],
+        "pending": [{"version": m["version"], "description": m["description"]} for m in pending],
     }
 
 

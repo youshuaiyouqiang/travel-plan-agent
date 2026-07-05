@@ -16,14 +16,11 @@ class PreparedContext:
 class ContextManager:
     """Prepare bounded session context for prompt building."""
 
-    def prepare(self,
-                session: Session,
-                *,
-                current_message: str | None = None) -> PreparedContext:
+    def prepare(self, session: Session, *, current_message: str | None = None) -> PreparedContext:
         turns = list(session.turns)
 
-        #当前用户消息会单独传入推理循环。
-        #若为同一条用户消息，需排除末尾轮次，避免内容重复。
+        # 当前用户消息会单独传入推理循环。
+        # 若为同一条用户消息，需排除末尾轮次，避免内容重复。
         if current_message is not None and turns:
             last = turns[-1]
             if last.role == "user" and last.content == current_message:
@@ -51,7 +48,4 @@ class ContextManager:
                 was_trimmed = True
 
         summary = session.summary.strip()
-        return PreparedContext(
-            summary=summary,
-            recent_turns=turns,
-            was_trimmed=was_trimmed)
+        return PreparedContext(summary=summary, recent_turns=turns, was_trimmed=was_trimmed)

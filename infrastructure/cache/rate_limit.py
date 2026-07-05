@@ -18,6 +18,7 @@ class RateLimiter:
         if redis_url:
             try:
                 import redis
+
                 self._redis = redis.from_url(redis_url)
                 self._redis.ping()
                 logger.info("Rate limiter: Redis connected at %s", redis_url)
@@ -77,9 +78,6 @@ class RateLimiter:
         if now - self._last_cleanup < 300:
             return
         self._last_cleanup = now
-        expired_keys = [
-            k for k, v in self._counters.items()
-            if now - v.get("window_start", 0) > window * 2
-        ]
+        expired_keys = [k for k, v in self._counters.items() if now - v.get("window_start", 0) > window * 2]
         for k in expired_keys:
             del self._counters[k]

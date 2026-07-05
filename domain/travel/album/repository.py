@@ -11,16 +11,24 @@ logger = logging.getLogger(__name__)
 
 
 class AlbumRepository:
-
-    def add_photo(self, *, itinerary_id: str, user_id: str,
-                  file_name: str, file_size: int, mime_type: str,
-                  storage_path: str, thumbnail_path: str,
-                  description: str = "", day_index: int = 0,
-                  tags: list[str] | None = None,
-                  ai_description: str = "",
-                  latitude: float | None = None,
-                  longitude: float | None = None,
-                  is_cover: bool = False) -> Photo:
+    def add_photo(
+        self,
+        *,
+        itinerary_id: str,
+        user_id: str,
+        file_name: str,
+        file_size: int,
+        mime_type: str,
+        storage_path: str,
+        thumbnail_path: str,
+        description: str = "",
+        day_index: int = 0,
+        tags: list[str] | None = None,
+        ai_description: str = "",
+        latitude: float | None = None,
+        longitude: float | None = None,
+        is_cover: bool = False,
+    ) -> Photo:
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         tags_json = json.dumps(tags or [], ensure_ascii=False)
@@ -30,10 +38,23 @@ class AlbumRepository:
             "description, storage_path, thumbnail_path, day_index, "
             "tags, ai_description, latitude, longitude, is_cover, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (itinerary_id, user_id, file_name, file_size, mime_type,
-             description, storage_path, thumbnail_path, day_index,
-             tags_json, ai_description, latitude, longitude,
-             1 if is_cover else 0, now),
+            (
+                itinerary_id,
+                user_id,
+                file_name,
+                file_size,
+                mime_type,
+                description,
+                storage_path,
+                thumbnail_path,
+                day_index,
+                tags_json,
+                ai_description,
+                latitude,
+                longitude,
+                1 if is_cover else 0,
+                now,
+            ),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM album_photos WHERE rowid = last_insert_rowid()").fetchone()
@@ -41,9 +62,7 @@ class AlbumRepository:
 
     def get_photo(self, photo_id: int) -> Photo | None:
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM album_photos WHERE id = ?", (photo_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM album_photos WHERE id = ?", (photo_id,)).fetchone()
         if not row:
             return None
         return Photo.from_row(dict(row))
@@ -64,9 +83,7 @@ class AlbumRepository:
 
     def delete_photo(self, photo_id: int) -> bool:
         conn = get_connection()
-        cursor = conn.execute(
-            "DELETE FROM album_photos WHERE id = ?", (photo_id,)
-        )
+        cursor = conn.execute("DELETE FROM album_photos WHERE id = ?", (photo_id,))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -98,8 +115,14 @@ class AlbumRepository:
         ).fetchone()
         return Photo.from_row(dict(row)) if row else None
 
-    def update_photo(self, photo_id: int, *, description: str | None = None,
-                     day_index: int | None = None, tags: list[str] | None = None) -> bool:
+    def update_photo(
+        self,
+        photo_id: int,
+        *,
+        description: str | None = None,
+        day_index: int | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
         conn = get_connection()
         sets: list[str] = []
         params: list = []

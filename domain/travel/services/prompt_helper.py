@@ -47,9 +47,7 @@ class PromptHelper:
             preference_items = [m for m in preference_memories if m.category == "preference"]
             if preference_items:
                 prefs = "、".join(m.content for m in preference_items[:5])
-                parts.append(
-                    f"用户偏好（请据此推荐）：{prefs}"
-                )
+                parts.append(f"用户偏好（请据此推荐）：{prefs}")
                 parts.append(
                     "当你基于用户偏好做出推荐时，请在推荐后面用【基于记忆：偏好内容】标注依据，"
                     "例如：推荐青岛啤酒博物馆【基于记忆：喜欢文化类景点】"
@@ -61,9 +59,7 @@ class PromptHelper:
                 prefs = "、".join(m.content for m in stm_prefs[:3])
                 if not preference_items:
                     parts.append(f"用户近期偏好（请据此推荐）：{prefs}")
-                    parts.append(
-                        "当你基于用户偏好做出推荐时，请在推荐后面用【基于记忆：偏好内容】标注依据"
-                    )
+                    parts.append("当你基于用户偏好做出推荐时，请在推荐后面用【基于记忆：偏好内容】标注依据")
 
             experience_items = [m for m in preference_memories if m.category == "experience"]
             stm_exp = [m for m in stm_list if m.category == "experience"]
@@ -74,9 +70,7 @@ class PromptHelper:
                     tag = "✓" if e.experience_tag == "success" else "✗"
                     exp_texts.append(f"{tag} {e.content}")
                 parts.append(f"用户旅行经验：{'、'.join(exp_texts)}")
-                parts.append(
-                    "当你基于用户经验调整推荐时，请用【基于记忆：经验内容】标注依据"
-                )
+                parts.append("当你基于用户经验调整推荐时，请用【基于记忆：经验内容】标注依据")
 
         return "\n".join(parts)
 

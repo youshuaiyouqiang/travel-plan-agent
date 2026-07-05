@@ -44,8 +44,9 @@ def _run_qweather(args: list[str]) -> dict:
 
     cmd = ["python", _SCRIPT] + args
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30,
-                                env={**os.environ, "WEATHER_API_KEY": QWEATHER_KEY})
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, env={**os.environ, "WEATHER_API_KEY": QWEATHER_KEY}
+        )
         if result.returncode != 0:
             return {"is_error": True, "content": f"和风天气调用失败: {result.stderr[:500]}"}
         try:

@@ -1,4 +1,5 @@
 """Tests for incomplete input handling: destination extraction, missing info detection, and preference-based recommendations"""
+
 import pytest
 from unittest.mock import MagicMock
 
@@ -52,57 +53,41 @@ class TestMissingInfoDetection:
         return TravelIntentClassifier(llm=None)
 
     def test_trip_planning_missing_all(self, classifier):
-        missing = classifier._regex_missing_info(
-            "帮我规划行程", TravelIntentType.TRIP_PLANNING
-        )
+        missing = classifier._regex_missing_info("帮我规划行程", TravelIntentType.TRIP_PLANNING)
         assert "destination" in missing
         assert "duration" in missing
         assert "dates" in missing
 
     def test_trip_planning_with_destination(self, classifier):
-        missing = classifier._regex_missing_info(
-            "想去成都玩", TravelIntentType.TRIP_PLANNING
-        )
+        missing = classifier._regex_missing_info("想去成都玩", TravelIntentType.TRIP_PLANNING)
         assert "destination" not in missing
         assert "duration" in missing
         assert "dates" in missing
 
     def test_trip_planning_complete(self, classifier):
-        missing = classifier._regex_missing_info(
-            "5月1号从上海去成都玩5天", TravelIntentType.TRIP_PLANNING
-        )
+        missing = classifier._regex_missing_info("5月1号从上海去成都玩5天", TravelIntentType.TRIP_PLANNING)
         assert "destination" not in missing
         assert "duration" not in missing
         assert "dates" not in missing
 
     def test_flight_search_missing_origin(self, classifier):
-        missing = classifier._regex_missing_info(
-            "查一下去昆明的机票", TravelIntentType.FLIGHT_SEARCH
-        )
+        missing = classifier._regex_missing_info("查一下去昆明的机票", TravelIntentType.FLIGHT_SEARCH)
         assert "origin" in missing
 
     def test_flight_search_with_origin(self, classifier):
-        missing = classifier._regex_missing_info(
-            "从北京飞昆明的机票", TravelIntentType.FLIGHT_SEARCH
-        )
+        missing = classifier._regex_missing_info("从北京飞昆明的机票", TravelIntentType.FLIGHT_SEARCH)
         assert "origin" not in missing
 
     def test_hotel_search_missing_destination(self, classifier):
-        missing = classifier._regex_missing_info(
-            "帮我订酒店", TravelIntentType.HOTEL_SEARCH
-        )
+        missing = classifier._regex_missing_info("帮我订酒店", TravelIntentType.HOTEL_SEARCH)
         assert "destination" in missing
 
     def test_attraction_search_missing_destination(self, classifier):
-        missing = classifier._regex_missing_info(
-            "有什么好玩的景点", TravelIntentType.ATTRACTION_SEARCH
-        )
+        missing = classifier._regex_missing_info("有什么好玩的景点", TravelIntentType.ATTRACTION_SEARCH)
         assert "destination" in missing
 
     def test_attraction_search_with_destination(self, classifier):
-        missing = classifier._regex_missing_info(
-            "西安有什么景点", TravelIntentType.ATTRACTION_SEARCH
-        )
+        missing = classifier._regex_missing_info("西安有什么景点", TravelIntentType.ATTRACTION_SEARCH)
         assert "destination" not in missing
 
 
@@ -200,6 +185,7 @@ class TestBuildMissingInfoContext:
     def test_missing_info_with_user_preferences(self):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         conn.execute(
@@ -226,6 +212,7 @@ class TestBuildMissingInfoContext:
     def test_missing_info_with_short_term_preferences(self):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         conn.execute(

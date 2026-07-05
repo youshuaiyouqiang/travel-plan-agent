@@ -23,9 +23,9 @@ async def _estimate_drive_cost(arguments: dict) -> dict:
 
     # 车型油耗系数表（L/km）
     FUEL_RATE = {
-        "sedan": 0.07,   # 轿车 ~7L/100km x 7.8元/L ≈ 0.55元/km
-        "suv": 0.09,     # SUV ~9L/100km ≈ 0.70元/km
-        "ev": 0.015,     # 电动车 ~15kWh/100km x 0.6元/kWh ≈ 0.09元/km
+        "sedan": 0.07,  # 轿车 ~7L/100km x 7.8元/L ≈ 0.55元/km
+        "suv": 0.09,  # SUV ~9L/100km ≈ 0.70元/km
+        "ev": 0.015,  # 电动车 ~15kWh/100km x 0.6元/kWh ≈ 0.09元/km
     }
     rate = FUEL_RATE.get(car_type, FUEL_RATE["sedan"])
     fuel_cost = distance_km * rate * fuel_price / 7.8  # 按实际油价比例缩放
@@ -36,19 +36,22 @@ async def _estimate_drive_cost(arguments: dict) -> dict:
 
     return {
         "is_error": False,
-        "content": json.dumps({
-            "total_cost": round(total, 0),
-            "breakdown": {
-                "toll": round(toll_yuan, 0),
-                "fuel": round(fuel_cost, 0),
-                "meals_on_road": round(meal_cost, 0),
+        "content": json.dumps(
+            {
+                "total_cost": round(total, 0),
+                "breakdown": {
+                    "toll": round(toll_yuan, 0),
+                    "fuel": round(fuel_cost, 0),
+                    "meals_on_road": round(meal_cost, 0),
+                },
+                "distance_km": distance_km,
+                "car_type": car_type,
+                "fuel_rate_per_km": round(rate * fuel_price / 7.8, 3),
+                "note": f"车型={car_type}, 油价={fuel_price}元/L, 油耗系数={rate}L/km; "
+                f"实际费用根据路况和驾驶习惯浮动±10%",
             },
-            "distance_km": distance_km,
-            "car_type": car_type,
-            "fuel_rate_per_km": round(rate * fuel_price / 7.8, 3),
-            "note": f"车型={car_type}, 油价={fuel_price}元/L, 油耗系数={rate}L/km; "
-                    f"实际费用根据路况和驾驶习惯浮动±10%"
-        }, ensure_ascii=False)
+            ensure_ascii=False,
+        ),
     }
 
 

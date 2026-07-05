@@ -15,15 +15,14 @@
     ctx = AuditContext.get()
     print(ctx.session_id, ctx.user_id, ctx.trace_id)
 """
+
 from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass
 
 
-_audit_ctx: contextvars.ContextVar["AuditContextData"] = contextvars.ContextVar(
-    "audit_ctx", default=None
-)
+_audit_ctx: contextvars.ContextVar["AuditContextData"] = contextvars.ContextVar("audit_ctx", default=None)
 
 
 @dataclass

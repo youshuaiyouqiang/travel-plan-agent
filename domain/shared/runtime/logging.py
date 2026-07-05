@@ -101,6 +101,7 @@ def setup_logging(
 
 def init_from_settings() -> None:
     from config import settings
+
     setup_logging(
         level=settings.log_level,
         log_dir=settings.log_dir,

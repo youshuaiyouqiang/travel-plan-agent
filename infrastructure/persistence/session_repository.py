@@ -3,6 +3,7 @@
 P1-10 抽取：把原本散落在 api/server.py 和 domain/travel/core.py 中的直连 DB
 操作收敛到此处，让 API/Domain 层只通过 Repository 访问会话数据。
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,8 +36,7 @@ class SessionRepository:
         now = created_at or datetime.utcnow().isoformat()
         conn = get_connection()
         conn.execute(
-            "INSERT INTO sessions (session_id, summary, created_at, updated_at, user_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (session_id, summary, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)",
             (session_id, summary, now, now, user_id),
         )
         conn.execute(
@@ -75,40 +75,45 @@ class SessionRepository:
             ).fetchall()
             for row in rows:
                 first_msg = row[5] if len(row) > 5 else ""
-                sessions.append({
-                    "session_id": row[0],
-                    "title": row[1] or (first_msg[:60] if first_msg else "新对话"),
-                    "created_at": row[2] or "",
-                    "updated_at": row[3] or "",
-                    "message_count": row[4] if row[4] is not None else 0,
-                })
+                sessions.append(
+                    {
+                        "session_id": row[0],
+                        "title": row[1] or (first_msg[:60] if first_msg else "新对话"),
+                        "created_at": row[2] or "",
+                        "updated_at": row[3] or "",
+                        "message_count": row[4] if row[4] is not None else 0,
+                    }
+                )
         except Exception:
             # 兼容旧库：user_id 列不存在等情况
             logger.warning("list_by_user fallback to full-table scan", exc_info=True)
             conn2 = get_connection()
             rows = conn2.execute(
-                "SELECT session_id, summary, created_at, updated_at FROM sessions "
-                "ORDER BY updated_at DESC"
+                "SELECT session_id, summary, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
             ).fetchall()
             for row in rows:
-                sessions.append({
-                    "session_id": row[0],
-                    "title": row[1] or "新对话",
-                    "created_at": row[2] or "",
-                    "updated_at": row[3] or "",
-                    "message_count": 0,
-                })
+                sessions.append(
+                    {
+                        "session_id": row[0],
+                        "title": row[1] or "新对话",
+                        "created_at": row[2] or "",
+                        "updated_at": row[3] or "",
+                        "message_count": 0,
+                    }
+                )
         return sessions
 
     @staticmethod
     def get_messages(session_id: str) -> list[dict]:
         """按时间顺序返回某会话的所有消息（role / content / created_at）。"""
         conn = get_connection()
-        return [dict(row) for row in conn.execute(
-            "SELECT role, content, created_at FROM session_turns "
-            "WHERE session_id = ? ORDER BY id",
-            (session_id,),
-        )]
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT role, content, created_at FROM session_turns WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            )
+        ]
 
     # ------------------------------------------------------------------ #
     # 删除

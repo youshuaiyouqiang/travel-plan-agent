@@ -49,6 +49,7 @@ class DualLayerMemoryManager:
             (user_id,),
         ).fetchall()
         from infrastructure.persistence.database import _json_loads
+
         return [
             LongTermMemory(
                 id=row["id"],

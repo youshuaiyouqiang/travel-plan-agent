@@ -35,6 +35,7 @@ def _user_owns_itinerary(user_id: str, itin) -> bool:
         return True
     if itin.session_id:
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
         row = conn.execute(
             "SELECT 1 FROM tasks WHERE user_id = ? AND session_id = ? LIMIT 1",
@@ -44,6 +45,7 @@ def _user_owns_itinerary(user_id: str, itin) -> bool:
             return True
     if itin.user_id:
         from domain.user.auth.auth import UserStore
+
         us = UserStore()
         existing = us.get_by_id(itin.user_id)
         if not existing:

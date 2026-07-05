@@ -31,8 +31,20 @@ class ItineraryRepository:
             "(id, user_id, session_id, title, destination, start_date, end_date, "
             "budget, status, raw_content, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (itinerary_id, user_id, session_id, title, destination, start_date,
-             end_date, budget, status, raw_content, now, now),
+            (
+                itinerary_id,
+                user_id,
+                session_id,
+                title,
+                destination,
+                start_date,
+                end_date,
+                budget,
+                status,
+                raw_content,
+                now,
+                now,
+            ),
         )
         conn.commit()
         return Itinerary(
@@ -52,9 +64,7 @@ class ItineraryRepository:
 
     def get_itinerary(self, itinerary_id: str) -> Itinerary | None:
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM itineraries WHERE id = ?", (itinerary_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM itineraries WHERE id = ?", (itinerary_id,)).fetchone()
         if not row:
             return None
         itinerary = Itinerary.from_row(dict(row))
@@ -73,8 +83,7 @@ class ItineraryRepository:
         conn = get_connection()
         sets = []
         vals = []
-        for key in ("title", "destination", "start_date", "end_date",
-                     "budget", "status", "raw_content"):
+        for key in ("title", "destination", "start_date", "end_date", "budget", "status", "raw_content"):
             if key in kwargs:
                 sets.append(f"{key} = ?")
                 vals.append(kwargs[key])
@@ -84,17 +93,13 @@ class ItineraryRepository:
         sets.append("updated_at = ?")
         vals.append(now)
         vals.append(itinerary_id)
-        conn.execute(
-            f"UPDATE itineraries SET {', '.join(sets)} WHERE id = ?", vals
-        )
+        conn.execute(f"UPDATE itineraries SET {', '.join(sets)} WHERE id = ?", vals)
         conn.commit()
         return True
 
     def delete_itinerary(self, itinerary_id: str) -> bool:
         conn = get_connection()
-        cursor = conn.execute(
-            "DELETE FROM itineraries WHERE id = ?", (itinerary_id,)
-        )
+        cursor = conn.execute("DELETE FROM itineraries WHERE id = ?", (itinerary_id,))
         conn.commit()
         return cursor.rowcount > 0
 
@@ -108,9 +113,7 @@ class ItineraryRepository:
     ) -> DayPlan:
         conn = get_connection()
         cursor = conn.execute(
-            "INSERT INTO itinerary_days "
-            "(itinerary_id, day_index, date, title, summary) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO itinerary_days (itinerary_id, day_index, date, title, summary) VALUES (?, ?, ?, ?, ?)",
             (itinerary_id, day_index, date, title, summary),
         )
         conn.commit()
@@ -141,8 +144,7 @@ class ItineraryRepository:
             "(day_id, activity_index, time_slot, title, location, description, "
             "image_url, cost, tips, checked_in) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
-            (day_id, activity_index, time_slot, title, location, description,
-             image_url, cost, tips),
+            (day_id, activity_index, time_slot, title, location, description, image_url, cost, tips),
         )
         conn.commit()
         return Activity(
@@ -184,17 +186,13 @@ class ItineraryRepository:
 
     def delete_activity(self, activity_id: int) -> bool:
         conn = get_connection()
-        cursor = conn.execute(
-            "DELETE FROM itinerary_activities WHERE id = ?", (activity_id,)
-        )
+        cursor = conn.execute("DELETE FROM itinerary_activities WHERE id = ?", (activity_id,))
         conn.commit()
         return cursor.rowcount > 0
 
     def get_activity(self, activity_id: int) -> Activity | None:
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM itinerary_activities WHERE id = ?", (activity_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM itinerary_activities WHERE id = ?", (activity_id,)).fetchone()
         if not row:
             return None
         return Activity.from_row(dict(row))
@@ -275,9 +273,7 @@ class ItineraryRepository:
 
     def get_share_link(self, token: str) -> dict | None:
         conn = get_connection()
-        row = conn.execute(
-            "SELECT * FROM shared_links WHERE token = ?", (token,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM shared_links WHERE token = ?", (token,)).fetchone()
         if not row:
             return None
         result = dict(row)

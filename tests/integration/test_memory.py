@@ -1,4 +1,5 @@
 """Tests for domain/memory/manager.py — DualLayerMemoryManager, SessionMemory"""
+
 import pytest
 
 from domain.memory.manager import DualLayerMemoryManager, ShortTermMemory, LongTermMemory, SessionMemory
@@ -17,6 +18,7 @@ class TestDualLayerMemoryManager:
     def _seed_short_term(self, user_id="u1"):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         items = [
@@ -35,6 +37,7 @@ class TestDualLayerMemoryManager:
     def _seed_long_term(self, user_id="u1"):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         items = [
@@ -61,6 +64,7 @@ class TestDualLayerMemoryManager:
     def test_get_long_term_excludes_stale(self):
         from infrastructure.persistence.database import get_connection
         from datetime import datetime
+
         conn = get_connection()
         now = datetime.utcnow().isoformat()
         conn.execute(
@@ -112,10 +116,9 @@ class TestDualLayerMemoryManager:
         conv_id = mgr.save_conversation("s1", "u1")
         mgr.record_extraction(conv_id, "short_term", 1)
         from infrastructure.persistence.database import get_connection
+
         conn = get_connection()
-        row = conn.execute(
-            "SELECT extraction_count FROM short_term_memories WHERE id = 1"
-        ).fetchone()
+        row = conn.execute("SELECT extraction_count FROM short_term_memories WHERE id = 1").fetchone()
         assert row["extraction_count"] == 1
 
 

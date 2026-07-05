@@ -10,6 +10,7 @@
   内部的 asyncio.run() 能正常工作
 - 使用 lifespan 上下文管理器注册，不使用废弃的 @app.on_event("startup")
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -45,9 +46,7 @@ async def run_memory_maintenance() -> None:
 
             # 1. 枚举所有有短期记忆的用户，逐个蒸馏（确保隔离）
             conn = get_connection()
-            user_rows = conn.execute(
-                "SELECT DISTINCT user_id FROM short_term_memories WHERE user_id != ''"
-            ).fetchall()
+            user_rows = conn.execute("SELECT DISTINCT user_id FROM short_term_memories WHERE user_id != ''").fetchall()
             conn.close()
 
             total_distilled = 0
@@ -58,14 +57,10 @@ async def run_memory_maintenance() -> None:
                     # 让 _compress_content 内的 asyncio.run() 正常工作
                     distilled = await asyncio.to_thread(distiller.run_distillation, uid)
                     if distilled > 0:
-                        logger.info(
-                            "Memory distilled: user=%s count=%d", uid, distilled
-                        )
+                        logger.info("Memory distilled: user=%s count=%d", uid, distilled)
                     total_distilled += distilled
                 except Exception:
-                    logger.warning(
-                        "Distillation failed for user=%s", uid, exc_info=True
-                    )
+                    logger.warning("Distillation failed for user=%s", uid, exc_info=True)
 
             # 2. 全量衰减（run_decay 支持 user_id=None，内部按 user_id 分组）
             try:
@@ -77,7 +72,8 @@ async def run_memory_maintenance() -> None:
 
             logger.info(
                 "Memory maintenance cycle done: users=%d distilled=%d",
-                len(user_rows), total_distilled,
+                len(user_rows),
+                total_distilled,
             )
         except Exception:
             logger.warning("Memory maintenance cycle failed", exc_info=True)

@@ -31,24 +31,20 @@ EMOTION_STRATEGIES: dict[EmotionType, dict[str, Any]] = {
         "system_prompt_suffix": (
             "用户当前情绪较为激动，请使用安抚性语言，"
             "先表达理解和歉意，再提供解决方案。"
-            "避免使用命令式语气，多用\"我们\"代替\"你\"。"
+            '避免使用命令式语气，多用"我们"代替"你"。'
         ),
     },
     EmotionType.ANXIOUS: {
         "priority": "high",
         "response_style": "reassuring",
         "system_prompt_suffix": (
-            "用户当前情绪较为焦虑，请提供明确的时间线和进度信息，"
-            "使用确定性的语言，避免模糊表达。"
+            "用户当前情绪较为焦虑，请提供明确的时间线和进度信息，使用确定性的语言，避免模糊表达。"
         ),
     },
     EmotionType.DISAPPOINTED: {
         "priority": "medium",
         "response_style": "apologetic",
-        "system_prompt_suffix": (
-            "用户对服务感到失望，请先承认问题并道歉，"
-            "然后提供具体的改进措施或补偿方案。"
-        ),
+        "system_prompt_suffix": ("用户对服务感到失望，请先承认问题并道歉，然后提供具体的改进措施或补偿方案。"),
     },
     EmotionType.SATISFIED: {
         "priority": "normal",

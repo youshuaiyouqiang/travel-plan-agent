@@ -15,16 +15,19 @@ logger = logging.getLogger(__name__)
 
 class RateLimitError(Exception):
     """LLM Provider 限流异常。"""
+
     pass
 
 
 class ServiceUnavailableError(Exception):
     """LLM Provider 服务不可用异常。"""
+
     pass
 
 
 class AllProvidersFailedError(Exception):
     """所有 LLM provider 均不可用。"""
+
     pass
 
 
@@ -74,7 +77,10 @@ class FallbackLLM:
         for i, provider in enumerate(self._providers):
             try:
                 return await provider.complete_with_tools(
-                    system=system, messages=messages, tools=tools, **kwargs,
+                    system=system,
+                    messages=messages,
+                    tools=tools,
+                    **kwargs,
                 )
             except (RateLimitError, ServiceUnavailableError, ConnectionError, TimeoutError) as e:
                 logger.warning("LLM provider #%d failed (tools): %s, trying next...", i + 1, e)
@@ -86,9 +92,7 @@ class FallbackLLM:
                 continue
         raise AllProvidersFailedError("所有 LLM provider 均不可用")
 
-    async def stream_complete(
-        self, *, system: str, messages: list[dict], **kwargs
-    ) -> Any:
+    async def stream_complete(self, *, system: str, messages: list[dict], **kwargs) -> Any:
         """流式 completion，带降级（流式失败回退到非流式）。"""
         for i, provider in enumerate(self._providers):
             try:

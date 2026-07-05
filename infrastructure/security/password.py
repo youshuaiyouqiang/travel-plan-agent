@@ -16,6 +16,7 @@ def hash_password(password: str) -> str:
     """
     try:
         import bcrypt
+
         return bcrypt.hashpw(
             password.encode("utf-8"),
             bcrypt.gensalt(rounds=_BCRYPT_ROUNDS),
@@ -39,6 +40,7 @@ def verify_password(password: str, stored: str) -> bool:
     if stored.startswith(("$2b$", "$2a$", "$2y$")):
         try:
             import bcrypt
+
             return bcrypt.checkpw(password.encode("utf-8"), stored.encode("utf-8"))
         except ImportError:
             logger.error("bcrypt hash stored but bcrypt not installed")

@@ -37,10 +37,7 @@ def _cleanup_rate_counters(now: float) -> None:
     if now - _last_rate_cleanup < _RATE_CLEANUP_INTERVAL:
         return
     _last_rate_cleanup = now
-    expired_keys = [
-        k for k, v in _rate_counters.items()
-        if now - v.get("window_start", 0) > _RATE_WINDOW * 2
-    ]
+    expired_keys = [k for k, v in _rate_counters.items() if now - v.get("window_start", 0) > _RATE_WINDOW * 2]
     for k in expired_keys:
         del _rate_counters[k]
 
@@ -61,7 +58,12 @@ async def auth_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
     path = request.url.path
-    if path.startswith("/debug") or path in _PUBLIC_PATHS or path.startswith("/api/auth") or path.startswith("/api/shared"):
+    if (
+        path.startswith("/debug")
+        or path in _PUBLIC_PATHS
+        or path.startswith("/api/auth")
+        or path.startswith("/api/shared")
+    ):
         return await call_next(request)
     if any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
         return await call_next(request)

@@ -11,21 +11,56 @@ logger = logging.getLogger(__name__)
 
 _EMOTION_KEYWORDS: dict[EmotionType, list[str]] = {
     EmotionType.ANGRY: [
-        "太差", "垃圾", "骗人", "投诉", "恶心", "离谱", "过分",
-        "受不了", "忍不了", "气死", "愤怒", "荒谬", "欺骗",
-        "差评", "黑心", "坑人",
+        "太差",
+        "垃圾",
+        "骗人",
+        "投诉",
+        "恶心",
+        "离谱",
+        "过分",
+        "受不了",
+        "忍不了",
+        "气死",
+        "愤怒",
+        "荒谬",
+        "欺骗",
+        "差评",
+        "黑心",
+        "坑人",
     ],
     EmotionType.ANXIOUS: [
-        "急", "着急", "怎么办", "什么时候", "多久", "等不了",
-        "催", "赶紧", "快点", "急用", "来不及",
+        "急",
+        "着急",
+        "怎么办",
+        "什么时候",
+        "多久",
+        "等不了",
+        "催",
+        "赶紧",
+        "快点",
+        "急用",
+        "来不及",
     ],
     EmotionType.DISAPPOINTED: [
-        "失望", "不如预期", "没想到", "太遗憾", "可惜",
-        "不满意", "不够好", "差强人意",
+        "失望",
+        "不如预期",
+        "没想到",
+        "太遗憾",
+        "可惜",
+        "不满意",
+        "不够好",
+        "差强人意",
     ],
     EmotionType.SATISFIED: [
-        "满意", "不错", "很好", "谢谢", "感谢", "好评",
-        "点赞", "棒", "优秀",
+        "满意",
+        "不错",
+        "很好",
+        "谢谢",
+        "感谢",
+        "好评",
+        "点赞",
+        "棒",
+        "优秀",
     ],
 }
 
@@ -85,9 +120,7 @@ class EmotionDetector:
             )
             data = _extract_json(text)
         except Exception:
-            return keyword_result or EmotionResult(
-                emotion=EmotionType.NEUTRAL, score=0.0, confidence=0.3
-            )
+            return keyword_result or EmotionResult(emotion=EmotionType.NEUTRAL, score=0.0, confidence=0.3)
 
         try:
             emotion = EmotionType(data.get("emotion", "neutral"))
@@ -101,6 +134,7 @@ class EmotionDetector:
         strategy = EMOTION_STRATEGIES.get(emotion, EMOTION_STRATEGIES[EmotionType.NEUTRAL])
 
         from domain.shared.metrics.collector import record_emotion
+
         record_emotion(emotion.value)
 
         return EmotionResult(

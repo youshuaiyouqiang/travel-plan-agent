@@ -74,7 +74,9 @@ def main():
         else:
             run(["flyai", "config", "set", "FLYAI_API_KEY", api_key], check=False)
     else:
-        print("\n○ 未检测到 FLYAI_API_KEY，基础查询可继续使用；如需增强功能可手动执行: flyai config set FLYAI_API_KEY <your-key>")
+        print(
+            "\n○ 未检测到 FLYAI_API_KEY，基础查询可继续使用；如需增强功能可手动执行: flyai config set FLYAI_API_KEY <your-key>"
+        )
 
     print("\n=== 安装完成 ===")
     print("使用 flyai_quick.py 快速调用飞猪 API")

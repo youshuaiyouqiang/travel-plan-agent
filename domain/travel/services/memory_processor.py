@@ -31,6 +31,7 @@ class MemoryProcessor:
         user_id: str | None,
     ) -> None:
         from config import settings as cfg
+
         if not cfg.memory_extraction_enabled:
             return
         if not user_id:
@@ -74,9 +75,7 @@ class MemoryProcessor:
 
             # P1-3：在独立线程中调用 sync distiller 方法，避免阻塞事件循环，
             # 同时让 _compress_content 内部的 asyncio.run() 能正常工作（线程内无运行中的 loop）
-            distilled = await asyncio.to_thread(
-                self._memory_distiller.run_distillation, user_id
-            )
+            distilled = await asyncio.to_thread(self._memory_distiller.run_distillation, user_id)
             if distilled > 0:
                 logger.info("Memory distilled: user=%s count=%d", user_id, distilled)
 

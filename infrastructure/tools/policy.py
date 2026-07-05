@@ -36,8 +36,8 @@ class ToolPolicy:
         # 限制：多进程部署时各进程独立计数，无法跨进程共享限额。
         # 如需跨进程限流，可改为 Redis（参考 P1-9 限流中间件）。
         self._call_log: dict[str, list[float]] = {}
-        self._max_calls_per_minute = 30   # 每工具每分钟上限
-        self._max_calls_per_hour = 200    # 每工具每小时上限
+        self._max_calls_per_minute = 30  # 每工具每分钟上限
+        self._max_calls_per_hour = 200  # 每工具每小时上限
         self._tool_specs: dict[str, Any] = {}  # tool_name → ToolSpec（外部注入）
 
     def register_spec(self, tool_name: str, spec: Any) -> None:
@@ -109,11 +109,15 @@ class ToolPolicy:
         one_minute_ago = now - 60
         recent_minute = [t for t in self._call_log[key] if t > one_minute_ago]
         if len(recent_minute) >= self._max_calls_per_minute:
-            return PolicyDecision(PolicyMode.DENY, f"工具 {tool_name} 调用频率超限（{self._max_calls_per_minute}次/分钟）")
+            return PolicyDecision(
+                PolicyMode.DENY, f"工具 {tool_name} 调用频率超限（{self._max_calls_per_minute}次/分钟）"
+            )
 
         # 检查每小时上限
         if len(self._call_log[key]) >= self._max_calls_per_hour:
-            return PolicyDecision(PolicyMode.DENY, f"工具 {tool_name} 调用频率超限（{self._max_calls_per_hour}次/小时）")
+            return PolicyDecision(
+                PolicyMode.DENY, f"工具 {tool_name} 调用频率超限（{self._max_calls_per_hour}次/小时）"
+            )
 
         # 记录本次调用
         self._call_log[key].append(now)

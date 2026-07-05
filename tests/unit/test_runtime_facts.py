@@ -1,4 +1,5 @@
 """Tests for core/runtime_facts.py — current_datetime_text, answer_date_or_time_query"""
+
 from domain.shared.runtime.facts import current_datetime_text, answer_date_or_time_query
 
 
@@ -11,12 +12,14 @@ class TestCurrentDatetimeText:
         result = current_datetime_text()
         # Should contain YYYY-MM-DD format
         import re
+
         assert re.search(r"\d{4}-\d{2}-\d{2}", result)
 
     def test_contains_time(self):
         result = current_datetime_text()
         # Should contain HH:MM:SS format
         import re
+
         assert re.search(r"\d{2}:\d{2}:\d{2}", result)
 
     def test_contains_weekday(self):
