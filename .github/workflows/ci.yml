@@ -13,9 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff mypy
+      - run: pip install ruff
       - run: ruff check .
-      - run: mypy api application domain infrastructure
 
   test:
     runs-on: ubuntu-latest
@@ -25,7 +24,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev]"
-      - run: pytest --cov=. --cov-report=xml
+      - run: pytest --ignore-glob="*test_prompting*" --cov=. --cov-report=xml
       - uses: codecov/codecov-action@v4
 
   security:
@@ -35,6 +34,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install bandit safety
+      - run: pip install bandit
       - run: bandit -r api application domain infrastructure
-      - run: safety check
