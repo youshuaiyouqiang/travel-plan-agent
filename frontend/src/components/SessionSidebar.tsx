@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { useChatStore } from '../hooks/useChatStore'
+import { useSessionStore } from '../hooks/useSessionStore'
 import { listSessions, createSession, deleteSession, getSessionMessages } from '../utils/api'
 import type { SessionInfo } from '../utils/api'
 
@@ -73,6 +74,11 @@ export function SessionSidebar({ onSessionChange, activeSessionId, refreshTrigge
   const handleSelectSession = async (session: SessionInfo) => {
     if (session.session_id === activeSessionId) return
     setSessionId(session.session_id)
+    // 清除旧会话的临时状态
+    useSessionStore.getState().clearAgentActions()
+    useSessionStore.getState().setActiveAgent(null)
+    // 从服务端恢复确认状态
+    useSessionStore.getState().syncConfirmStatus(session.session_id)
     try {
       const msgs = await getSessionMessages(session.session_id)
       loadMessages(msgs)

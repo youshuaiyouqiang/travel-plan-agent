@@ -87,11 +87,10 @@ export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, on
   }, [messages, isLoading])
 
   // 一旦已生成行程概览，禁用所有版本的"满意"按钮，防止重复生成。
-  // P1-13：改用结构化 agentActions 检测（navigate 类型且 path 含 /itinerary/），
-  // 不再从自由文本正则提取 itinerary_id。
+  // 通过 agentActions（流式期间设置）或 sessionConfirmedPlan（服务端恢复）判断。
   const hasConfirmedItinerary = agentActions.some(
     (a) => a.type === 'navigate' && typeof a.path === 'string' && a.path.includes('/itinerary/')
-  )
+  ) || sessionConfirmedPlan !== null
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-thin px-4 py-6 space-y-4">

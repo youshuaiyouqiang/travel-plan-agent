@@ -113,6 +113,11 @@ export function Home() {
     setActiveSessionId(newSessionId)
     setSessionId(newSessionId)
     resetSession()
+    // 清除旧会话的临时状态
+    useSessionStore.getState().clearAgentActions()
+    useSessionStore.getState().setActiveAgent(null)
+    // 从服务端恢复确认状态
+    useSessionStore.getState().syncConfirmStatus(newSessionId)
     try {
       const msgs = await getSessionMessages(newSessionId)
       useChatStore.getState().loadMessages(msgs)

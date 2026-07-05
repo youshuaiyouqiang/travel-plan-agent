@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import local
 from typing import Any
@@ -51,27 +52,60 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_db(db_path: str | Path | None = None) -> None:
-    conn = get_connection(db_path)
-    conn.executescript(_SCHEMA)
+# ---------------------------------------------------------------------------
+# Schema migrations tracking
+# ---------------------------------------------------------------------------
+
+_MIGRATIONS_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version     INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at  TEXT NOT NULL
+)
+"""
+
+
+def _ensure_migrations_table(conn: Any) -> None:
+    """Create the schema_migrations tracking table if it does not exist."""
+    conn.execute(_MIGRATIONS_TABLE_SQL)
     conn.commit()
-    _run_migrations(conn)
-    logger.info("Database initialized: %s", db_path or settings.database_path)
 
 
-def _run_migrations(conn: Any) -> None:
+def _get_applied_versions(conn: Any) -> set[int]:
+    """Return the set of migration versions already applied."""
+    rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
+    return {row["version"] for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Migration upgrade / downgrade functions
+# ---------------------------------------------------------------------------
+
+def _upgrade_1(conn: Any) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(long_term_memories)").fetchall()}
     if "experience_tag" not in existing:
         conn.execute("ALTER TABLE long_term_memories ADD COLUMN experience_tag TEXT NOT NULL DEFAULT ''")
         conn.commit()
-        logger.info("Migration: added experience_tag to long_term_memories")
+        logger.info("Migration 1: added experience_tag to long_term_memories")
 
+
+def _downgrade_1(conn: Any) -> None:
+    logger.warning("Migration 1 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for experience_tag")
+
+
+def _upgrade_2(conn: Any) -> None:
     act_cols = {row[1] for row in conn.execute("PRAGMA table_info(itinerary_activities)").fetchall()}
     if "actual_cost" not in act_cols:
         conn.execute("ALTER TABLE itinerary_activities ADD COLUMN actual_cost REAL NOT NULL DEFAULT 0")
         conn.commit()
-        logger.info("Migration: added actual_cost to itinerary_activities")
+        logger.info("Migration 2: added actual_cost to itinerary_activities")
 
+
+def _downgrade_2(conn: Any) -> None:
+    logger.warning("Migration 2 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for actual_cost")
+
+
+def _upgrade_3(conn: Any) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS custom_agents (
             id TEXT PRIMARY KEY,
@@ -92,45 +126,56 @@ def _run_migrations(conn: Any) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_user ON custom_agents(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_public ON custom_agents(is_public)")
     conn.commit()
-    logger.info("Migration: ensured custom_agents table exists")
+    logger.info("Migration 3: ensured custom_agents table exists")
 
-    # 新增 mcp_servers 列（try/except 兼容已存在列）
-    try:
-        ca_cols = {row[1] for row in conn.execute("PRAGMA table_info(custom_agents)").fetchall()}
-        if "mcp_servers" not in ca_cols:
-            conn.execute("ALTER TABLE custom_agents ADD COLUMN mcp_servers TEXT DEFAULT '[]'")
-            conn.commit()
-            logger.info("Migration: added mcp_servers to custom_agents")
-        if "status" not in ca_cols:
-            conn.execute("ALTER TABLE custom_agents ADD COLUMN status TEXT DEFAULT 'published'")
-            conn.commit()
-            logger.info("Migration: added status to custom_agents")
-    except Exception:
-        logger.info("Migration: custom_agents columns already exist (skipped)")
 
-    # sessions 表增加委派上下文字段（Phase 3 需要，提前迁移）
-    try:
-        s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
-        if "delegation_agent_id" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN delegation_agent_id TEXT DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added delegation_agent_id to sessions")
-        if "delegation_started_at" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN delegation_started_at REAL DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added delegation_started_at to sessions")
-        if "delegation_last_interaction" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN delegation_last_interaction REAL DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added delegation_last_interaction to sessions")
-        if "disclosed_tools" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN disclosed_tools TEXT DEFAULT '[]'")
-            conn.commit()
-            logger.info("Migration: added disclosed_tools to sessions")
-    except Exception:
-        logger.info("Migration: sessions delegation/disclosed columns already exist (skipped)")
+def _downgrade_3(conn: Any) -> None:
+    conn.execute("DROP TABLE IF EXISTS custom_agents")
+    conn.commit()
+    logger.info("Migration 3 downgrade: dropped custom_agents table")
 
-    # quality_issues 表（Phase 4 反馈机制）
+
+def _upgrade_4(conn: Any) -> None:
+    ca_cols = {row[1] for row in conn.execute("PRAGMA table_info(custom_agents)").fetchall()}
+    if "mcp_servers" not in ca_cols:
+        conn.execute("ALTER TABLE custom_agents ADD COLUMN mcp_servers TEXT DEFAULT '[]'")
+        conn.commit()
+        logger.info("Migration 4: added mcp_servers to custom_agents")
+    if "status" not in ca_cols:
+        conn.execute("ALTER TABLE custom_agents ADD COLUMN status TEXT DEFAULT 'published'")
+        conn.commit()
+        logger.info("Migration 4: added status to custom_agents")
+
+
+def _downgrade_4(conn: Any) -> None:
+    logger.warning("Migration 4 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for mcp_servers / status")
+
+
+def _upgrade_5(conn: Any) -> None:
+    s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "delegation_agent_id" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN delegation_agent_id TEXT DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 5: added delegation_agent_id to sessions")
+    if "delegation_started_at" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN delegation_started_at REAL DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 5: added delegation_started_at to sessions")
+    if "delegation_last_interaction" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN delegation_last_interaction REAL DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 5: added delegation_last_interaction to sessions")
+    if "disclosed_tools" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN disclosed_tools TEXT DEFAULT '[]'")
+        conn.commit()
+        logger.info("Migration 5: added disclosed_tools to sessions")
+
+
+def _downgrade_5(conn: Any) -> None:
+    logger.warning("Migration 5 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for delegation / disclosed columns")
+
+
+def _upgrade_6(conn: Any) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS quality_issues (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,9 +192,16 @@ def _run_migrations(conn: Any) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quality_issues_user ON quality_issues(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_quality_issues_rating ON quality_issues(rating)")
     conn.commit()
-    logger.info("Migration: ensured quality_issues table exists")
+    logger.info("Migration 6: ensured quality_issues table exists")
 
-    # 新闻收藏表（热搜收藏功能）
+
+def _downgrade_6(conn: Any) -> None:
+    conn.execute("DROP TABLE IF EXISTS quality_issues")
+    conn.commit()
+    logger.info("Migration 6 downgrade: dropped quality_issues table")
+
+
+def _upgrade_7(conn: Any) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS news_favorites (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,75 +217,245 @@ def _run_migrations(conn: Any) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_news_fav_user ON news_favorites(user_id)")
-    # 给已有表补充 content 列（兼容旧数据库）
-    try:
-        nf_cols = {row[1] for row in conn.execute("PRAGMA table_info(news_favorites)").fetchall()}
-        if "content" not in nf_cols:
-            conn.execute("ALTER TABLE news_favorites ADD COLUMN content TEXT NOT NULL DEFAULT ''")
-            conn.commit()
-            logger.info("Migration: added content to news_favorites")
-    except Exception:
-        logger.info("Migration: news_favorites content column already exists (skipped)")
+    nf_cols = {row[1] for row in conn.execute("PRAGMA table_info(news_favorites)").fetchall()}
+    if "content" not in nf_cols:
+        conn.execute("ALTER TABLE news_favorites ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        logger.info("Migration 7: added content to news_favorites")
     conn.commit()
-    logger.info("Migration: ensured news_favorites table exists")
+    logger.info("Migration 7: ensured news_favorites table exists")
 
-    # sessions 表增加 user_id 列（P0-4：替代 tasks 表作为 session↔user 映射）
-    try:
-        s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
-        if "user_id" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
-            conn.commit()
-            # 回填：从 tasks 表反查已知的 session↔user 映射
-            rows = conn.execute(
-                "SELECT DISTINCT session_id, user_id FROM tasks WHERE user_id != ''"
-            ).fetchall()
-            for row in rows:
-                conn.execute(
-                    "UPDATE sessions SET user_id = ? WHERE session_id = ?",
-                    (row["user_id"], row["session_id"]),
-                )
-            conn.commit()
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
-            conn.commit()
-            logger.info("Migration: added user_id to sessions, backfilled %d rows", len(rows))
-    except Exception:
-        logger.info("Migration: sessions user_id column already exists (skipped)")
 
-    # ★ 多方案升级：itinerary 表新增 plans_json / confirmed_plan / confirmed_at / recommended_plan 列
-    try:
-        it_cols = {row[1] for row in conn.execute("PRAGMA table_info(itineraries)").fetchall()}
-        if "plans_json" not in it_cols:
-            conn.execute("ALTER TABLE itineraries ADD COLUMN plans_json TEXT")
-            conn.commit()
-            logger.info("Migration: added plans_json to itineraries")
-        if "confirmed_plan" not in it_cols:
-            conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added confirmed_plan to itineraries")
-        if "confirmed_at" not in it_cols:
-            conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added confirmed_at to itineraries")
-        if "recommended_plan" not in it_cols:
-            conn.execute("ALTER TABLE itineraries ADD COLUMN recommended_plan VARCHAR(32) DEFAULT NULL")
-            conn.commit()
-            logger.info("Migration: added recommended_plan to itineraries")
-    except Exception:
-        logger.info("Migration: itineraries multi-plan columns already exist (skipped)")
+def _downgrade_7(conn: Any) -> None:
+    conn.execute("DROP TABLE IF EXISTS news_favorites")
+    conn.commit()
+    logger.info("Migration 7 downgrade: dropped news_favorites table")
 
-    # ★ sessions 表新增 confirmed_plan / confirmed_at 列（会话级方案确认状态）
-    try:
-        s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
-        if "confirmed_plan" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
+
+def _upgrade_8(conn: Any) -> None:
+    s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "user_id" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT DISTINCT session_id, user_id FROM tasks WHERE user_id != ''"
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE sessions SET user_id = ? WHERE session_id = ?",
+                (row["user_id"], row["session_id"]),
+            )
+        conn.commit()
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)")
+        conn.commit()
+        logger.info("Migration 8: added user_id to sessions, backfilled %d rows", len(rows))
+
+
+def _downgrade_8(conn: Any) -> None:
+    logger.warning("Migration 8 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for user_id (data migration, cannot reverse)")
+
+
+def _upgrade_9(conn: Any) -> None:
+    it_cols = {row[1] for row in conn.execute("PRAGMA table_info(itineraries)").fetchall()}
+    if "plans_json" not in it_cols:
+        conn.execute("ALTER TABLE itineraries ADD COLUMN plans_json TEXT")
+        conn.commit()
+        logger.info("Migration 9: added plans_json to itineraries")
+    if "confirmed_plan" not in it_cols:
+        conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 9: added confirmed_plan to itineraries")
+    if "confirmed_at" not in it_cols:
+        conn.execute("ALTER TABLE itineraries ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 9: added confirmed_at to itineraries")
+    if "recommended_plan" not in it_cols:
+        conn.execute("ALTER TABLE itineraries ADD COLUMN recommended_plan VARCHAR(32) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 9: added recommended_plan to itineraries")
+
+
+def _downgrade_9(conn: Any) -> None:
+    logger.warning("Migration 9 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for multi-plan columns")
+
+
+def _upgrade_10(conn: Any) -> None:
+    s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "confirmed_plan" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_plan VARCHAR(32) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 10: added confirmed_plan to sessions")
+    if "confirmed_at" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 10: added confirmed_at to sessions")
+
+
+def _downgrade_10(conn: Any) -> None:
+    logger.warning("Migration 10 downgrade: SQLite cannot DROP COLUMN before 3.35; skipping column removal for confirmed_plan / confirmed_at")
+
+
+# ---------------------------------------------------------------------------
+# Migration registry
+# ---------------------------------------------------------------------------
+
+_MIGRATIONS: list[dict[str, Any]] = [
+    {
+        "version": 1,
+        "description": "Add experience_tag to long_term_memories",
+        "upgrade": _upgrade_1,
+        "downgrade": _downgrade_1,
+    },
+    {
+        "version": 2,
+        "description": "Add actual_cost to itinerary_activities",
+        "upgrade": _upgrade_2,
+        "downgrade": _downgrade_2,
+    },
+    {
+        "version": 3,
+        "description": "Create custom_agents table",
+        "upgrade": _upgrade_3,
+        "downgrade": _downgrade_3,
+    },
+    {
+        "version": 4,
+        "description": "Add mcp_servers and status to custom_agents",
+        "upgrade": _upgrade_4,
+        "downgrade": _downgrade_4,
+    },
+    {
+        "version": 5,
+        "description": "Add delegation context to sessions",
+        "upgrade": _upgrade_5,
+        "downgrade": _downgrade_5,
+    },
+    {
+        "version": 6,
+        "description": "Create quality_issues table",
+        "upgrade": _upgrade_6,
+        "downgrade": _downgrade_6,
+    },
+    {
+        "version": 7,
+        "description": "Create news_favorites table + content column",
+        "upgrade": _upgrade_7,
+        "downgrade": _downgrade_7,
+    },
+    {
+        "version": 8,
+        "description": "Add user_id to sessions + backfill",
+        "upgrade": _upgrade_8,
+        "downgrade": _downgrade_8,
+    },
+    {
+        "version": 9,
+        "description": "Add multi-plan columns to itineraries",
+        "upgrade": _upgrade_9,
+        "downgrade": _downgrade_9,
+    },
+    {
+        "version": 10,
+        "description": "Add confirmed_plan/confirmed_at to sessions",
+        "upgrade": _upgrade_10,
+        "downgrade": _downgrade_10,
+    },
+]
+
+
+def _run_migrations(conn: Any) -> None:
+    """Run all pending upgrade migrations and record them in schema_migrations."""
+    _ensure_migrations_table(conn)
+    applied = _get_applied_versions(conn)
+    for migration in _MIGRATIONS:
+        version = migration["version"]
+        if version in applied:
+            continue
+        try:
+            migration["upgrade"](conn)
+            applied_at = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "INSERT INTO schema_migrations (version, description, applied_at) VALUES (?, ?, ?)",
+                (version, migration["description"], applied_at),
+            )
             conn.commit()
-            logger.info("Migration: added confirmed_plan to sessions")
-        if "confirmed_at" not in s_cols:
-            conn.execute("ALTER TABLE sessions ADD COLUMN confirmed_at VARCHAR(32) DEFAULT NULL")
+            logger.info("Migration %d (%s) applied successfully", version, migration["description"])
+        except Exception:
+            logger.exception("Migration %d (%s) failed", version, migration["description"])
+            raise
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def init_db(db_path: str | Path | None = None) -> None:
+    conn = get_connection(db_path)
+    conn.executescript(_SCHEMA)
+    conn.commit()
+    _run_migrations(conn)
+    logger.info("Database initialized: %s", db_path or settings.database_path)
+
+
+def run_upgrade(conn: sqlite3.Connection | None = None) -> None:
+    """Run pending upgrade migrations. Can be called independently."""
+    if conn is None:
+        conn = get_connection()
+    _run_migrations(conn)
+
+
+def downgrade(target_version: int, conn: sqlite3.Connection | None = None) -> None:
+    """Roll back migrations down to (but not including) *target_version*.
+
+    For SQLite, column drops are not supported before version 3.35 so those
+    downgrade steps are recorded but the actual column removal is skipped.
+    Table-level downgrades (DROP TABLE) are fully supported.
+    """
+    if conn is None:
+        conn = get_connection()
+    _ensure_migrations_table(conn)
+    applied = _get_applied_versions(conn)
+
+    # Iterate migrations in reverse order
+    for migration in reversed(_MIGRATIONS):
+        version = migration["version"]
+        if version <= target_version:
+            break
+        if version not in applied:
+            continue
+        try:
+            migration["downgrade"](conn)
+            conn.execute("DELETE FROM schema_migrations WHERE version = ?", (version,))
             conn.commit()
-            logger.info("Migration: added confirmed_at to sessions")
-    except Exception:
-        logger.info("Migration: sessions confirmed_plan/confirmed_at columns already exist (skipped)")
+            logger.info("Migration %d (%s) downgraded successfully", version, migration["description"])
+        except Exception:
+            logger.exception("Migration %d (%s) downgrade failed", version, migration["description"])
+            raise
+
+
+def get_migration_status(conn: sqlite3.Connection | None = None) -> dict[str, Any]:
+    """Return current schema version and list of applied migrations."""
+    if conn is None:
+        conn = get_connection()
+    _ensure_migrations_table(conn)
+    rows = conn.execute(
+        "SELECT version, description, applied_at FROM schema_migrations ORDER BY version"
+    ).fetchall()
+    applied = [
+        {"version": row["version"], "description": row["description"], "applied_at": row["applied_at"]}
+        for row in rows
+    ]
+    current_version = max((row["version"] for row in rows), default=0)
+    pending = [m for m in _MIGRATIONS if m["version"] not in {row["version"] for row in rows}]
+    return {
+        "current_version": current_version,
+        "applied": applied,
+        "pending_count": len(pending),
+        "pending": [
+            {"version": m["version"], "description": m["description"]}
+            for m in pending
+        ],
+    }
 
 
 _SCHEMA = """

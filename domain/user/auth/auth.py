@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
 
 from infrastructure.persistence.database import get_connection
+from infrastructure.security.password import hash_password, verify_password, needs_upgrade
 
 
 @dataclass
@@ -24,34 +24,7 @@ class User:
             self.updated_at = self.created_at
 
 
-# P2-2：OWASP 推荐 600000 次迭代（旧值 100000）。
-# hash 格式：新密码 `iterations$salt$hex`；旧密码 `salt$hex`（按 100000 验证，向后兼容）。
-_PBKDF2_ITERATIONS = 600000
 
-
-def _hash_password(password: str, salt: str = "", iterations: int = _PBKDF2_ITERATIONS) -> str:
-    if not salt:
-        salt = os.urandom(16).hex()
-    hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iterations)
-    return f"{iterations}${salt}${hashed.hex()}"
-
-
-def _verify_password(password: str, password_hash: str) -> bool:
-    parts = password_hash.split("$")
-    # 新格式：iterations$salt$hex
-    if len(parts) == 3:
-        iterations_str, salt, _ = parts
-        try:
-            iterations = int(iterations_str)
-        except ValueError:
-            return False
-        return _hash_password(password, salt, iterations) == password_hash
-    # 旧格式：salt$hex（iterations=100000，向后兼容）
-    if len(parts) == 2:
-        salt, _ = parts
-        hashed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000)
-        return f"{salt}${hashed.hex()}" == password_hash
-    return False
 
 
 class UserStore:
@@ -88,7 +61,7 @@ class UserStore:
         if username in self._username_index:
             raise ValueError("用户名已存在")
         user_id = os.urandom(8).hex()
-        password_hash = _hash_password(password)
+        password_hash = hash_password(password)
         now = datetime.utcnow().isoformat()
         user = User(user_id=user_id, username=username, password_hash=password_hash, created_at=now, updated_at=now)
         conn = get_connection()
@@ -109,8 +82,18 @@ class UserStore:
         user = self._cache.get(user_id)
         if not user:
             return None
-        if not _verify_password(password, user.password_hash):
+        if not verify_password(password, user.password_hash):
             return None
+        # Auto-upgrade: PBKDF2 → bcrypt
+        if needs_upgrade(user.password_hash):
+            new_hash = hash_password(password)
+            conn = get_connection()
+            conn.execute(
+                "UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?",
+                (new_hash, datetime.utcnow().isoformat(), user.user_id),
+            )
+            conn.commit()
+            user.password_hash = new_hash
         return user
 
     def get_by_id(self, user_id: str) -> User | None:

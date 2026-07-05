@@ -72,7 +72,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const res = await fetch(`/api/session/${sessionId}/confirm-status`)
       if (res.ok) {
         const data = await res.json()
-        set({ sessionConfirmedPlan: data.confirmed_plan ?? null })
+        // 后端存储 sightseeing/budget，前端使用 plan1/plan2
+        const planMap: Record<string, 'plan1' | 'plan2'> = { sightseeing: 'plan1', budget: 'plan2' }
+        const mapped = data.confirmed_plan ? planMap[data.confirmed_plan] ?? null : null
+        set({ sessionConfirmedPlan: mapped })
       }
     } catch {
       // ignore

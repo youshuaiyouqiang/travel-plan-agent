@@ -47,14 +47,32 @@ if (-not $cleared) { Write-Ok "端口 $BackendPort / $FrontendPort 空闲" }
 # ---------- 1. 环境检查 ----------
 Write-Step "环境检查"
 
-$py = Get-Command python -ErrorAction SilentlyContinue
-if (-not $py) {
-    $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) { $Python = "py" } else { Write-Err "未找到 python / py，请先安装 Python 3.10+"; exit 1 }
-} else {
-    $Python = "python"
+# 探测可用的 Python：跳过 WindowsApps 的 0 字节 stub（Store 占位符），并验证能真正运行
+function Resolve-PythonExe {
+    # 1) 优先用 py 启动器（最稳）
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $ver = & py --version 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ver) { return @{ Exe = "py"; Version = $ver } }
+    }
+    # 2) 遍历所有 python 命令，跳过 WindowsApps stub
+    foreach ($c in (Get-Command python -All -ErrorAction SilentlyContinue)) {
+        if ($c.Source -and $c.Source -like "*\WindowsApps\*") { continue }
+        $ver = & $c.Source --version 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ver) { return @{ Exe = $c.Source; Version = $ver } }
+    }
+    # 3) 最后兜底：直接试 python（即便命中 stub 也试一次）
+    $ver = & python --version 2>$null
+    if ($LASTEXITCODE -eq 0 -and $ver) { return @{ Exe = "python"; Version = $ver } }
+    return $null
 }
-Write-Ok "Python: $Python (& $Python --version)"
+$pyInfo = Resolve-PythonExe
+if (-not $pyInfo) {
+    Write-Err "未找到可用的 Python 3.10+（系统 PATH 中的 python 是 Windows Store 占位符）。请安装 Python 或激活对应虚拟环境后重试。"
+    exit 1
+}
+$Python = $pyInfo.Exe
+Write-Ok "Python: $Python (& $($pyInfo.Version))"
 
 $node = Get-Command npm -ErrorAction SilentlyContinue
 if (-not $node) { Write-Err "未找到 npm，请先安装 Node.js 18+"; exit 1 }
