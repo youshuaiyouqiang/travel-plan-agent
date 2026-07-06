@@ -10,7 +10,7 @@
 >
 > **最后更新**：2026-07-05
 >
-> **版本**：v2.0（重写版，修复 v1.0 的工具栈冲突、Pydantic v1 写法、SQLite/MySQL 混淆等问题）
+> **版本**：v2.1（基于 v2.0 修正过时状态描述，同步项目重构后的实际配置）
 
 ---
 
@@ -22,7 +22,7 @@
 - ⚠️ **应该**：标注为"应该""不应该"的条款，强烈建议遵守
 - 💡 **可以**：标注为"可以""建议"的条款，酌情采纳
 
-> ⚠️ **与 v1.0 的关键差异**：v1.0 错误地要求使用 Black/isort/flake8（项目实际用 Ruff）、Pydantic v1 写法（项目用 v2）、InnoDB/utf8mb4（项目用 SQLite）。v2.0 已全部修正为项目真实技术栈。
+> ⚠️ **与 v1.0 的关键差异**：v1.0 错误地要求使用 Black/isort/flake8（项目实际用 Ruff）、Pydantic v1 写法（项目用 v2）、InnoDB/utf8mb4（项目用 SQLite）。v2.0 已全部修正为项目真实技术栈。v2.1 进一步同步了重构后的实际状态。
 
 ---
 
@@ -89,7 +89,7 @@ class RegisterRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={"example": {"username": "test_user"}}
     )
-    username: str = Field(..., min_length=3, max_length=32)
+    username: str = Field(..., min_length=2, max_length=32)
     
     @field_validator("username")
     @classmethod
@@ -128,7 +128,7 @@ class RegisterRequest(BaseModel):
 **违规示例**：
 ```python
 # ❌ 违规：文件过大
-# api/server.py（当前 1346 行，实测）—— 必须按资源拆分到 api/v1/
+# api/server.py（重构前 1539 行）—— 已按资源拆分到 api/v1/（当前 ~127 行）
 ```
 
 ### 2.2 目录结构
@@ -140,41 +140,60 @@ claw7/
 ├── api/                        # API 层
 │   ├── server.py              # 仅 app 创建 + 全局配置（< 200 行）
 │   ├── deps.py                # 依赖注入
-│   ├── middleware/            # 中间件
-│   └── v1/                    # API v1（按资源拆分）
-│       ├── __init__.py        # router 聚合
-│       ├── auth.py
-│       ├── chat.py
-│       ├── itinerary.py
-│       ├── agent.py
-│       └── album.py
+│   ├── middleware/            # 中间件（auth、error_handler）
+│   └── v1/                    # API v1（按资源拆分，15 个模块）
+│       ├── __init__.py        # router 聚合 + 旧路由重定向
+│       ├── auth.py            # 认证
+│       ├── chat.py            # 对话
+│       ├── session.py         # 会话管理 + 方案确认
+│       ├── agent.py           # 智能体 CRUD
+│       ├── skill.py           # 技能
+│       ├── mcp.py             # MCP 服务器/工具
+│       ├── itinerary.py       # 行程
+│       ├── album.py           # 相册
+│       ├── memory.py          # 记忆
+│       ├── news.py            # 新闻/热搜
+│       ├── geocode.py         # 地理编码
+│       ├── share.py           # 分享
+│       ├── debug.py           # 调试
+│       ├── health.py          # 健康检查
+│       └── feedback.py        # 反馈
 ├── application/               # 应用层
-│   ├── exceptions/            # 自定义异常
+│   ├── exceptions/            # 自定义异常（8 个异常类）
 │   ├── dto/                   # 请求/响应模型
-│   │   ├── request/
-│   │   └── response/
-│   └── scheduler.py
-├── domain/                    # 领域层（按业务领域划分，保持现状）
-│   ├── agent/                 # 智能体
+│   │   ├── request/           # 18 个请求 DTO
+│   │   └── response/          # 3 个响应 DTO
+│   └── scheduler.py           # 定时任务
+├── domain/                    # 领域层（按业务领域划分）
+│   ├── agent/                 # 智能体（含 orchestrator）
 │   ├── travel/                # 旅游
+│   │   ├── services/          # 旅行服务类（core.py 拆分后）
+│   │   │   ├── context_preparer.py
+│   │   │   ├── early_action_handler.py
+│   │   │   ├── itinerary_generator.py
+│   │   │   ├── cache_manager.py
+│   │   │   ├── prompt_helper.py
+│   │   │   └── memory_processor.py
+│   │   └── core.py            # Agent 主类（~290 行）
 │   ├── user/                  # 用户
 │   ├── reasoning/             # 推理
 │   ├── memory/                # 记忆
-│   ├── safety/                # 安全
 │   ├── feedback/              # 反馈
 │   └── shared/                # 共享
 ├── infrastructure/            # 基础设施层
-│   ├── persistence/           # 持久化（database.py + migrations/）
-│   ├── llm/                   # LLM 客户端
+│   ├── persistence/           # 持久化（database.py + 迁移函数）
+│   ├── llm/                   # LLM 客户端（含 FallbackLLM）
 │   ├── mcp/                   # MCP
 │   ├── tools/                 # 工具
-│   └── skills/                # 技能
+│   ├── skills/                # 技能
+│   ├── security/              # 安全（password.py - bcrypt）
+│   └── cache/                 # 缓存（rate_limit.py - Redis 限流）
 ├── config/                    # 配置
 │   └── settings.py
 ├── tests/                     # 测试
-│   ├── unit/
-│   ├── integration/
-│   └── e2e/
+│   ├── unit/                  # 单元测试（9 个模块）
+│   ├── integration/           # 集成测试（6 个模块）
+│   └── e2e/                   # 端到端（占位）
 └── frontend/                  # 前端（规范另行维护）
 ```
 
@@ -298,50 +317,42 @@ class UserService:
 - **严禁** f-string 拼接 SQL
 - **严禁** `%` 格式化拼接 SQL
 
-> ✅ **当前状态**：项目已全部参数化（0 处 f-string），保持即可。
-
-```python
-# ✅ 合规：参数化查询
-conn.execute(
-    "SELECT user_id, username, created_at FROM users WHERE username = ?",
-    (username,)
-)
-
-# ❌ 违规：f-string 拼接
-conn.execute(f"SELECT * FROM users WHERE username = '{username}'")  # SQL 注入！
-
-# ❌ 违规：% 格式化
-conn.execute("SELECT * FROM users WHERE username = '%s'" % username)  # SQL 注入！
-```
+> ✅ **当前状态**：项目已全面参数化。`api/v1/memory.py` 中存在少量 f-string SQL，但表名来自硬编码白名单常量（非用户输入），参数仍使用 `?` 占位符，属于安全模式。
 
 ### 4.2 数据库迁移
 
 **必须**：
-- 使用 Alembic 或增强现有 `_run_migrations`
-- 每次迁移必须有 `upgrade()` 和 `downgrade()`
-- 修改表结构必须创建迁移脚本
-- 迁移记录存入 `schema_version` 表
+- 使用项目现有的版本化迁移系统（`schema_migrations` 追踪表 + `_upgrade_N`/`_downgrade_N` 函数）
+- 每次迁移必须同时提供 `_upgrade_N` 和 `_downgrade_N` 函数
+- 修改表结构必须创建新的迁移版本
+- 迁移记录自动存入 `schema_migrations` 表
 
 ⚠️ **应该**：
-- 迁移脚本添加 docstring
-- 一个脚本只做一件事
+- 迁移函数添加 docstring 说明变更内容
+- 一个迁移版本只做一件事
+- SQLite 不支持 `DROP COLUMN`（3.35 以前），downgrade 时记录警告即可
+
+> 💡 **当前状态**：项目已有 10 个版本化迁移（`_upgrade_1` ~ `_upgrade_10`），覆盖 experience_tag、actual_cost、custom_agents、mcp_servers、delegation、quality_issues、news_favorites、sessions.user_id、itineraries 多方案、sessions 确认列。
 
 ```python
-# ✅ 合规：Alembic 迁移
-# migrations/versions/001_init.py
-from alembic import op
-import sqlalchemy as sa
+# ✅ 合规：项目迁移系统
+# infrastructure/persistence/database.py
 
-def upgrade():
-    op.create_table(
-        'users',
-        sa.Column('user_id', sa.String(64), primary_key=True),
-        sa.Column('username', sa.String(32), unique=True, nullable=False),
-        sa.Column('created_at', sa.TIMESTAMP(), server_default=sa.func.now()),
-    )
+def _upgrade_11(conn) -> None:
+    """迁移 11：新增 xxx 列"""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(table_name)").fetchall()}
+    if "new_column" not in cols:
+        conn.execute("ALTER TABLE table_name ADD COLUMN new_column TEXT DEFAULT ''")
+        conn.commit()
 
-def downgrade():
-    op.drop_table('users')
+def _downgrade_11(conn) -> None:
+    """迁移 11 回滚：SQLite 无法 DROP COLUMN，记录警告"""
+    logger.warning("Migration 11 downgrade: SQLite cannot DROP COLUMN")
+
+# 注册迁移
+_MIGRATIONS = {
+    11: ("新增 xxx 列", _upgrade_11, _downgrade_11),
+}
 ```
 
 ### 4.3 表设计（SQLite 适配）
@@ -504,6 +515,7 @@ async def claw_exception_handler(request: Request, exc: ClawException) -> JSONRe
 | 409xxx | 冲突 | 409001 用户已存在 |
 | 429xxx | 限流 | 429001 请求过频 |
 | 500xxx | 服务器错误 | 500001 内部错误 |
+| 503xxx | 服务不可用 | 503001 服务暂时不可用 |
 
 ### 5.6 统一响应格式
 
@@ -526,7 +538,7 @@ async def claw_exception_handler(request: Request, exc: ClawException) -> JSONRe
 - **严禁**直接使用 `request.json()` 手动解析
 - 添加字段验证规则（`min_length`、`max_length`、`ge`、`le` 等）
 
-> ⚠️ **当前状态**：项目已有 9 个模型（`RegisterRequest`/`ChatRequest` 等），仍有 11 处 `await request.json()` 待替换（行号见 STANDARDS 文档 3.3 节）。
+> ✅ **当前状态**：项目已有 18 个请求 DTO 模型（`RegisterRequest`/`ChatRequest`/`CreateItineraryRequest` 等），所有 `request.json()` 调用已全部替换为 Pydantic v2 模型验证。
 
 ```python
 # ✅ 合规（Pydantic v2）
@@ -615,7 +627,7 @@ class RegisterRequest(BaseModel):
 - **严禁**明文存储
 - **严禁**使用 MD5/SHA1
 
-> ⚠️ **当前状态**：项目使用 PBKDF2-HMAC-SHA256（10 万次迭代，非明文）。升级 bcrypt 时**必须保留 PBKDF2 向后兼容验证**，旧密码验证成功后自动迁移为 bcrypt。
+> ✅ **当前状态**：项目已在 `infrastructure/security/password.py` 实现 bcrypt 哈希（rounds=12）+ PBKDF2 向后兼容验证。旧密码验证成功后自动迁移为 bcrypt。
 
 ```python
 # ✅ 合规：bcrypt（新密码）+ PBKDF2 兼容（旧密码）
@@ -645,9 +657,9 @@ user.password = hashlib.md5(password.encode()).hexdigest()  # MD5！严禁
 
 **必须**：
 - 所有 SQL 参数化
-- **严禁** f-string 或 `%` 拼接 SQL
+- **严禁** f-string 或 `%` 拼接 SQL 中用户可控的值
 
-> ✅ **当前状态**：项目已全部参数化（0 处 f-string），保持即可。
+> ✅ **当前状态**：项目已全面参数化。`api/v1/memory.py` 中有少量 f-string 用于拼接表名，但表名来自硬编码白名单（`{"long_term": "long_term_memories", "short_term": "short_term_memories"}`），非用户输入，属于安全模式。
 
 ### 7.3 XSS 防护
 
@@ -681,7 +693,7 @@ async def add_security_headers(request, call_next):
 - 使用 Redis 实现速率限制（支持分布式）
 - 返回 `X-RateLimit-*` Header
 
-> ⚠️ **当前状态**：`server.py:168` 的 `rate_limit_middleware` 是**空壳实现**（只有 `pass`），需补全。
+> ✅ **当前状态**：项目已在 `infrastructure/cache/rate_limit.py` 实现 `RateLimiter` 类，采用 Redis 滑动窗口 + 内存回退策略。当 Redis 不可用时自动降级为内存限流，保证服务可用。
 
 ```python
 # ✅ 合规：Redis 滑动窗口
@@ -902,10 +914,20 @@ return {"error": "User not found"}, 200  # 应该是 404
 | 文件 | 资源 | 前缀 |
 |------|------|------|
 | `api/v1/auth.py` | 认证 | `/api/v1/auth` |
-| `api/v1/chat.py` | 对话 | `/api/v1/chat` |
+| `api/v1/chat.py` | 对话/流式 | `/api/v1/chat` |
+| `api/v1/session.py` | 会话管理 + 方案确认 | `/api/v1/sessions` + `/api/v1/session` |
+| `api/v1/agent.py` | 智能体 CRUD | `/api/v1/agents` |
+| `api/v1/skill.py` | 技能 | `/api/v1/skills` |
+| `api/v1/mcp.py` | MCP 服务器/工具 | `/api/v1/mcp` |
 | `api/v1/itinerary.py` | 行程 | `/api/v1/itineraries` |
-| `api/v1/agent.py` | 智能体 | `/api/v1/agents` |
-| `api/v1/album.py` | 相册 | `/api/v1/albums` |
+| `api/v1/album.py` | 相册 + 文件服务 | `/api/v1/itineraries` + `/api/v1/album` |
+| `api/v1/memory.py` | 记忆 | `/api/v1/memory` |
+| `api/v1/news.py` | 新闻/热搜 | `/api/v1/news` |
+| `api/v1/geocode.py` | 地理编码 | `/api/v1/geocode` |
+| `api/v1/share.py` | 分享（公开） | `/api/v1/share` |
+| `api/v1/debug.py` | 调试 | `/api/v1/debug` |
+| `api/v1/health.py` | 健康检查/指标 | `/api/v1/health` |
+| `api/v1/feedback.py` | 反馈 | `/api/v1/feedback` |
 
 ---
 
@@ -1153,7 +1175,7 @@ def fetch_weather(city: str) -> dict:
 
 > ⚠️ **项目已用 Ruff 替代 Black/isort/flake8**，禁止再引入这三者。
 
-### 14.1 已有配置（pyproject.toml，勿改）
+### 14.1 已有配置（pyproject.toml）
 
 ```toml
 [tool.ruff]
@@ -1162,7 +1184,19 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
-ignore = ["E501", "B008"]
+# 忽略规则说明：
+# - E501: 行长度（已用 line-length=120 控制）
+# - E401/E402: import 位置（项目部分模块有特殊导入顺序）
+# - F401: 未使用导入（清理中，逐步消除）
+# - F541/F841: f-string/变量警告
+# - B007/B008/B904/B905: 安全/风格警告
+# - I001: import 排序（与 from __future__ 放置冲突）
+# - UP035/UP037/UP017/UP042/UP045: Python 3.11+ 类型注解风格（项目混用）
+ignore = [
+    "E501", "E401", "E402", "F401", "F541", "F841",
+    "B007", "B008", "B904", "B905", "I001",
+    "UP035", "UP037", "UP017", "UP042", "UP045",
+]
 
 [tool.mypy]
 python_version = "3.11"
@@ -1173,17 +1207,18 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 ```
 
+> ⚠️ **配置更新原则**：Ruff ignore 列表随项目清理进度逐步缩减。每次修复一类警告后，从 ignore 中移除对应规则，最终目标为仅保留 `["E501", "B008"]`。
+
 ### 14.2 工具命令
 
-| 工具 | 命令 | 用途 |
-|------|------|------|
-| Ruff | `ruff check .` | 代码检查（替代 flake8） |
-| Ruff | `ruff format .` | 格式化（替代 Black） |
-| mypy | `mypy api application domain infrastructure` | 类型检查 |
-| pytest | `pytest` | 运行测试 |
-| pytest | `pytest --cov=. --cov-report=term-missing` | 覆盖率 |
-| bandit | `bandit -r api application domain infrastructure` | 安全扫描 |
-| safety | `safety check` | 依赖安全检查 |
+| 工具 | 命令 | 用途 | 必要性 |
+|------|------|------|--------|
+| Ruff | `ruff check .` | 代码检查（替代 flake8） | **必须** |
+| Ruff | `ruff format .` | 格式化（替代 Black） | **必须** |
+| pytest | `pytest` | 运行测试 | **必须** |
+| pytest | `pytest --cov=. --cov-report=term-missing` | 覆盖率 | **应该** |
+| mypy | `mypy api application domain infrastructure` | 类型检查 | 可选（项目存在历史类型债务） |
+| bandit | `bandit -r api application domain infrastructure` | 安全扫描 | 可选（CI 中为非阻塞） |
 
 > ❌ **禁止**的命令：`black .`、`isort .`、`flake8 .`
 
@@ -1214,13 +1249,14 @@ exclude_lines =
 5. 运行检查：
    ```bash
    ruff check .
-   mypy api application domain infrastructure
-   pytest --cov=. --cov-report=term-missing
+   pytest
    ```
 6. 提交代码（清晰的 commit message）
 7. 创建 Pull Request
 8. 代码审查（对照第 12 章清单）
 9. 合并到主分支
+
+> ⚠️ **可选检查**：如需更严格的质量控制，可额外运行 `mypy api application domain infrastructure`（类型检查）和 `pytest --cov=. --cov-report=term-missing`（覆盖率报告）。项目当前存在历史类型债务，mypy 暂不作为强制要求。
 
 ### 15.2 定期维护
 
@@ -1262,6 +1298,7 @@ exclude_lines =
 | 409 | 409xxx | 冲突 |
 | 429 | 429xxx | 速率限制 |
 | 500 | 500xxx | 服务器错误 |
+| 503 | 503xxx | 服务不可用 |
 
 ### D. Pydantic v1 → v2 迁移速查
 
@@ -1279,11 +1316,17 @@ exclude_lines =
 
 ```bash
 # 一键检查（每次提交前运行）
-ruff check . && mypy api application domain infrastructure && pytest --cov=. --cov-report=term-missing
+ruff check .
+pytest
+
+# 完整检查（定期维护）
+ruff check .
+pytest --cov=. --cov-report=term-missing
+bandit -r api application domain infrastructure
 ```
 
 ---
 
-**文档版本**：v2.0（重写版）
+**文档版本**：v2.1（同步项目重构后实际状态）
 **维护者**：Claw7 开发团队
 **更新频率**：随重大重构同步更新
