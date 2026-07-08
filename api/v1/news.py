@@ -21,7 +21,7 @@ async def trending(refresh: bool = False) -> dict:
     return {"items": items}
 
 
-@router.get("/news/favorites")
+@router.get("/favorites")
 async def list_news_favorites(request: Request) -> dict:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
@@ -51,7 +51,7 @@ async def list_news_favorites(request: Request) -> dict:
     return {"favorites": favorites}
 
 
-@router.post("/news/favorites")
+@router.post("/favorites")
 async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
     """收藏一条新闻，同时写入 short_term_memories 让智能体能检索到。"""
     user_id = getattr(request.state, "user_id", None)
@@ -85,7 +85,7 @@ async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
     return {"status": "ok", "title": req.title}
 
 
-@router.delete("/news/favorites/{favorite_id}")
+@router.delete("/favorites/{favorite_id}")
 async def delete_news_favorite(favorite_id: int, request: Request) -> dict:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:

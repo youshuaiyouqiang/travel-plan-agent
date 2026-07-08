@@ -12,8 +12,8 @@ from infrastructure.cache.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
-_PUBLIC_PATHS = {"/api/auth/register", "/api/auth/login", "/api/trending", "/health", "/metrics", "/api/shared"}
-_PUBLIC_PREFIXES = ("/api/album/",)
+_PUBLIC_PATHS = {"/api/auth/register", "/api/auth/login", "/api/news/trending", "/api/health", "/api/health/metrics", "/api/shared", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/news/trending", "/api/v1/health", "/api/v1/health/metrics", "/api/v1/shared", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
+_PUBLIC_PREFIXES = ("/api/album/", "/api/v1/album/", "/docs", "/openapi.json", "/redoc")
 
 _rate_counters: dict[str, dict[str, float]] = {}
 _RATE_WINDOW = 60

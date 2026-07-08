@@ -96,6 +96,8 @@ export function Home() {
         } catch {
           // 消息加载失败，不阻塞
         }
+        // ★ 恢复确认状态（页面刷新时同步sessionConfirmedPlan）
+        useSessionStore.getState().syncConfirmStatus(lastSession.session_id)
         return
       }
       // 没有历史会话，创建新会话
@@ -116,6 +118,8 @@ export function Home() {
     // 清除旧会话的临时状态
     useSessionStore.getState().clearAgentActions()
     useSessionStore.getState().setActiveAgent(null)
+    // ★ 先重置确认状态，避免异步期间渲染使用旧值
+    useSessionStore.getState().setSessionConfirmedPlan(null)
     // 从服务端恢复确认状态
     useSessionStore.getState().syncConfirmStatus(newSessionId)
     try {

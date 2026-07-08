@@ -39,6 +39,7 @@ def _find_server(catalog, server_id: str):
 
 
 @router.get("")
+@router.get("/servers")
 async def list_mcp_servers(request: Request) -> dict:
     """列出所有 MCP server（含 tools 和 adapter_available 状态）。"""
     user_id = getattr(request.state, "user_id", None)

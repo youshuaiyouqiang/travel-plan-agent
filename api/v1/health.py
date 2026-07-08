@@ -8,7 +8,7 @@ from config import settings
 router = APIRouter(tags=["health"])
 
 
-@router.get("/health")
+@router.get("")
 async def health() -> dict:
     try:
         from infrastructure.persistence.health import check_health

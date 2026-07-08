@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter
 
-from api.v1.auth import router as auth_router
 from api.v1.agent import router as agent_router
+from api.v1.auth import router as auth_router
 from api.v1.album import album_serve_router
 from api.v1.album import router as album_router
 from api.v1.chat import router as chat_router
@@ -24,44 +23,10 @@ from api.v1.skill import router as skill_router
 """API v1 路由聚合。
 
 所有子模块路由在此汇总，由 server.py 通过 ``app.include_router(v1_router, prefix="/api/v1")`` 挂载。
-同时保留旧路由前缀的 301 重定向，确保前端不中断。
+server.py 同时将 v1_router 挂载在 /api 前缀下实现向后兼容，无需额外重定向。
 """
 
 router = APIRouter()
-
-
-# ── 旧路由重定向（向后兼容）────────────────────────────────
-
-_LEGACY_REDIRECTS = {
-    "/api/auth/login": "/api/v1/auth/login",
-    "/api/auth/register": "/api/v1/auth/register",
-    "/api/auth/logout": "/api/v1/auth/logout",
-    "/api/auth/me": "/api/v1/auth/me",
-    "/api/sessions": "/api/v1/sessions",
-    "/api/sessions/": "/api/v1/sessions",
-}
-
-_LEGACY_PREFIX_REDIRECTS = {
-    "/api/agents": "/api/v1/agents",
-    "/api/skills": "/api/v1/skills",
-    "/api/mcp": "/api/v1/mcp",
-    "/api/itineraries": "/api/v1/itineraries",
-    "/api/album": "/api/v1/album",
-    "/api/memory": "/api/v1/memory",
-    "/api/news": "/api/v1/news",
-    "/api/share": "/api/v1/share",
-}
-
-
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def legacy_redirect(request: Request, path: str):
-    full_path = f"/{path}"
-    if full_path in _LEGACY_REDIRECTS:
-        return RedirectResponse(url=_LEGACY_REDIRECTS[full_path], status_code=301)
-    for prefix, target in _LEGACY_PREFIX_REDIRECTS.items():
-        if full_path.startswith(prefix):
-            return RedirectResponse(url=full_path.replace(prefix, target, 1), status_code=301)
-    return RedirectResponse(url=f"/api/v1/{path}", status_code=301)
 
 
 # ── 路由挂载 ──────────────────────────────────────────────
@@ -76,7 +41,7 @@ router.include_router(mcp_router, prefix="/mcp")
 router.include_router(itinerary_router, prefix="/itineraries")
 router.include_router(album_router, prefix="/itineraries")
 router.include_router(album_serve_router, prefix="/album")
-router.include_router(memory_router, prefix="/memory")
+router.include_router(memory_router, prefix="/memories")
 router.include_router(news_router, prefix="/news")
 router.include_router(geocode_router, prefix="/geocode")
 router.include_router(share_router, prefix="/share")
