@@ -2,6 +2,25 @@
 
 > 本文档专为前端开发者编写，包含所有 60 个接口的请求/响应格式、TypeScript 类型定义、代码示例和常见错误处理。
 
+## 接口总览（60 个）
+
+- **认证**：`POST /api/auth/register` · `POST /api/auth/login`
+- **对话**：`POST /api/chat` · `POST /api/chat/stream`（SSE 流式）
+- **会话**：`GET /api/sessions` · `POST /api/sessions` · `DELETE /api/sessions/{session_id}` · `GET /api/sessions/{session_id}/messages`
+- **方案确认**：`POST /api/session/{session_id}/confirm-plan` · `POST /api/session/{session_id}/revoke-confirm` · `GET /api/session/{session_id}/confirm-status`
+- **智能体**：`GET /api/agents` · `POST /api/agents/custom` · `GET/PUT/DELETE /api/agents/custom/{agent_id}` · `POST /api/agents/custom/{agent_id}/clone`
+- **技能**：`GET /api/skills` · `GET /api/skills/{skill_name}`
+- **MCP**：`GET /api/mcp`（等价 `/api/mcp/servers`）· `GET /api/mcp/{server_id}` · `GET /api/mcp/{server_id}/tools`
+- **行程**：`POST/GET /api/itineraries` · `POST /api/itineraries/compare` · `GET/PUT/DELETE /api/itineraries/{itinerary_id}` · `PATCH/DELETE /api/itineraries/{itinerary_id}/activities/{activity_id}` · `PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/cost` · `GET /api/itineraries/{itinerary_id}/expense-summary` · `POST/GET/DELETE /api/itineraries/{itinerary_id}/shares[/{token}]` · `POST /api/itineraries/{itinerary_id}/share`
+- **相册**：`POST/GET/DELETE/PATCH /api/itineraries/{itinerary_id}/photos[/{photo_id}]` · `POST /api/itineraries/{itinerary_id}/photos/{photo_id}/cover` · `GET /api/itineraries/{itinerary_id}/photos/map` · `POST /api/itineraries/{itinerary_id}/travelogue` · `GET /api/album/{file_path}`
+- **地理编码**：`POST /api/geocode` · `POST /api/geocode/intl`
+- **记忆**：`GET /api/memories` · `DELETE /api/memories/{memory_type}/{memory_id}`
+- **新闻/热门**：`GET /api/news/trending`（公开）· `GET/POST/DELETE /api/news/favorites[/{favorite_id}]`
+- **反馈**：`POST /api/feedback`
+- **系统**：`GET /health` · `GET /health/metrics`
+- **分享**：`GET /api/share/{token}`（公开）
+- **调试（开发环境）**：`GET /debug/trace/{session_id}` · `GET /debug/session/{session_id}` · `GET /debug/mcp` · `GET /debug/mcp/select` · `GET /debug/task/{session_id}`
+
 ---
 
 ## 基础信息
@@ -12,6 +31,8 @@
 | Content-Type | `application/json`（除文件上传外） |
 | 字符编码 | UTF-8 |
 | 单文件上传 | `multipart/form-data` |
+
+> **接口前缀**：所有接口同时挂载在 `/api` 与 `/api/v1` 两个前缀下，二者完全等价（例如 `POST /api/chat` 与 `POST /api/v1/chat` 均可访问），前端使用任一前缀均可。
 
 ### 项目启动
 
@@ -86,7 +107,7 @@ axios.interceptors.response.use(
 |------|------|
 | `POST /api/auth/register` | 用户注册 |
 | `POST /api/auth/login` | 用户登录 |
-| `GET /api/trending` | 热门推荐 |
+| `GET /api/news/trending` | 热门推荐 |
 | `GET /api/shared/{token}` | 查看分享行程 |
 | `GET /health` | 健康检查 |
 | `GET /metrics` | Prometheus 指标 |
@@ -1684,10 +1705,10 @@ const res = await axios.post<{ status: string; id: string }>('/api/feedback', {
 ### 12.1 获取热门旅行话题
 
 ```
-GET /api/trending
+GET /api/news/trending
 ```
 
-**公开接口**，无需鉴权，可用于首页/未登录状态展示。
+**公开接口**（注意真实路径为 `/api/news/trending`，而非 `/api/trending`），无需鉴权，可用于首页/未登录状态展示。
 
 ```typescript
 interface TrendingItem {
@@ -1700,7 +1721,7 @@ interface TrendingItem {
   hotChange: string;   // 热度变化，如 "上升"
 }
 
-const res = await axios.get<{ items: TrendingItem[] }>('/api/trending', {
+const res = await axios.get<{ items: TrendingItem[] }>('/api/news/trending', {
   params: { refresh: true },  // 强制刷新（默认使用缓存）
 });
 ```

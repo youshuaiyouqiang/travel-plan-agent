@@ -8,6 +8,23 @@
 
 ---
 
+## 目录
+
+- [功能亮点](#功能亮点)
+- [系统架构](#系统架构)
+- [技术栈](#技术栈)
+- [前端开发指南](#前端开发指南)
+- [快速开始](#快速开始)
+- [部署指南](#部署指南)
+- [项目结构](#项目结构)
+- [环境变量](#环境变量)
+- [文档](#文档)
+- [测试](#测试)
+- [贡献指南](#贡献指南)
+- [许可证](#许可证)
+
+---
+
 ## 功能亮点
 
 - **多智能体架构** — Orchestrator 三层决策（快路径 → function calling 委派 → 委派执行）+ TravelAgent / AcademicAgent / 自定义 Agent，LLM 智能路由
@@ -253,7 +270,7 @@ api.interceptors.response.use(
 | `GET /api/itineraries/:id` | 行程详情 | 需登录 |
 | `POST /api/itineraries/:id/photos` | 上传照片 | 需登录 |
 | `POST /api/feedback` | 提交反馈（👍/👎） | 需登录 |
-| `GET /api/trending` | 热门推荐 | 公开 |
+| `GET /api/news/trending` | 热门推荐 | 公开 |
 | `GET /api/shared/:token` | 分享页 | 公开 |
 | `GET /api/news/favorites` | 新闻收藏列表 | 需登录 |
 | `POST /api/news/favorites` | 收藏新闻 | 需登录 |
@@ -272,7 +289,7 @@ api.interceptors.response.use(
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate  |  macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt   # 若 requirements.txt 为空，可执行：pip install -e .   （依赖见 pyproject.toml）
 cp config/.env.example .env
 # 编辑 .env，至少填入 CLAW_API_KEY 和 AMAP_WEBSERVICE_KEY
 uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
@@ -356,14 +373,10 @@ claw7/
 │   ├── src/components/     # 通用组件（AppLayout / TrendingBar / Chat / Album / Itinerary）
 │   ├── src/hooks/          # Zustand 状态管理
 │   └── src/utils/          # 工具函数
-├── tests/                  # 测试（16 个测试文件）
+├── tests/                  # 测试（19 个测试文件）
 ├── docs/                   # 文档
-│   ├── README.md           # 详细项目说明
-│   ├── api/API.md          # API 接口文档（53 个接口）
-│   ├── architecture.md     # DDD 架构说明
-│   ├── PROJECT_MODULE_OVERVIEW.md  # 项目模块概览
-│   ├── MULTI_AGENT_DEV.md  # 多智能体开发指南
-│   └── UNIVERSAL_AGENT_DESIGN.md  # 通用 Agent 设计文档
+│   ├── api/API.md          # API 接口文档（60 个接口，前端开发参考）
+│   └── DEVELOPMENT_SPECIFICATION.md  # 开发规范与详细规格
 ├── app.py                  # Agent 构建（依赖注入容器）
 ├── start.ps1 / start.sh    # 启动脚本（Windows / Linux）
 └── requirements.txt        # Python 依赖
@@ -402,13 +415,8 @@ claw7/
 
 ## 文档
 
-- [项目详细说明](docs/README.md)
-- [API 接口文档](docs/api/API.md) — 60 个接口完整文档
-- [DDD 架构说明](docs/architecture.md)
-- [项目模块概览](docs/PROJECT_MODULE_OVERVIEW.md)
-- [多智能体开发指南](docs/MULTI_AGENT_DEV.md)
-- [通用 Agent 设计文档](docs/UNIVERSAL_AGENT_DESIGN.md)
-- [多方案对比 & 商用化升级设计](docs/MULTI_PLAN_UPGRADE_DESIGN.md)
+- [API 接口文档](docs/api/API.md) — 60 个接口完整文档（前端开发参考，含 TypeScript 类型定义、SSE 流式处理、错误码说明）
+- [开发规范与详细规格](docs/DEVELOPMENT_SPECIFICATION.md) — 项目架构、模块、开发标准
 
 ---
 
