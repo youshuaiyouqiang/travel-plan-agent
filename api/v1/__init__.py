@@ -4,8 +4,6 @@ from fastapi import APIRouter
 
 from api.v1.agent import router as agent_router
 from api.v1.auth import router as auth_router
-from api.v1.album import album_serve_router
-from api.v1.album import router as album_router
 from api.v1.chat import router as chat_router
 from api.v1.debug import router as debug_router
 from api.v1.feedback import router as feedback_router
@@ -39,8 +37,6 @@ router.include_router(agent_router, prefix="/agents")
 router.include_router(skill_router, prefix="/skills")
 router.include_router(mcp_router, prefix="/mcp")
 router.include_router(itinerary_router, prefix="/itineraries")
-router.include_router(album_router, prefix="/itineraries")
-router.include_router(album_serve_router, prefix="/album")
 router.include_router(memory_router, prefix="/memories")
 router.include_router(news_router, prefix="/news")
 router.include_router(geocode_router, prefix="/geocode")

@@ -10,6 +10,8 @@ from fastapi.responses import StreamingResponse
 
 from application.dto.request import ChatRequest
 from application.dto.response import ChatResponse
+from application.session.schema import SessionMode
+from application.session.service import SessionService
 from domain.shared.audit.logger import AuditLogger
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,35 @@ router = APIRouter(tags=["chat"])
 
 def _get_agent(request: Request):
     return request.app.state.agent
+
+
+def _get_session_service(request: Request) -> SessionService:
+    """获取应用层 SessionService；若未注入则使用默认可锁定 Agent 构造一个。"""
+    service = getattr(request.app.state, "session_service", None)
+    if service is None:
+        service = SessionService()
+        request.app.state.session_service = service
+    return service
+
+
+def _resolve_session_mode(
+    request: Request,
+    user_id: str | None,
+    session_id: str,
+) -> tuple[SessionMode, str | None]:
+    """从 SessionService 读取会话模式与锁定 Agent。
+
+    读取失败或会话不存在时退回 ``yunhe_default``，避免阻塞对话。
+    """
+    if not user_id or not session_id:
+        return "yunhe_default", None
+    try:
+        record = _get_session_service(request).require_owned(
+            user_id=user_id, session_id=session_id
+        )
+    except Exception:  # noqa: BLE001 - 读取模式失败不应中断对话
+        return "yunhe_default", None
+    return record.mode, record.locked_agent_id
 
 
 @router.post("", response_model=ChatResponse)
@@ -40,10 +71,13 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
         payload=req.message,
         agent_id=req.agent_id or "",
     )
+    mode, locked_agent_id = _resolve_session_mode(request, effective_user_id, req.session_id)
     result = await agent.chat(
         session_id=req.session_id,
         user_id=effective_user_id,
         message=req.message,
+        mode=mode,
+        locked_agent_id=locked_agent_id,
         agent_id=req.agent_id,
         trace_id=trace_id,
     )
@@ -89,6 +123,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         payload=req.message,
         agent_id=req.agent_id or "",
     )
+    mode, locked_agent_id = _resolve_session_mode(request, effective_user_id, req.session_id)
     full_reply = ""
 
     async def event_generator():
@@ -98,6 +133,8 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 session_id=req.session_id,
                 user_id=effective_user_id,
                 message=req.message,
+                mode=mode,
+                locked_agent_id=locked_agent_id,
                 agent_id=req.agent_id,
                 trace_id=trace_id,
             ):

@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from collections.abc import AsyncGenerator
 
+from application.session.schema import SessionMode
 from domain.agent.base import BaseAgent
 from infrastructure.llm.openai import OpenAILLM
 from domain.agent.schema import AgentConfig
@@ -34,6 +35,23 @@ class DelegationContext:
 
     def touch(self) -> None:
         self.last_interaction = time.time()
+
+
+# ===== mode-first 路由决策 =====
+
+
+@dataclass
+class RouteDecision:
+    """mode-first 路由决策结果。
+
+    - ``agent_id`` 为 ``None`` 表示云合直接回答（default 模式下的简单通用问题）
+    - ``delegated`` 表示是否委派给子 Agent
+    - ``reason`` 记录决策路径：``locked_session`` / ``yunhe_direct`` / ``specialist_selected``
+    """
+
+    agent_id: str | None
+    delegated: bool
+    reason: str
 
 
 # ===== 云合 meta-tools（调度系统能力，不经过 ToolRegistry） =====
@@ -268,6 +286,54 @@ class OrchestratorAgent(BaseAgent):
         """Tier 0：判断是否为极短闲聊，可跳过 function calling。"""
         stripped = message.strip().lower()
         return stripped in self._FAST_CHAT or len(stripped) <= 1
+
+    def _is_simple_general_question(self, message: str) -> bool:
+        """mode-first 路由：判断是否为简单通用问题，云合可直接回答。
+
+        复用既有 ``_is_fast_chat`` 规则；后续可在此扩展更细致的意图判定。
+        """
+        return self._is_fast_chat(message)
+
+    # ===== mode-first 路由决策 =====
+
+    async def _select_handler(
+        self,
+        mode: SessionMode,
+        locked_agent_id: str | None,
+        message: str,
+        user_id: str | None,
+    ) -> RouteDecision:
+        """根据会话模式、锁定 Agent 与消息内容做路由决策。
+
+        - ``agent_locked`` / ``news_analysis_locked``：始终路由到锁定 Agent
+        - ``yunhe_default`` + 简单通用问题：云合直答
+        - ``yunhe_default`` + 专家问题：单跳委派给专业 Agent
+        """
+        if mode in {"agent_locked", "news_analysis_locked"}:
+            if not locked_agent_id:
+                # 防御性：锁定模式缺失 locked_agent_id 时退回云合直答
+                return RouteDecision(None, False, "yunhe_direct")
+            return RouteDecision(locked_agent_id, True, "locked_session")
+        if self._is_simple_general_question(message):
+            return RouteDecision(None, False, "yunhe_direct")
+        return await self._select_one_specialist(message, user_id)
+
+    async def _select_one_specialist(
+        self,
+        message: str,
+        user_id: str | None,
+    ) -> RouteDecision:
+        """默认模式下单跳委派：选一个专业 Agent 处理。"""
+        agent_id = await self._route(message, user_id)
+        return RouteDecision(agent_id=agent_id, delegated=True, reason="specialist_selected")
+
+    async def _yunhe_direct_reply(self, message: str, user_id: str | None) -> str:
+        """云合直接回答（收集流式 chunk 为单字符串，供同步 ``chat`` 使用）。"""
+        parts: list[str] = []
+        async for event in self._direct_reply(session_id="", message=message, user_id=user_id):
+            if event.get("type") == "chunk":
+                parts.append(str(event.get("data", "")))
+        return "".join(parts)
 
     # ===== 云合模式：直接回复（不注入 tools） =====
 
@@ -512,82 +578,111 @@ class OrchestratorAgent(BaseAgent):
 
     async def chat(
         self,
-        *,
         session_id: str,
+        user_id: str | None,
         message: str,
-        user_id: str | None = None,
+        mode: SessionMode = "yunhe_default",
+        locked_agent_id: str | None = None,
+        *,
         agent_id: str | None = None,
         trace_id: str = "",
     ) -> dict:
-        # 云合模式：指定 agent_id 或非 yunhe 模式时路由
+        """mode-first 同步对话。
+
+        返回值在既有 ``status`` / ``reply`` / ``active_agent`` / ``agent_actions``
+        字段基础上，新增：
+
+        - ``handled_by``：本轮实际处理消息的 Agent ID（云合直答时为 ``"yunhe"``）
+        - ``next_controller``：下一轮控制权归属（默认模式委派后回到 ``"yunhe"``，
+          锁定模式留在锁定 Agent）
+
+        ``agent_id`` 仅作为管理员/调试显式覆盖；传入时绕过 mode 路由。
+        """
+        # admin/debug 显式覆盖
         if agent_id:
             agent = self._get_or_create_agent(agent_id, user_id)
-            return await agent.chat(session_id=session_id, message=message, user_id=user_id, trace_id=trace_id)
+            result = await agent.chat(
+                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
+            )
+            return {
+                **result,
+                "handled_by": agent_id,
+                "next_controller": agent_id,
+            }
 
+        # 非 yunhe 模式（legacy 兼容）：按消息路由到专业 Agent，控制权不回云合
         if not self._yunhe_mode:
             routed_id = await self._route(message, user_id)
             agent = self._get_or_create_agent(routed_id, user_id)
-            return await agent.chat(session_id=session_id, message=message, user_id=user_id, trace_id=trace_id)
+            result = await agent.chat(
+                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
+            )
+            return {
+                **result,
+                "handled_by": routed_id,
+                "next_controller": routed_id,
+            }
 
-        # 云合模式：收集 chat_stream 事件，合成 dict 返回值
-        reply_parts: list[str] = []
-        status = "final_answer"
-        async for event in self.chat_stream(
-            session_id=session_id,
-            message=message,
-            user_id=user_id,
-            agent_id=agent_id,
-            trace_id=trace_id,
-        ):
-            if event.get("type") == "chunk":
-                reply_parts.append(str(event.get("data", "")))
-            elif event.get("type") == "done":
-                status = event.get("data", "final_answer")
+        # yunhe 模式：mode-first 路由
+        decision = await self._select_handler(mode, locked_agent_id, message, user_id)
 
+        if decision.agent_id is None:
+            # 云合直答
+            reply = await self._yunhe_direct_reply(message, user_id)
+            return {
+                "status": "final_answer",
+                "reply": reply,
+                "active_agent": "yunhe",
+                "agent_actions": [],
+                "handled_by": "yunhe",
+                "next_controller": "yunhe",
+            }
+
+        # 委派给专业 Agent
+        agent = self._get_or_create_agent(decision.agent_id, user_id)
+        result = await agent.chat(
+            session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
+        )
+        # 默认模式：单轮委派后控制权回到云合；锁定模式：控制权留在锁定 Agent
+        next_controller = "yunhe" if mode == "yunhe_default" else decision.agent_id
         return {
-            "status": status,
-            "reply": "".join(reply_parts),
-            "active_agent": "yunhe",
-            "agent_actions": [],
+            **result,
+            "handled_by": decision.agent_id,
+            "next_controller": next_controller,
         }
 
     async def chat_stream(
         self,
-        *,
         session_id: str,
+        user_id: str | None,
         message: str,
-        user_id: str | None = None,
+        mode: SessionMode = "yunhe_default",
+        locked_agent_id: str | None = None,
+        *,
         agent_id: str | None = None,
         trace_id: str = "",
     ) -> AsyncGenerator[dict, None]:
-        # 1. 指定 agent_id → 直接路由
+        """mode-first 流式对话；与 :py:meth:`chat` 保持一致的路由语义。"""
+        # admin/debug 显式覆盖
         if agent_id:
             agent = self._get_or_create_agent(agent_id, user_id)
             async for event in agent.chat_stream(
-                session_id=session_id,
-                message=message,
-                user_id=user_id,
-                trace_id=trace_id,
+                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
             ):
                 yield event
             return
 
-        # 2. 传统模式 → prompt 路由 + 单跳委派
+        # 非 yunhe 模式（legacy 兼容）
         if not self._yunhe_mode:
             routed_id = await self._route(message, user_id)
             agent = self._get_or_create_agent(routed_id, user_id)
             async for event in agent.chat_stream(
-                session_id=session_id,
-                message=message,
-                user_id=user_id,
-                trace_id=trace_id,
+                session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
             ):
                 yield event
             return
 
-        # 3. 云合模式 ====
-
-        # 3a. 检查是否有活跃的委派上下文
+        # yunhe 模式：活跃委派上下文优先转发（保持 need_input 追问体验）
         ctx = self._delegation_contexts.get(session_id)
         if ctx and ctx.is_active() and not self._is_delegation_expired(ctx):
             logger.info("Yunhe: forwarding to delegated agent %s", ctx.agent_id)
@@ -600,10 +695,28 @@ class OrchestratorAgent(BaseAgent):
                 yield event
             return
 
-        # 清除过期委派
         if ctx:
             del self._delegation_contexts[session_id]
 
-        # 3b. 三层决策流程
-        async for event in self._yunhe_chat_stream(session_id, message, user_id):
+        # mode-first 路由决策
+        decision = await self._select_handler(mode, locked_agent_id, message, user_id)
+
+        if decision.agent_id is None:
+            # 云合直答
+            yield {"type": "route", "data": "yunhe"}
+            async for event in self._direct_reply(
+                session_id=session_id, message=message, user_id=user_id
+            ):
+                yield event
+            return
+
+        # 委派给专业 Agent
+        yield {"type": "route", "data": decision.agent_id}
+        agent = self._get_or_create_agent(decision.agent_id, user_id)
+        async for event in agent.chat_stream(
+            session_id=session_id, message=message, user_id=user_id, trace_id=trace_id
+        ):
             yield event
+        # 默认模式：单轮委派完成后控制权回到云合（通知前端可清空 activeAgent 锁定态）
+        if mode == "yunhe_default":
+            yield {"type": "control_returned", "data": "yunhe"}

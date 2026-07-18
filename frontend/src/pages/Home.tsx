@@ -166,13 +166,13 @@ export function Home() {
     try {
       const currentSessionId = useChatStore.getState().sessionId
       const currentUserId = useChatStore.getState().userId
-      const currentAgentId = useSessionStore.getState().activeAgent
+      // activeAgent 在默认会话中仅作展示态：不随请求发送 agent_id，
+      // 由服务端按 session mode 决策路由。agent_locked 模式下锁定信息也已持久化在服务端。
       const stream = sendMessageStream(
         {
           session_id: currentSessionId,
           user_id: currentUserId,
           message: text,
-          agent_id: currentAgentId ?? undefined,
         },
         controller.signal,
       )
@@ -208,8 +208,12 @@ export function Home() {
             addThinkingStep(event.data)
             break
           case 'route':
-            // 智能体路由事件 — 更新激活态
+            // 智能体路由事件 — 更新展示态 activeAgent
             setActiveAgent(event.data)
+            break
+          case 'control_returned':
+            // 默认模式单轮委派完成：控制权回到云合，清空展示态 activeAgent
+            setActiveAgent(null)
             break
           case 'actions':
             // 智能体操作建议 — 更新操作卡片

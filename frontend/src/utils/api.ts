@@ -66,7 +66,16 @@ export interface NeedInputData {
 }
 
 export interface StreamEvent {
-  type: 'status' | 'chunk' | 'done' | 'error' | 'tool_status' | 'route' | 'actions' | 'need_input'
+  type:
+    | 'status'
+    | 'chunk'
+    | 'done'
+    | 'error'
+    | 'tool_status'
+    | 'route'
+    | 'control_returned'
+    | 'actions'
+    | 'need_input'
   data: any
 }
 
