@@ -104,6 +104,22 @@ _lockable_agent_ids = {c.id for c in _container.builtin_configs if c.id != "yunh
 app.state.session_service = SessionService(available_agent_ids=_lockable_agent_ids)
 # Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
 app.state.authz_service = AuthorizationService(session_service=app.state.session_service)
+# 新闻来源治理：启动期解析 CLAW_ADMIN_USERNAME → admin_user_id；未配置或用户不存在则为 None。
+# 生产环境必须配置且对应用户必须存在，否则管理员 API 不可用（统一 403）。
+_admin_user_id: str | None = None
+if settings.admin_username:
+    from domain.user.auth.auth import UserStore
+
+    _admin_user = UserStore().get_by_username(settings.admin_username)
+    if _admin_user is not None:
+        _admin_user_id = _admin_user.user_id
+        logger.info("Admin resolved: username=%s user_id=%s", settings.admin_username, _admin_user_id)
+    else:
+        logger.warning(
+            "CLAW_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用",
+            settings.admin_username,
+        )
+app.state.admin_user_id = _admin_user_id
 
 # ── CORS ──────────────────────────────────────────────────
 

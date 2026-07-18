@@ -96,3 +96,14 @@ class UserStore:
     def get_by_id(self, user_id: str) -> User | None:
         self._load_to_cache()
         return self._cache.get(user_id)
+
+    def get_by_username(self, username: str) -> User | None:
+        """按 username 查找用户；找不到返回 None。
+
+        供启动期解析 ``CLAW_ADMIN_USERNAME`` → ``user_id`` 使用。
+        """
+        self._load_to_cache()
+        user_id = self._username_index.get(username)
+        if not user_id:
+            return None
+        return self._cache.get(user_id)

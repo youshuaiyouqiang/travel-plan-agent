@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field
 
 
 class NewsFavoriteRequest(BaseModel):
+    """新闻收藏请求。
+
+    业务红线：不保存新闻全文；收藏仅保存标题、来源、URL、摘要、标签与时间。
+    """
+
     title: str = Field(
         min_length=1,
         max_length=200,
@@ -13,11 +18,6 @@ class NewsFavoriteRequest(BaseModel):
         default="",
         max_length=500,
         description="新闻摘要",
-    )
-    content: str = Field(
-        default="",
-        max_length=5000,
-        description="新闻内容",
     )
     url: str = Field(
         default="",

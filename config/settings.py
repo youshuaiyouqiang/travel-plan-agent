@@ -76,6 +76,11 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     metrics_port: int = 9090
 
+    # ===== 新闻来源治理 =====
+    # 单一系统管理员 username，启动期解析为 user_id；空值表示未配置管理员。
+    # 生产环境必须配置且对应用户必须存在，否则管理员 API 不可用。
+    admin_username: str = ""
+
     @staticmethod
     def _root() -> Path:
         return Path(__file__).resolve().parents[1]

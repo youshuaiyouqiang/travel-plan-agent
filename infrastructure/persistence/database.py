@@ -417,6 +417,141 @@ def _downgrade_12(conn: Any) -> None:
     )
 
 
+def _upgrade_13(conn: Any) -> None:
+    """Task 1（新闻计划）: 创建新闻来源治理表。
+
+    - ``news_sources``: 受治理的来源元数据 + AI 评分 + 状态。
+    - ``news_source_audits``: 管理员审核审计链。
+
+    两表均不保存新闻全文；仅保存来源元数据与审核决策。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_sources (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            domain      TEXT NOT NULL UNIQUE,
+            tier        TEXT NOT NULL,
+            status      TEXT NOT NULL,
+            ai_score    REAL,
+            ai_reason   TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_news_sources_status ON news_sources(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_news_sources_domain ON news_sources(domain)")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_source_audits (
+            id              TEXT PRIMARY KEY,
+            source_id       TEXT NOT NULL,
+            admin_id        TEXT NOT NULL,
+            previous_status TEXT NOT NULL,
+            decision        TEXT NOT NULL,
+            reason          TEXT NOT NULL,
+            created_at      TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_news_source_audits_source ON news_source_audits(source_id)"
+    )
+    conn.commit()
+    logger.info("Migration 13: ensured news_sources + news_source_audits tables exist")
+
+
+def _downgrade_13(conn: Any) -> None:
+    conn.execute("DROP TABLE IF EXISTS news_source_audits")
+    conn.execute("DROP TABLE IF EXISTS news_sources")
+    conn.commit()
+    logger.info("Migration 13 downgrade: dropped news_sources + news_source_audits tables")
+
+
+def _upgrade_14(conn: Any) -> None:
+    """Task 1（新闻计划）: 重建 ``news_favorites`` 表，移除 ``content`` 列。
+
+    业务红线：不保存新闻全文；收藏仅保存标题、来源、URL、摘要、标签与时间。
+
+    SQLite 3.35 之前不支持 ``DROP COLUMN``，故采用重建表方式：
+    1. 创建不含 ``content`` 列的新表 ``news_favorites_new``
+    2. 从旧表拷贝允许的元数据（不拷贝 content）
+    3. 删除旧表，重命名新表为 ``news_favorites``
+    4. 重建索引
+
+    全新部署（旧表不存在）时仅创建新表，不执行数据拷贝。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_favorites_new (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            summary     TEXT NOT NULL DEFAULT '',
+            url         TEXT NOT NULL DEFAULT '',
+            source      TEXT NOT NULL DEFAULT '',
+            tag         TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL,
+            UNIQUE(user_id, title)
+        )
+        """
+    )
+
+    # 检查旧表是否存在（通过是否有 id 列判断）
+    old_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(news_favorites)").fetchall()
+    }
+    if "id" in old_cols:
+        # 旧表存在：拷贝允许的元数据（content 被丢弃）
+        conn.execute(
+            "INSERT OR IGNORE INTO news_favorites_new "
+            "(id, user_id, title, summary, url, source, tag, created_at) "
+            "SELECT id, user_id, title, summary, url, source, tag, created_at "
+            "FROM news_favorites"
+        )
+        conn.execute("DROP TABLE news_favorites")
+        logger.info("Migration 14: migrated existing news_favorites rows (content dropped)")
+    else:
+        # 全新部署：旧表不存在，清理可能残留的占位
+        conn.execute("DROP TABLE IF EXISTS news_favorites")
+
+    conn.execute("ALTER TABLE news_favorites_new RENAME TO news_favorites")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_news_fav_user ON news_favorites(user_id)")
+    conn.commit()
+    logger.info("Migration 14: rebuilt news_favorites without content column")
+
+
+def _downgrade_14(conn: Any) -> None:
+    """回滚迁移 14 — 重建带 ``content`` 列的 ``news_favorites`` 表。
+
+    降级是单向不可逆的：已被丢弃的 content 无法恢复。重建空表仅保证 schema 兼容旧版本。
+    """
+    conn.execute("DROP TABLE IF EXISTS news_favorites")
+    conn.execute(
+        """
+        CREATE TABLE news_favorites (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            summary     TEXT NOT NULL DEFAULT '',
+            content     TEXT NOT NULL DEFAULT '',
+            url         TEXT NOT NULL DEFAULT '',
+            source      TEXT NOT NULL DEFAULT '',
+            tag         TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL,
+            UNIQUE(user_id, title)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_news_fav_user ON news_favorites(user_id)")
+    conn.commit()
+    logger.warning(
+        "Migration 14 downgrade: rebuilt news_favorites with content column (empty; "
+        "previously dropped content cannot be restored)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -493,6 +628,18 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Replace auth_tokens with auth_token_hashes (sha256 only)",
         "upgrade": _upgrade_12,
         "downgrade": _downgrade_12,
+    },
+    {
+        "version": 13,
+        "description": "Create news_sources + news_source_audits tables",
+        "upgrade": _upgrade_13,
+        "downgrade": _downgrade_13,
+    },
+    {
+        "version": 14,
+        "description": "Rebuild news_favorites without content column",
+        "upgrade": _upgrade_14,
+        "downgrade": _downgrade_14,
     },
 ]
 

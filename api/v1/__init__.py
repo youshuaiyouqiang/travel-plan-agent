@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from api.v1.admin_news import router as admin_news_router
 from api.v1.agent import router as agent_router
 from api.v1.auth import router as auth_router
 from api.v1.chat import router as chat_router
@@ -39,6 +40,7 @@ router.include_router(mcp_router, prefix="/mcp")
 router.include_router(itinerary_router, prefix="/itineraries")
 router.include_router(memory_router, prefix="/memories")
 router.include_router(news_router, prefix="/news")
+router.include_router(admin_news_router, prefix="/admin/news")
 router.include_router(geocode_router, prefix="/geocode")
 router.include_router(share_router, prefix="/share")
 router.include_router(debug_router, prefix="/debug")

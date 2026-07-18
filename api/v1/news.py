@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 
 from application.dto.request import NewsFavoriteRequest
-from application.exceptions import UnauthorizedException, InternalException
+from application.exceptions import InternalException, UnauthorizedException
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ async def trending(refresh: bool = False) -> dict:
 
 @router.get("/favorites")
 async def list_news_favorites(request: Request) -> dict:
+    """列出当前用户的新闻收藏（仅元数据，不含全文）。"""
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise UnauthorizedException()
@@ -31,7 +32,7 @@ async def list_news_favorites(request: Request) -> dict:
 
     conn = get_connection()
     rows = conn.execute(
-        "SELECT id, title, summary, content, url, source, tag, created_at "
+        "SELECT id, title, summary, url, source, tag, created_at "
         "FROM news_favorites WHERE user_id = ? ORDER BY id DESC",
         (user_id,),
     ).fetchall()
@@ -40,7 +41,6 @@ async def list_news_favorites(request: Request) -> dict:
             "id": r["id"],
             "title": r["title"],
             "summary": r["summary"],
-            "content": r["content"],
             "url": r["url"],
             "source": r["source"],
             "tag": r["tag"],
@@ -53,7 +53,7 @@ async def list_news_favorites(request: Request) -> dict:
 
 @router.post("/favorites")
 async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
-    """收藏一条新闻，同时写入 short_term_memories 让智能体能检索到。"""
+    """收藏一条新闻（仅元数据；不写入新闻全文，不注入短期记忆）。"""
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise UnauthorizedException()
@@ -64,16 +64,9 @@ async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO news_favorites (user_id, title, summary, content, url, source, tag, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, req.title, req.summary, req.content, req.url, req.source, req.tag, now),
-        )
-        # 同步写入 short_term_memories，让 agent 在对话中能引用用户关注的新闻
-        memory_content = f"用户收藏的新闻：{req.title}。{req.content or req.summary}"
-        conn.execute(
-            "INSERT INTO short_term_memories (user_id, category, content, experience_tag, created_at) "
-            "VALUES (?, 'news', ?, ?, ?)",
-            (user_id, memory_content, req.tag or "news"),
+            "INSERT INTO news_favorites (user_id, title, summary, url, source, tag, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, req.title, req.summary, req.url, req.source, req.tag, now),
         )
         conn.commit()
     except Exception as e:
