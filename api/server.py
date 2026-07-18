@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 _BACKGROUND_TASK: asyncio.Task | None = None
 _MEMORY_TASK: asyncio.Task | None = None
+_HOTSPOT_REFRESH_TASK: asyncio.Task | None = None
+_HOTSPOT_CLEANUP_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
 
 
@@ -62,12 +64,26 @@ async def _periodic_memory_maintenance() -> None:
     await run_memory_maintenance()
 
 
+async def _periodic_hotspot_refresh() -> None:
+    """热点池增量刷新后台任务（每 15 分钟）。"""
+    from application.scheduler import run_hotspot_refresh
+
+    await run_hotspot_refresh()
+
+
+async def _periodic_hotspot_cleanup() -> None:
+    """热点池清理/重聚类后台任务（每 6 小时，占位）。"""
+    from application.scheduler import run_hotspot_cleanup
+
+    await run_hotspot_cleanup()
+
+
 # ── 生命周期 ──────────────────────────────────────────────
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _BACKGROUND_TASK, _MEMORY_TASK
+    global _BACKGROUND_TASK, _MEMORY_TASK, _HOTSPOT_REFRESH_TASK, _HOTSPOT_CLEANUP_TASK
     logger.info("Server starting: warming up trending pool")
     try:
         count = await refresh_pool()
@@ -76,8 +92,15 @@ async def lifespan(app: FastAPI):
         logger.warning("Trending pool warmup failed: %s", e)
     _BACKGROUND_TASK = asyncio.create_task(_periodic_refresh_pool())
     _MEMORY_TASK = asyncio.create_task(_periodic_memory_maintenance())
+    _HOTSPOT_REFRESH_TASK = asyncio.create_task(_periodic_hotspot_refresh())
+    _HOTSPOT_CLEANUP_TASK = asyncio.create_task(_periodic_hotspot_cleanup())
     yield
-    for task in (_BACKGROUND_TASK, _MEMORY_TASK):
+    for task in (
+        _BACKGROUND_TASK,
+        _MEMORY_TASK,
+        _HOTSPOT_REFRESH_TASK,
+        _HOTSPOT_CLEANUP_TASK,
+    ):
         if task:
             task.cancel()
             try:
@@ -100,10 +123,18 @@ app.state.custom_repo = _container.custom_repo
 app.state.mcp_runtime = _container.mcp_runtime
 app.state.mcp_catalog = _container.mcp_catalog
 # Task 1: 会话模式应用服务。可锁定的 Agent 来自内置配置（排除调度员 yunhe）。
-_lockable_agent_ids = {c.id for c in _container.builtin_configs if c.id != "yunhe"}
+# news Agent 由新闻研判流程内部锁定（news_analysis_locked），不进入用户可选白名单。
+_lockable_agent_ids = {
+    c.id for c in _container.builtin_configs if c.id not in {"yunhe", "news"}
+}
 app.state.session_service = SessionService(available_agent_ids=_lockable_agent_ids)
 # Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
 app.state.authz_service = AuthorizationService(session_service=app.state.session_service)
+# Task 2: 注入生产用 HotspotService；路由通过 request.app.state.hotspot_service 取用。
+# 测试通过覆盖此属性注入替身；未配置时 GET /hotspots 返回空列表。
+from application.news.hotspot_service import get_default_service as _get_default_hotspot_service
+
+app.state.hotspot_service = _get_default_hotspot_service()
 # 新闻来源治理：启动期解析 CLAW_ADMIN_USERNAME → admin_user_id；未配置或用户不存在则为 None。
 # 生产环境必须配置且对应用户必须存在，否则管理员 API 不可用（统一 403）。
 _admin_user_id: str | None = None
