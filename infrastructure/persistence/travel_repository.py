@@ -85,6 +85,26 @@ class TravelRepository:
         )
         conn.commit()
 
+    def update_draft_plan(
+        self,
+        draft_id: str,
+        plan_json: str,
+        manual_edit_fields: str,
+        updated_at: str,
+    ) -> None:
+        """持久化草稿的 plan 与 manual_edit_fields 变更。"""
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE travel_drafts SET plan_json = ?, manual_edit_fields = ?, "
+                "updated_at = ? WHERE id = ?",
+                (plan_json, manual_edit_fields, updated_at, draft_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
     def insert_archive(self, archive: TravelArchive) -> None:
         conn = get_connection()
         try:

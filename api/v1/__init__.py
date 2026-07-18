@@ -18,6 +18,7 @@ from api.v1.session import confirm_router as session_confirm_router
 from api.v1.session import router as session_router
 from api.v1.share import router as share_router
 from api.v1.skill import router as skill_router
+from api.v1.travel import router as travel_router
 
 """API v1 路由聚合。
 
@@ -46,3 +47,4 @@ router.include_router(share_router, prefix="/share")
 router.include_router(debug_router, prefix="/debug")
 router.include_router(health_router, prefix="/health")
 router.include_router(feedback_router, prefix="/feedback")
+router.include_router(travel_router, prefix="/travel")

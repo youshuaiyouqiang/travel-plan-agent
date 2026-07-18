@@ -15,7 +15,12 @@ import os
 from datetime import datetime
 
 from application.exceptions import ConflictException, NotFoundException
-from application.travel.models import TravelArchive, TravelDraft
+from application.travel.models import (
+    ApplyProposalResult,
+    FieldConflict,
+    TravelArchive,
+    TravelDraft,
+)
 from infrastructure.persistence.travel_repository import TravelRepository
 
 
@@ -52,6 +57,103 @@ class TravelService:
         if draft is None or draft.user_id != user_id:
             raise NotFoundException("travel_draft", draft_id)
         return draft
+
+    # ------------------------------------------------------------------
+    # 手工编辑与 Agent 提议
+    # ------------------------------------------------------------------
+
+    def edit_activity(
+        self,
+        user_id: str,
+        draft_id: str,
+        activity_id: str,
+        *,
+        title: str | None = None,
+        time_slot: str | None = None,
+        location: str | None = None,
+        note: str | None = None,
+    ) -> TravelDraft:
+        """手工编辑活动字段；被编辑字段记入 ``manual_edit_fields``，保护其不被 Agent 覆盖。
+
+        只读草稿不可编辑；不属于该用户的草稿抛 ``NotFoundException``。
+        """
+        draft = self.require_owned_draft(user_id, draft_id)
+        if draft.is_read_only:
+            raise ConflictException("只读草稿不可编辑")
+        updates = {"title": title, "time_slot": time_slot, "location": location, "note": note}
+        new_manual = set(draft.manual_edit_fields)
+        for field_name, value in updates.items():
+            if value is None:
+                continue
+            self._set_activity_field(draft.plan, activity_id, field_name, value)
+            new_manual.add(f"{activity_id}.{field_name}")
+        draft.manual_edit_fields = new_manual
+        now = datetime.utcnow().isoformat()
+        draft.updated_at = now
+        self._repo.update_draft_plan(
+            draft.id,
+            json.dumps(draft.plan, ensure_ascii=False),
+            json.dumps(sorted(new_manual), ensure_ascii=False),
+            now,
+        )
+        return draft
+
+    def apply_agent_proposal(
+        self,
+        user_id: str,
+        draft_id: str,
+        proposal: dict,
+    ) -> ApplyProposalResult:
+        """应用 Agent 提议；手工编辑字段不被覆盖，记入 ``conflicts``。
+
+        非手工字段直接应用并持久化；冲突字段保留用户原值。
+        """
+        draft = self.require_owned_draft(user_id, draft_id)
+        if draft.is_read_only:
+            raise ConflictException("只读草稿不可应用提议")
+        conflicts: list[FieldConflict] = []
+        for proposed in proposal.get("activities", []):
+            aid = proposed.get("id")
+            if not aid:
+                continue
+            current = self._find_activity(draft.plan, aid)
+            if current is None:
+                continue
+            conflict_fields: set[str] = set()
+            for field_name, value in proposed.items():
+                if field_name == "id":
+                    continue
+                key = f"{aid}.{field_name}"
+                if key in draft.manual_edit_fields:
+                    conflict_fields.add(field_name)
+                    continue
+                current[field_name] = value
+            if conflict_fields:
+                conflicts.append(FieldConflict(activity_id=aid, fields=conflict_fields))
+        now = datetime.utcnow().isoformat()
+        draft.updated_at = now
+        self._repo.update_draft_plan(
+            draft.id,
+            json.dumps(draft.plan, ensure_ascii=False),
+            json.dumps(sorted(draft.manual_edit_fields), ensure_ascii=False),
+            now,
+        )
+        return ApplyProposalResult(draft=draft, conflicts=conflicts)
+
+    def _set_activity_field(
+        self, plan: dict, activity_id: str, field_name: str, value: str
+    ) -> None:
+        activity = self._find_activity(plan, activity_id)
+        if activity is None:
+            raise NotFoundException("activity", activity_id)
+        activity[field_name] = value
+
+    def _find_activity(self, plan: dict, activity_id: str) -> dict | None:
+        for day in plan.get("days", []):
+            for act in day.get("activities", []):
+                if act.get("id") == activity_id:
+                    return act
+        return None
 
     # ------------------------------------------------------------------
     # 确认存档

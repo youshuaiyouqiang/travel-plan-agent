@@ -1,15 +1,27 @@
-"""Task 1 — 旅行草稿与存档领域模型。
+"""旅行草稿与存档领域模型。
 
 设计要点：
 - ``TravelDraft`` 是可编辑的当前草稿；确认后 ``is_read_only`` 置 True，不可再确认或编辑。
 - ``TravelArchive`` 是不可变的确认存档快照，``frozen=True`` 保证内存中不被修改。
-- 草稿记录 ``manual_edit_fields``，供后续任务保护用户手工编辑不被 Agent 覆盖。
+- 草稿记录 ``manual_edit_fields``，保护用户手工编辑不被 Agent 覆盖。
 - 存档只保存行程 JSON 快照与来源草稿 id，不保存原始外部数据。
+- ``Activity`` / ``FieldConflict`` / ``ApplyProposalResult`` 用于手工编辑保护与冲突呈现。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class Activity:
+    """行程中单个活动的只读视图。"""
+
+    id: str
+    title: str = ""
+    time_slot: str = ""
+    location: str = ""
+    note: str = ""
 
 
 @dataclass
@@ -31,6 +43,20 @@ class TravelDraft:
     created_at: str = ""
     updated_at: str = ""
 
+    def activity(self, activity_id: str) -> Activity:
+        """按 id 取出活动视图；未找到抛 ``ValueError``。"""
+        for day in self.plan.get("days", []):
+            for act in day.get("activities", []):
+                if act.get("id") == activity_id:
+                    return Activity(
+                        id=act["id"],
+                        title=act.get("title", ""),
+                        time_slot=act.get("time_slot", ""),
+                        location=act.get("location", ""),
+                        note=act.get("note", ""),
+                    )
+        raise ValueError(f"activity not found: {activity_id}")
+
 
 @dataclass(frozen=True)
 class TravelArchive:
@@ -45,3 +71,23 @@ class TravelArchive:
     source_draft_id: str
     confirmed_at: str
     plan_json: str
+
+
+@dataclass
+class FieldConflict:
+    """Agent 提议与用户手工编辑冲突的字段集合。"""
+
+    activity_id: str
+    fields: set[str]
+
+
+@dataclass
+class ApplyProposalResult:
+    """Agent 提议应用结果：更新后的草稿与未应用的冲突字段。"""
+
+    draft: TravelDraft
+    conflicts: list[FieldConflict]
+
+    def activity(self, activity_id: str) -> Activity:
+        """从结果草稿中按 id 取出活动视图。"""
+        return self.draft.activity(activity_id)
