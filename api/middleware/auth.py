@@ -59,8 +59,7 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     path = request.url.path
     if (
-        path.startswith("/debug")
-        or path in _PUBLIC_PATHS
+        path in _PUBLIC_PATHS
         or path.startswith("/api/auth")
         or path.startswith("/api/shared")
     ):

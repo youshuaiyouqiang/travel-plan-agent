@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from application.authz import AuthorizationService
 from application.exceptions import (
     ConflictException,
     InternalException,
@@ -26,6 +27,15 @@ def _get_session_service(request: Request) -> SessionService:
     if service is None:
         service = SessionService()
         request.app.state.session_service = service
+    return service
+
+
+def _get_authz_service(request: Request) -> AuthorizationService:
+    """获取应用层 AuthorizationService；若未注入则按默认依赖构造一个。"""
+    service = getattr(request.app.state, "authz_service", None)
+    if service is None:
+        service = AuthorizationService(session_service=_get_session_service(request))
+        request.app.state.authz_service = service
     return service
 
 
@@ -159,6 +169,9 @@ async def confirm_plan(
     if not user_id:
         raise UnauthorizedException()
 
+    # 对象级授权：会话不属于当前用户统一 404，不泄漏存在性
+    _get_authz_service(request).require_session(user_id=user_id, session_id=session_id)
+
     plan_type = req.plan_type.strip()
     itinerary_id = req.itinerary_id.strip()
     if plan_type not in ("sightseeing", "budget"):
@@ -222,6 +235,9 @@ async def revoke_confirm(
     if not user_id:
         raise UnauthorizedException()
 
+    # 对象级授权：会话不属于当前用户统一 404，不泄漏存在性
+    _get_authz_service(request).require_session(user_id=user_id, session_id=session_id)
+
     itinerary_id = req.itinerary_id.strip()
 
     from infrastructure.persistence.database import get_connection
@@ -260,6 +276,9 @@ async def get_confirm_status(session_id: str, request: Request) -> dict:
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise UnauthorizedException()
+
+    # 对象级授权：会话不属于当前用户统一 404，不泄漏存在性
+    _get_authz_service(request).require_session(user_id=user_id, session_id=session_id)
 
     from infrastructure.persistence.database import get_connection
 

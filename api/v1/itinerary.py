@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, Request
 
+from application.authz import AuthorizationService
 from application.dto.request.itinerary import (
     CheckinActivityRequest,
     CompareItinerariesRequest,
@@ -26,28 +27,13 @@ router = APIRouter()
 _itinerary_repo = ItineraryRepository()
 
 
-def _user_owns_itinerary(user_id: str, itin) -> bool:
-    """检查用户是否拥有该行程的所有权。"""
-    if itin.user_id and itin.user_id == user_id:
-        return True
-    if itin.session_id:
-        from infrastructure.persistence.database import get_connection
-
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT 1 FROM tasks WHERE user_id = ? AND session_id = ? LIMIT 1",
-            (user_id, itin.session_id),
-        ).fetchone()
-        if row:
-            return True
-    if itin.user_id:
-        from domain.user.auth.auth import UserStore
-
-        us = UserStore()
-        existing = us.get_by_id(itin.user_id)
-        if not existing:
-            return True
-    return False
+def _get_authz_service(request: Request) -> AuthorizationService:
+    """获取应用层 AuthorizationService；若未注入则按默认依赖构造一个。"""
+    service = getattr(request.app.state, "authz_service", None)
+    if service is None:
+        service = AuthorizationService(itinerary_repo=_itinerary_repo)
+        request.app.state.authz_service = service
+    return service
 
 
 @router.post("")
@@ -146,10 +132,12 @@ async def compare_itineraries(req: CompareItinerariesRequest, request: Request) 
     if not user_id:
         raise UnauthorizedException()
 
+    authz = _get_authz_service(request)
     results = []
     for itin_id in req.ids:
-        itin = _itinerary_repo.get_itinerary(str(itin_id))
-        if not itin or not _user_owns_itinerary(user_id, itin):
+        try:
+            itin = authz.require_itinerary(user_id=user_id, itinerary_id=str(itin_id))
+        except NotFoundException:
             continue
         total_budget = sum(a.cost for d in itin.days for a in d.activities)
         total_actual = sum(a.actual_cost for d in itin.days for a in d.activities)
@@ -199,9 +187,8 @@ async def get_itinerary(itinerary_id: str, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin:
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    itin = authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
     return itin.to_dict()
 
 
@@ -215,9 +202,8 @@ async def update_itinerary(
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
     _itinerary_repo.update_itinerary(itinerary_id, **req.model_dump())
     updated = _itinerary_repo.get_itinerary(itinerary_id)
@@ -230,9 +216,8 @@ async def delete_itinerary(itinerary_id: str, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
     _itinerary_repo.delete_itinerary(itinerary_id)
     return {"detail": "已删除"}
@@ -249,13 +234,10 @@ async def checkin_activity(
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
-
-    activity = _itinerary_repo.get_activity(activity_id)
-    if not activity:
-        raise NotFoundException("活动", activity_id)
+    authz = _get_authz_service(request)
+    authz.require_activity(
+        user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
+    )
 
     if req.checked_in:
         _itinerary_repo.check_in_activity(activity_id)
@@ -271,9 +253,10 @@ async def delete_activity(itinerary_id: str, activity_id: int, request: Request)
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    authz.require_activity(
+        user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
+    )
 
     _itinerary_repo.delete_activity(activity_id)
     return {"detail": "已删除"}
@@ -290,9 +273,10 @@ async def update_activity_cost(
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    authz.require_activity(
+        user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
+    )
 
     _itinerary_repo.update_actual_cost(activity_id, req.actual_cost)
     updated = _itinerary_repo.get_activity(activity_id)
@@ -305,9 +289,8 @@ async def expense_summary(itinerary_id: str, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    itin = authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
     total_budget = 0.0
     total_actual = 0.0
@@ -365,9 +348,8 @@ async def create_share_link(
     if not user_id:
         raise UnauthorizedException()
 
-    itin = _itinerary_repo.get_itinerary(itinerary_id)
-    if not itin or not _user_owns_itinerary(user_id, itin):
-        raise NotFoundException("行程", itinerary_id)
+    authz = _get_authz_service(request)
+    authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
     token = _itinerary_repo.create_share_link(itinerary_id, user_id, req.expires_at)
     return {"token": token, "itinerary_id": itinerary_id}
@@ -379,6 +361,9 @@ async def list_share_links(itinerary_id: str, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
+    authz = _get_authz_service(request)
+    authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
+
     links = _itinerary_repo.list_share_links(itinerary_id)
     return {"shares": links}
 
@@ -388,6 +373,9 @@ async def delete_share_link(itinerary_id: str, token: str, request: Request) -> 
     user_id: str | None = getattr(request.state, "user_id", None)
     if not user_id:
         raise UnauthorizedException()
+
+    authz = _get_authz_service(request)
+    authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
     _itinerary_repo.delete_share_link(token)
     return {"detail": "已删除"}

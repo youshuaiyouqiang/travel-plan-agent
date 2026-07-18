@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.v1 import router as v1_router
 from api.middleware.auth import auth_middleware, rate_limit_middleware
 from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from application.authz import AuthorizationService
 from application.exceptions.base import ClawException
 from application.session.service import SessionService
 from application.trending.manager import refresh_pool
@@ -101,6 +102,8 @@ app.state.mcp_catalog = _container.mcp_catalog
 # Task 1: 会话模式应用服务。可锁定的 Agent 来自内置配置（排除调度员 yunhe）。
 _lockable_agent_ids = {c.id for c in _container.builtin_configs if c.id != "yunhe"}
 app.state.session_service = SessionService(available_agent_ids=_lockable_agent_ids)
+# Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
+app.state.authz_service = AuthorizationService(session_service=app.state.session_service)
 
 # ── CORS ──────────────────────────────────────────────────
 
