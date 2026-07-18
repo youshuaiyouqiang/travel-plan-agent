@@ -1,14 +1,11 @@
-import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, MapPin, Clock, Lightbulb, DollarSign, CheckCircle2, Navigation, Wallet } from 'lucide-react'
+import { X, MapPin, Clock, Lightbulb, DollarSign, Navigation } from 'lucide-react'
 import { ActivityData } from '../../utils/api'
 import { MiniMap } from './MiniMap'
 
 interface Props {
   activity: ActivityData | null
   onClose: () => void
-  onCheckIn: (activityId: number, checkedIn: boolean, actualCost?: number) => void
-  onUpdateCost?: (activityId: number, actualCost: number) => void
   destination?: string
 }
 
@@ -32,31 +29,14 @@ function InfoRow({ icon: Icon, label, value, iconBg, iconColor }: {
   )
 }
 
-export function ActivityDetail({ activity, onClose, onCheckIn, onUpdateCost, destination }: Props) {
-  const [costInput, setCostInput] = useState('')
-  const [showCostInput, setShowCostInput] = useState(false)
-
+/**
+ * 活动详情抽屉（Task 3 简化版）。
+ *
+ * 业务红线：移除打卡按钮、实际花费展示与花费输入 UI；仅展示预算费用、
+ * 时间、地点、详情与小贴士。详情入口由 ItineraryOverview 触发。
+ */
+export function ActivityDetail({ activity, onClose, destination }: Props) {
   if (!activity) return null
-
-  const displayActualCost = activity.actual_cost > 0 ? activity.actual_cost : (costInput ? parseFloat(costInput) : 0)
-
-  const handleCheckIn = (checkedIn: boolean) => {
-    if (checkedIn && showCostInput && costInput) {
-      const cost = parseFloat(costInput)
-      if (!isNaN(cost) && cost >= 0) {
-        onCheckIn(activity.id, true, cost)
-        return
-      }
-    }
-    onCheckIn(activity.id, checkedIn)
-  }
-
-  const handleSaveCost = () => {
-    const cost = parseFloat(costInput)
-    if (!isNaN(cost) && cost >= 0 && onUpdateCost) {
-      onUpdateCost(activity.id, cost)
-    }
-  }
 
   return (
     <AnimatePresence>
@@ -136,80 +116,6 @@ export function ActivityDetail({ activity, onClose, onCheckIn, onUpdateCost, des
               />
             )}
 
-            {activity.actual_cost > 0 && (
-              <InfoRow
-                icon={Wallet}
-                label="实际花费"
-                value={`¥${activity.actual_cost}`}
-                iconBg="bg-emerald-50"
-                iconColor="text-emerald-500"
-              />
-            )}
-
-            {activity.cost > 0 && activity.actual_cost > 0 && (
-              <div className={`rounded-xl px-4 py-2.5 text-sm font-medium ${
-                activity.actual_cost <= activity.cost
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : 'bg-red-50 text-red-500'
-              }`}>
-                {activity.actual_cost <= activity.cost
-                  ? `节省 ¥${(activity.cost - activity.actual_cost).toFixed(0)}`
-                  : `超出预算 ¥${(activity.actual_cost - activity.cost).toFixed(0)}`}
-              </div>
-            )}
-
-            <div className="bg-slate-50/80 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Wallet size={13} className="text-slate-500" />
-                  <p className="text-xs text-slate-500 font-medium">记录花费</p>
-                </div>
-                {!showCostInput && (
-                  <button
-                    onClick={() => {
-                      setShowCostInput(true)
-                      setCostInput(activity.actual_cost > 0 ? String(activity.actual_cost) : '')
-                    }}
-                    className="text-xs text-sky-500 font-medium"
-                  >
-                    {activity.actual_cost > 0 ? '修改' : '填写'}
-                  </button>
-                )}
-              </div>
-              {showCostInput && (
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400 text-sm">¥</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={costInput}
-                    onChange={(e) => setCostInput(e.target.value)}
-                    placeholder="输入实际花费"
-                    className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
-                  />
-                  <button
-                    onClick={() => {
-                      handleSaveCost()
-                      setShowCostInput(false)
-                    }}
-                    className="px-3 py-2 bg-sky-500 text-white text-xs font-medium rounded-xl hover:bg-sky-600 transition-colors"
-                  >
-                    保存
-                  </button>
-                  <button
-                    onClick={() => setShowCostInput(false)}
-                    className="px-3 py-2 bg-slate-100 text-slate-500 text-xs font-medium rounded-xl hover:bg-slate-200 transition-colors"
-                  >
-                    取消
-                  </button>
-                </div>
-              )}
-              {!showCostInput && activity.actual_cost === 0 && (
-                <p className="text-xs text-slate-300">点击"填写"记录实际花费</p>
-              )}
-            </div>
-
             {activity.description && (
               <div className="bg-slate-50/80 rounded-2xl p-4">
                 <p className="text-xs text-slate-400 font-medium mb-1.5 uppercase tracking-wide">详情</p>
@@ -228,25 +134,6 @@ export function ActivityDetail({ activity, onClose, onCheckIn, onUpdateCost, des
                 <p className="text-sm text-emerald-700 leading-relaxed">{activity.tips}</p>
               </div>
             )}
-          </div>
-
-          <div className="flex-shrink-0 px-5 py-4 border-t border-slate-100 bg-white">
-            <button
-              onClick={() => handleCheckIn(!activity.checked_in)}
-              className={`
-                w-full py-3.5 rounded-2xl font-medium text-sm transition-all active:scale-[0.98]
-                ${
-                  activity.checked_in
-                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100'
-                    : 'bg-gradient-to-r from-sky-500 to-indigo-500 text-white hover:shadow-lg hover:shadow-sky-200/40'
-                }
-              `}
-            >
-              <span className="flex items-center justify-center gap-2">
-                <CheckCircle2 size={17} />
-                {activity.checked_in ? '取消打卡' : '打卡完成'}
-              </span>
-            </button>
           </div>
         </motion.div>
       </motion.div>

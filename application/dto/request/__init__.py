@@ -6,13 +6,10 @@ from .chat import ChatRequest
 from .feedback import FeedbackRequest
 from .geocode import BatchGeocodeRequest, IntlGeocodeRequest
 from .itinerary import (
-    CheckinActivityRequest,
-    CompareItinerariesRequest,
     ConfirmPlanRequest,
     CreateItineraryRequest,
     CreateShareLinkRequest,
     RevokeConfirmRequest,
-    UpdateActivityCostRequest,
     UpdateItineraryRequest,
     UpdatePhotoRequest,
 )
@@ -20,9 +17,7 @@ from .news import NewsFavoriteRequest
 
 __all__ = [
     "BatchGeocodeRequest",
-    "CheckinActivityRequest",
     "ChatRequest",
-    "CompareItinerariesRequest",
     "ConfirmPlanRequest",
     "CreateAgentRequest",
     "CreateItineraryRequest",
@@ -33,7 +28,6 @@ __all__ = [
     "NewsFavoriteRequest",
     "RegisterRequest",
     "RevokeConfirmRequest",
-    "UpdateActivityCostRequest",
     "UpdateAgentRequest",
     "UpdateItineraryRequest",
     "UpdatePhotoRequest",

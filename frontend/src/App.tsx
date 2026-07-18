@@ -3,9 +3,8 @@ import { LoginPage } from './pages/Login'
 import { Home } from './pages/Home'
 import { ItineraryOverview } from './pages/ItineraryOverview'
 import { MemoryPage } from './pages/MemoryPage'
-import { ComparePage } from './pages/ComparePage'
 import { SharedItinerary } from './pages/SharedItinerary'
-import { AlbumPage } from './pages/AlbumPage'
+import { TravelArchive } from './pages/TravelArchive'
 import { AgentCenter } from './pages/AgentCenter'
 import { AgentEditor } from './pages/AgentEditor'
 import { SkillCenter } from './pages/SkillCenter'
@@ -157,25 +156,14 @@ function App() {
             </PrivateRoute>
           }
         />
+        {/* 旅行存档视图（不可变）：从草稿确认后跳转，或从历史存档进入 */}
         <Route
-          path="/agent/travel/album/:id"
+          path="/agent/travel/archive/:id"
           element={
             <PrivateRoute>
               <AgentRouteGuard agent="travel">
                 <AppLayout>
-                  <AlbumPage />
-                </AppLayout>
-              </AgentRouteGuard>
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/agent/travel/compare"
-          element={
-            <PrivateRoute>
-              <AgentRouteGuard agent="travel">
-                <AppLayout>
-                  <ComparePage />
+                  <TravelArchive />
                 </AppLayout>
               </AgentRouteGuard>
             </PrivateRoute>

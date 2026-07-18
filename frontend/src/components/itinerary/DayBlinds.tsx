@@ -8,7 +8,6 @@ interface Props {
   itineraryId: string
   selectedIndex: number
   onSelectDay: (index: number) => void
-  onCheckIn: (activityId: number, checkedIn: boolean) => void
   onDelete: (activityId: number) => void
   onActivityClick: (activity: ActivityData) => void
 }
@@ -167,7 +166,6 @@ export function DayBlinds({
   itineraryId,
   selectedIndex,
   onSelectDay,
-  onCheckIn,
   onDelete,
   onActivityClick,
 }: Props) {

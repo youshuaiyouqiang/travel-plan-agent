@@ -6,17 +6,13 @@ from fastapi import APIRouter, Request
 
 from application.authz import AuthorizationService
 from application.dto.request.itinerary import (
-    CheckinActivityRequest,
-    CompareItinerariesRequest,
     CreateItineraryRequest,
     CreateShareLinkRequest,
-    UpdateActivityCostRequest,
     UpdateItineraryRequest,
 )
 from application.exceptions import (
     NotFoundException,
     UnauthorizedException,
-    ValidationException,
 )
 from domain.travel.itinerary.repository import ItineraryRepository
 
@@ -126,61 +122,6 @@ async def list_itineraries(request: Request) -> dict:
     return {"itineraries": [i.to_list_dict() for i in items]}
 
 
-@router.post("/compare")
-async def compare_itineraries(req: CompareItinerariesRequest, request: Request) -> dict:
-    user_id: str | None = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise UnauthorizedException()
-
-    authz = _get_authz_service(request)
-    results = []
-    for itin_id in req.ids:
-        try:
-            itin = authz.require_itinerary(user_id=user_id, itinerary_id=str(itin_id))
-        except NotFoundException:
-            continue
-        total_budget = sum(a.cost for d in itin.days for a in d.activities)
-        total_actual = sum(a.actual_cost for d in itin.days for a in d.activities)
-        results.append(
-            {
-                "id": itin.id,
-                "title": itin.title,
-                "destination": itin.destination,
-                "start_date": itin.start_date,
-                "end_date": itin.end_date,
-                "budget_text": itin.budget,
-                "budget_total": total_budget,
-                "actual_total": total_actual,
-                "days_count": len(itin.days),
-                "activities_count": sum(len(d.activities) for d in itin.days),
-                "days": [
-                    {
-                        "day_index": d.day_index,
-                        "date": d.date,
-                        "title": d.title,
-                        "summary": d.summary,
-                        "budget": sum(a.cost for a in d.activities),
-                        "actual": sum(a.actual_cost for a in d.activities),
-                        "activities": [
-                            {
-                                "time_slot": a.time_slot,
-                                "title": a.title,
-                                "location": a.location,
-                                "cost": a.cost,
-                                "actual_cost": a.actual_cost,
-                            }
-                            for a in d.activities
-                        ],
-                    }
-                    for d in itin.days
-                ],
-            }
-        )
-    if len(results) < 2:
-        raise ValidationException("有效行程不足2个")
-    return {"itineraries": results}
-
-
 @router.get("/{itinerary_id}")
 async def get_itinerary(itinerary_id: str, request: Request) -> dict:
     user_id: str | None = getattr(request.state, "user_id", None)
@@ -223,30 +164,6 @@ async def delete_itinerary(itinerary_id: str, request: Request) -> dict:
     return {"detail": "已删除"}
 
 
-@router.patch("/{itinerary_id}/activities/{activity_id}/checkin")
-async def checkin_activity(
-    itinerary_id: str,
-    activity_id: int,
-    req: CheckinActivityRequest,
-    request: Request,
-) -> dict:
-    user_id: str | None = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise UnauthorizedException()
-
-    authz = _get_authz_service(request)
-    authz.require_activity(
-        user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
-    )
-
-    if req.checked_in:
-        _itinerary_repo.check_in_activity(activity_id)
-    else:
-        _itinerary_repo.uncheck_activity(activity_id)
-    updated = _itinerary_repo.get_activity(activity_id)
-    return updated.to_dict()
-
-
 @router.delete("/{itinerary_id}/activities/{activity_id}")
 async def delete_activity(itinerary_id: str, activity_id: int, request: Request) -> dict:
     user_id: str | None = getattr(request.state, "user_id", None)
@@ -260,82 +177,6 @@ async def delete_activity(itinerary_id: str, activity_id: int, request: Request)
 
     _itinerary_repo.delete_activity(activity_id)
     return {"detail": "已删除"}
-
-
-@router.patch("/{itinerary_id}/activities/{activity_id}/cost")
-async def update_activity_cost(
-    itinerary_id: str,
-    activity_id: int,
-    req: UpdateActivityCostRequest,
-    request: Request,
-) -> dict:
-    user_id: str | None = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise UnauthorizedException()
-
-    authz = _get_authz_service(request)
-    authz.require_activity(
-        user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
-    )
-
-    _itinerary_repo.update_actual_cost(activity_id, req.actual_cost)
-    updated = _itinerary_repo.get_activity(activity_id)
-    return updated.to_dict()
-
-
-@router.get("/{itinerary_id}/expense-summary")
-async def expense_summary(itinerary_id: str, request: Request) -> dict:
-    user_id: str | None = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise UnauthorizedException()
-
-    authz = _get_authz_service(request)
-    itin = authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
-
-    total_budget = 0.0
-    total_actual = 0.0
-    day_summaries = []
-    for day in itin.days:
-        day_budget = sum(a.cost for a in day.activities)
-        day_actual = sum(a.actual_cost for a in day.activities)
-        total_budget += day_budget
-        total_actual += day_actual
-        day_summaries.append(
-            {
-                "day_index": day.day_index,
-                "date": day.date,
-                "title": day.title,
-                "budget": day_budget,
-                "actual": day_actual,
-                "activities": [
-                    {
-                        "id": a.id,
-                        "title": a.title,
-                        "budget": a.cost,
-                        "actual": a.actual_cost,
-                        "checked_in": a.checked_in,
-                    }
-                    for a in day.activities
-                ],
-            }
-        )
-    budget_str = itin.budget or ""
-    budget_num = 0.0
-    for seg in budget_str.replace("约", "").replace("元", "").replace("/人", "").replace(",", "").split():
-        try:
-            budget_num = float(seg)
-            break
-        except ValueError:
-            continue
-    return {
-        "itinerary_id": itinerary_id,
-        "title": itin.title,
-        "budget_text": itin.budget,
-        "budget_total": budget_num or total_budget,
-        "actual_total": total_actual,
-        "remaining": (budget_num or total_budget) - total_actual,
-        "days": day_summaries,
-    }
 
 
 @router.post("/{itinerary_id}/share")

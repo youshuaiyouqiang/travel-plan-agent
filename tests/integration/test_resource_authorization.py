@@ -2,7 +2,7 @@
 
 覆盖范围：
 - 行程读取/更新/删除的对象级授权（跨用户访问统一 404，不泄漏存在性）
-- 活动 checkin / 删除 / 更新费用的对象级授权
+- 活动删除的对象级授权（checkin / 实际花费端点已在 travel 计划中下线，不再测试）
 - 分享链接列表与删除的对象级授权
 - 会话方案确认/撤销/查询的对象级授权
 - debug 路由对他人 session 数据的访问控制
@@ -161,14 +161,6 @@ class TestItineraryAuthorization:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_other_user_cannot_view_expense_summary(self, client, users, owner_itinerary):
-        response = await client.get(
-            f"/api/v1/itineraries/{owner_itinerary['itinerary_id']}/expense-summary",
-            headers=_bearer(users["other"]["token"]),
-        )
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
     async def test_owner_can_read_own_itinerary(self, client, users, owner_itinerary):
         response = await client.get(
             f"/api/v1/itineraries/{owner_itinerary['itinerary_id']}",
@@ -184,31 +176,11 @@ class TestItineraryAuthorization:
 
 class TestActivityAuthorization:
     @pytest.mark.asyncio
-    async def test_other_user_cannot_checkin_activity(self, client, users, owner_itinerary):
-        response = await client.patch(
-            f"/api/v1/itineraries/{owner_itinerary['itinerary_id']}"
-            f"/activities/{owner_itinerary['activity_id']}/checkin",
-            headers={**_bearer(users["other"]["token"]), "Content-Type": "application/json"},
-            json={"checked_in": True},
-        )
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
     async def test_other_user_cannot_delete_activity(self, client, users, owner_itinerary):
         response = await client.delete(
             f"/api/v1/itineraries/{owner_itinerary['itinerary_id']}"
             f"/activities/{owner_itinerary['activity_id']}",
             headers=_bearer(users["other"]["token"]),
-        )
-        assert response.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_other_user_cannot_update_activity_cost(self, client, users, owner_itinerary):
-        response = await client.patch(
-            f"/api/v1/itineraries/{owner_itinerary['itinerary_id']}"
-            f"/activities/{owner_itinerary['activity_id']}/cost",
-            headers={**_bearer(users["other"]["token"]), "Content-Type": "application/json"},
-            json={"actual_cost": 999},
         )
         assert response.status_code == 404
 

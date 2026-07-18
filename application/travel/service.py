@@ -58,6 +58,10 @@ class TravelService:
             raise NotFoundException("travel_draft", draft_id)
         return draft
 
+    def require_owned_archive(self, user_id: str, archive_id: str) -> TravelArchive:
+        """读取存档；未找到或不属于该用户均抛 ``NotFoundException``。"""
+        return self._require_owned_archive(user_id, archive_id)
+
     # ------------------------------------------------------------------
     # 手工编辑与 Agent 提议
     # ------------------------------------------------------------------

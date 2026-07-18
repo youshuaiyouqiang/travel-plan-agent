@@ -441,25 +441,6 @@ export async function deleteItinerary(itineraryId: string): Promise<void> {
   }
 }
 
-export async function checkInActivity(
-  itineraryId: string,
-  activityId: number,
-  checkedIn: boolean = true,
-): Promise<ActivityData> {
-  const res = await fetch(
-    `${API_BASE}/itineraries/${itineraryId}/activities/${activityId}/checkin`,
-    {
-      method: 'PATCH',
-      headers: authHeaders(),
-      body: JSON.stringify({ checked_in: checkedIn }),
-    },
-  )
-  if (!res.ok) {
-    throw new Error('打卡操作失败')
-  }
-  return res.json()
-}
-
 export async function deleteActivity(
   itineraryId: string,
   activityId: number,
@@ -521,60 +502,6 @@ export async function deleteMemory(memoryType: string, memoryId: number): Promis
   }
 }
 
-export async function updateActivityCost(
-  itineraryId: string,
-  activityId: number,
-  actualCost: number,
-): Promise<ActivityData> {
-  const res = await fetch(
-    `${API_BASE}/itineraries/${itineraryId}/activities/${activityId}/cost`,
-    {
-      method: 'PATCH',
-      headers: authHeaders(),
-      body: JSON.stringify({ actual_cost: actualCost }),
-    },
-  )
-  if (!res.ok) {
-    throw new Error('更新花费失败')
-  }
-  return res.json()
-}
-
-export interface ExpenseDaySummary {
-  day_index: number
-  date: string
-  title: string
-  budget: number
-  actual: number
-  activities: {
-    id: number
-    title: string
-    budget: number
-    actual: number
-    checked_in: boolean
-  }[]
-}
-
-export interface ExpenseSummary {
-  itinerary_id: string
-  title: string
-  budget_text: string
-  budget_total: number
-  actual_total: number
-  remaining: number
-  days: ExpenseDaySummary[]
-}
-
-export async function getExpenseSummary(itineraryId: string): Promise<ExpenseSummary> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/expense-summary`, {
-    headers: authHeaders(),
-  })
-  if (!res.ok) {
-    throw new Error('获取花费统计失败')
-  }
-  return res.json()
-}
-
 export async function createShareLink(itineraryId: string): Promise<{ token: string; itinerary_id: string }> {
   const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/share`, {
     method: 'POST',
@@ -591,47 +518,6 @@ export async function getSharedItinerary(token: string): Promise<{ itinerary: It
   const res = await fetch(`${API_BASE}/shared/${token}`)
   if (!res.ok) {
     throw new Error('获取分享行程失败')
-  }
-  return res.json()
-}
-
-export interface CompareItineraryItem {
-  id: string
-  title: string
-  destination: string
-  start_date: string
-  end_date: string
-  budget_text: string
-  budget_total: number
-  actual_total: number
-  days_count: number
-  activities_count: number
-  days: {
-    day_index: number
-    date: string
-    title: string
-    summary: string
-    budget: number
-    actual: number
-    activities: {
-      time_slot: string
-      title: string
-      location: string
-      cost: number
-      actual_cost: number
-    }[]
-  }[]
-}
-
-export async function compareItineraries(ids: string[]): Promise<{ itineraries: CompareItineraryItem[] }> {
-  const res = await fetch(`${API_BASE}/itineraries/compare`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ ids }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || '对比行程失败')
   }
   return res.json()
 }
@@ -886,140 +772,120 @@ export async function batchGeocode(addresses: string[]): Promise<GeocodeResult[]
   return results
 }
 
-// ==================== 相册管理 ====================
+// ==================== 旅行草稿与存档 ====================
 
-export interface PhotoData {
-  id: number
-  itinerary_id: string
+export interface TravelActivityData {
+  id: string
+  title: string
+  time_slot?: string
+  location?: string
+  note?: string
+}
+
+export interface TravelDayData {
+  day_index: number
+  date?: string
+  title?: string
+  activities: TravelActivityData[]
+}
+
+export interface TravelPlanData {
+  title?: string
+  destination?: string
+  days?: TravelDayData[]
+}
+
+export interface TravelDraftData {
+  id: string
   user_id: string
-  file_name: string
-  file_size: number
-  mime_type: string
-  description: string
-  storage_path: string
-  thumbnail_path: string
-  day_index: number
-  tags: string[]
-  ai_description: string
-  latitude: number | null
-  longitude: number | null
-  is_cover: boolean
-  created_at: string
+  session_id: string
+  plan: TravelPlanData
+  manual_edit_fields: string[]
+  is_read_only: boolean
+  source_archive_id: string | null
+  created_at?: string
+  updated_at?: string
 }
 
-export interface PhotoListResponse {
-  itinerary_id: string
-  photos: PhotoData[]
-  total: number
-  tags: string[]
-  cover: PhotoData | null
+export interface TravelArchiveData {
+  id: string
+  user_id: string
+  source_draft_id: string
+  confirmed_at: string
+  plan: TravelPlanData
 }
 
-export interface PhotoMapMarker {
-  photo_id: number
-  latitude: number
-  longitude: number
-  description: string
-  day_index: number
-  thumbnail_path: string
+interface UnifiedResponse<T> {
+  code: number
+  message: string
+  data: T
 }
 
-export async function uploadPhotos(
-  itineraryId: string,
-  files: File[],
-  description: string = '',
-  dayIndex: number = 0,
-): Promise<{ photos: PhotoData[] }> {
-  const formData = new FormData()
-  for (const f of files) {
-    formData.append('files', f)
+async function parseUnified<T>(res: Response, fallbackMsg: string): Promise<T> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.message || fallbackMsg)
   }
-  formData.append('description', description)
-  formData.append('day_index', String(dayIndex))
+  const payload = (await res.json()) as UnifiedResponse<T>
+  return payload.data
+}
 
-  const token = getToken()
-  const headers: HeadersInit = {}
-  if (token) headers['Authorization'] = `Bearer ${token}`
-
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos`, {
+export async function createTravelDraft(
+  sessionId: string,
+  plan: TravelPlanData,
+): Promise<TravelDraftData> {
+  const res = await fetch(`${API_BASE}/v1/travel/drafts`, {
     method: 'POST',
-    headers,
-    body: formData,
+    headers: authHeaders(),
+    body: JSON.stringify({ session_id: sessionId, plan }),
   })
-  if (!res.ok) throw new Error(`上传失败 (${res.status})`)
-  return res.json()
+  return parseUnified<TravelDraftData>(res, '创建旅行草稿失败')
 }
 
-export async function listPhotos(
-  itineraryId: string,
-  dayIndex?: number,
-  tag?: string,
-): Promise<PhotoListResponse> {
-  const params = new URLSearchParams()
-  if (dayIndex && dayIndex > 0) params.set('day_index', String(dayIndex))
-  if (tag) params.set('tag', tag)
-  const qs = params.toString() ? `?${params.toString()}` : ''
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos${qs}`, {
+export async function getTravelDraft(draftId: string): Promise<TravelDraftData> {
+  const res = await fetch(`${API_BASE}/v1/travel/drafts/${draftId}`, {
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error(`获取照片失败 (${res.status})`)
-  return res.json()
+  return parseUnified<TravelDraftData>(res, '加载旅行草稿失败')
 }
 
-export async function deletePhoto(itineraryId: string, photoId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  })
-  if (!res.ok) throw new Error(`删除失败 (${res.status})`)
+export async function patchTravelActivity(
+  draftId: string,
+  activityId: string,
+  changes: { title?: string; time_slot?: string; location?: string; note?: string },
+): Promise<TravelDraftData> {
+  const res = await fetch(
+    `${API_BASE}/v1/travel/drafts/${draftId}/activities/${activityId}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify(changes),
+    },
+  )
+  return parseUnified<TravelDraftData>(res, '保存修改失败')
 }
 
-export async function updatePhoto(
-  itineraryId: string,
-  photoId: number,
-  data: { description?: string; day_index?: number; tags?: string[] },
-): Promise<PhotoData> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) throw new Error(`更新失败 (${res.status})`)
-  return res.json()
-}
-
-export async function setPhotoCover(itineraryId: string, photoId: number): Promise<PhotoData> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/${photoId}/cover`, {
+export async function confirmTravelDraft(draftId: string): Promise<TravelArchiveData> {
+  const res = await fetch(`${API_BASE}/v1/travel/drafts/${draftId}/confirm`, {
     method: 'POST',
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error(`设置封面失败 (${res.status})`)
-  return res.json()
+  return parseUnified<TravelArchiveData>(res, '确认行程失败')
 }
 
-export async function getPhotoMapMarkers(itineraryId: string): Promise<{ itinerary_id: string; markers: PhotoMapMarker[] }> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/photos/map`, {
+export async function getTravelArchive(archiveId: string): Promise<TravelArchiveData> {
+  const res = await fetch(`${API_BASE}/v1/travel/archives/${archiveId}`, {
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error(`获取地图标记失败 (${res.status})`)
-  return res.json()
+  return parseUnified<TravelArchiveData>(res, '加载存档失败')
 }
 
-export async function generateTravelogue(itineraryId: string): Promise<{ itinerary_id: string; content: string }> {
-  const res = await fetch(`${API_BASE}/itineraries/${itineraryId}/travelogue`, {
+export async function startDraftFromArchive(archiveId: string): Promise<TravelDraftData> {
+  const res = await fetch(`${API_BASE}/v1/travel/archives/${archiveId}/new-draft`, {
     method: 'POST',
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error(`生成游记失败 (${res.status})`)
-  return res.json()
-}
-
-export function getAlbumImageUrl(path: string): string {
-  const token = getToken()
-  // 兼容旧数据：如果 path 以 album/ 开头，去掉前缀（路由已包含 /album/）
-  const cleanPath = path.startsWith('album/') ? path.slice(6) : path
-  const base = `${API_BASE}/album/${cleanPath}`
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+  return parseUnified<TravelDraftData>(res, '基于存档创建草稿失败')
 }
 
 // ===== Agent 中心 API =====

@@ -48,14 +48,6 @@ class UpdateItineraryRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class CompareItinerariesRequest(BaseModel):
-    ids: list[str | int] = Field(
-        min_length=2,
-        max_length=4,
-        description="行程ID列表",
-    )
-
-
 class ConfirmPlanRequest(BaseModel):
     plan_type: str = Field(
         description="方案类型: sightseeing/budget",
@@ -70,20 +62,6 @@ class RevokeConfirmRequest(BaseModel):
     itinerary_id: str = Field(
         default="",
         description="行程ID",
-    )
-
-
-class CheckinActivityRequest(BaseModel):
-    checked_in: bool = Field(
-        default=True,
-        description="是否打卡",
-    )
-
-
-class UpdateActivityCostRequest(BaseModel):
-    actual_cost: float = Field(
-        default=0,
-        description="实际花费",
     )
 
 
