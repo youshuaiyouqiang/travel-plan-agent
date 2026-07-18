@@ -175,15 +175,56 @@ export async function listSessions(): Promise<SessionInfo[]> {
   return data.sessions || []
 }
 
-export async function createSession(): Promise<{ session_id: string; user_id: string }> {
+export type SessionMode = 'yunhe_default' | 'agent_locked'
+
+export interface SessionCreateResult {
+  session_id: string
+  user_id: string
+  mode: SessionMode
+  locked_agent_id: string | null
+  news_id: string | null
+}
+
+export async function createSession(
+  options?: { mode?: SessionMode; locked_agent_id?: string },
+): Promise<SessionCreateResult> {
+  const body =
+    options && (options.mode || options.locked_agent_id)
+      ? {
+          mode: options.mode ?? 'yunhe_default',
+          ...(options.locked_agent_id ? { locked_agent_id: options.locked_agent_id } : {}),
+        }
+      : undefined
   const res = await fetch(`${API_BASE}/sessions`, {
     method: 'POST',
     headers: authHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
     throw new Error('创建会话失败')
   }
-  return res.json()
+  const payload = await res.json()
+  // 后端统一响应：{ code, message, data }
+  return payload?.data ?? payload
+}
+
+export async function updateSessionMode(
+  sessionId: string,
+  mode: SessionMode,
+  lockedAgentId?: string,
+): Promise<SessionCreateResult> {
+  const body: Record<string, unknown> = { mode }
+  if (lockedAgentId) body.locked_agent_id = lockedAgentId
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/mode`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    throw new Error('更新会话模式失败')
+  }
+  const payload = await res.json()
+  return payload?.data ?? payload
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {

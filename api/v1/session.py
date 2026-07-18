@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from application.exceptions import (
     ConflictException,
@@ -14,9 +13,31 @@ from application.exceptions import (
     ValidationException,
 )
 from application.dto.request import ConfirmPlanRequest, RevokeConfirmRequest
+from application.session.schema import UserSessionMode
+from application.session.service import SessionService
 
 router = APIRouter(tags=["sessions"])
 confirm_router = APIRouter(tags=["session-confirm"])
+
+
+def _get_session_service(request: Request) -> SessionService:
+    """获取应用层 SessionService；若未注入则使用默认可锁定 Agent 构造一个。"""
+    service = getattr(request.app.state, "session_service", None)
+    if service is None:
+        service = SessionService()
+        request.app.state.session_service = service
+    return service
+
+
+def _session_to_payload(record) -> dict:
+    """将 SessionRecord 序列化为统一响应的 data 字段。"""
+    return {
+        "session_id": record.session_id,
+        "user_id": record.user_id,
+        "mode": record.mode,
+        "locked_agent_id": record.locked_agent_id,
+        "news_id": record.news_id,
+    }
 
 
 # ── 会话管理（/sessions） ──────────────────────────────────────────
@@ -33,22 +54,71 @@ async def list_sessions(request: Request) -> dict:
     return {"sessions": sessions}
 
 
-class CreateSessionResponse(BaseModel):
-    session_id: str
-    user_id: str
+class CreateSessionRequest(BaseModel):
+    """创建会话请求；用户 API 只允许 yunhe_default 或 agent_locked。"""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: UserSessionMode = Field(default="yunhe_default", description="会话模式")
+    locked_agent_id: str | None = Field(default=None, description="agent_locked 模式下锁定的 Agent ID")
 
 
-@router.post("")
-async def create_session(request: Request) -> dict:
-    """创建新会话。"""
+@router.post("", status_code=201)
+async def create_session(request: Request, req: CreateSessionRequest | None = None) -> dict:
+    """创建新会话。
+
+    - 不传 body 时按 ``yunhe_default`` 模式创建（向后兼容旧前端）。
+    - ``mode=agent_locked`` 必须搭配 ``locked_agent_id``，且该 Agent 必须可用。
+    - 用户 API 不接受 ``news_analysis_locked``；该模式仅由新闻分析服务内部创建。
+    """
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise UnauthorizedException()
-    session_id = os.urandom(8).hex()
-    from infrastructure.persistence.session_repository import SessionRepository
 
-    SessionRepository.create(session_id, user_id)
-    return {"session_id": session_id, "user_id": user_id}
+    body = req or CreateSessionRequest()
+    service = _get_session_service(request)
+    record = service.create(
+        user_id=user_id,
+        mode=body.mode,
+        locked_agent_id=body.locked_agent_id,
+    )
+    return {
+        "code": 0,
+        "message": "success",
+        "data": _session_to_payload(record),
+    }
+
+
+class UpdateSessionModeRequest(BaseModel):
+    """更新会话模式请求；用户 API 只允许 yunhe_default 或 agent_locked。"""
+
+    model_config = ConfigDict(extra="forbid")
+    mode: UserSessionMode = Field(description="目标会话模式")
+    locked_agent_id: str | None = Field(default=None, description="agent_locked 模式下锁定的 Agent ID")
+
+
+@router.patch("/{session_id}/mode")
+async def update_session_mode(session_id: str, req: UpdateSessionModeRequest, request: Request) -> dict:
+    """更新会话模式。
+
+    - 用户 API 不接受 ``news_analysis_locked``（由 Literal 类型守护）。
+    - 会话不属于当前用户时统一返回 404，避免泄漏存在性。
+    """
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise UnauthorizedException()
+
+    service = _get_session_service(request)
+    record = service.update_mode(
+        user_id=user_id,
+        session_id=session_id,
+        mode=req.mode,
+        locked_agent_id=req.locked_agent_id,
+    )
+    return {
+        "code": 0,
+        "message": "success",
+        "data": _session_to_payload(record),
+    }
 
 
 @router.delete("/{session_id}")

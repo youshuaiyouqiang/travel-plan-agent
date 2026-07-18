@@ -40,6 +40,10 @@ class Session:
     delegation_started_at: float | None = None
     delegation_last_interaction: float | None = None
     user_id: str = ""
+    # Task 1: 持久化会话模式与锚点
+    mode: str = "yunhe_default"
+    locked_agent_id: str | None = None
+    news_id: str | None = None
 
     def append(self, role: str, content: str) -> None:
         self.turns.append(Turn(role=role, content=content))
@@ -78,15 +82,19 @@ class SessionManager:
             session.user_id = user_id
         conn.execute(
             "INSERT INTO sessions (session_id, user_id, summary, created_at, updated_at, "
-            "disclosed_tools, delegation_agent_id, delegation_started_at, delegation_last_interaction) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "disclosed_tools, delegation_agent_id, delegation_started_at, "
+            "delegation_last_interaction, mode, locked_agent_id, news_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(session_id) DO UPDATE SET "
             "user_id=excluded.user_id, "
             "summary=excluded.summary, updated_at=excluded.updated_at, "
             "disclosed_tools=excluded.disclosed_tools, "
             "delegation_agent_id=excluded.delegation_agent_id, "
             "delegation_started_at=excluded.delegation_started_at, "
-            "delegation_last_interaction=excluded.delegation_last_interaction",
+            "delegation_last_interaction=excluded.delegation_last_interaction, "
+            "mode=excluded.mode, "
+            "locked_agent_id=excluded.locked_agent_id, "
+            "news_id=excluded.news_id",
             (
                 session.session_id,
                 session.user_id,
@@ -97,6 +105,9 @@ class SessionManager:
                 session.delegation_agent_id,
                 session.delegation_started_at,
                 session.delegation_last_interaction,
+                session.mode,
+                session.locked_agent_id,
+                session.news_id,
             ),
         )
 
@@ -193,7 +204,10 @@ class SessionManager:
     def _load(self, session_id: str) -> Session | None:
         conn = get_connection()
         row = conn.execute(
-            "SELECT session_id, summary, created_at, updated_at FROM sessions WHERE session_id = ?",
+            "SELECT session_id, user_id, summary, created_at, updated_at, "
+            "disclosed_tools, delegation_agent_id, delegation_started_at, "
+            "delegation_last_interaction, mode, locked_agent_id, news_id "
+            "FROM sessions WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         if not row:
@@ -212,6 +226,9 @@ class SessionManager:
         delegation_agent_id: str | None = None
         delegation_started_at: float | None = None
         delegation_last_interaction: float | None = None
+        mode: str = "yunhe_default"
+        locked_agent_id: str | None = None
+        news_id: str | None = None
         try:
             user_id = row["user_id"] if "user_id" in row.keys() else ""
         except (KeyError, IndexError):
@@ -235,6 +252,18 @@ class SessionManager:
             )
         except (KeyError, IndexError):
             pass
+        try:
+            mode = row["mode"] if "mode" in row.keys() and row["mode"] else "yunhe_default"
+        except (KeyError, IndexError):
+            pass
+        try:
+            locked_agent_id = row["locked_agent_id"] if "locked_agent_id" in row.keys() else None
+        except (KeyError, IndexError):
+            pass
+        try:
+            news_id = row["news_id"] if "news_id" in row.keys() else None
+        except (KeyError, IndexError):
+            pass
 
         session = Session(
             session_id=row["session_id"],
@@ -247,6 +276,9 @@ class SessionManager:
             delegation_started_at=delegation_started_at,
             delegation_last_interaction=delegation_last_interaction,
             user_id=user_id,
+            mode=mode,
+            locked_agent_id=locked_agent_id,
+            news_id=news_id,
         )
         # P1-5：标记已持久化的 turn 数，避免 save() 时重复插入
         session._last_persisted_turn = len(turns)

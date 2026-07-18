@@ -11,6 +11,7 @@ from api.v1 import router as v1_router
 from api.middleware.auth import auth_middleware, rate_limit_middleware
 from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
 from application.exceptions.base import ClawException
+from application.session.service import SessionService
 from application.trending.manager import refresh_pool
 from app import build_orchestrator
 from config import settings
@@ -97,6 +98,9 @@ app.state.builtin_configs = _container.builtin_configs
 app.state.custom_repo = _container.custom_repo
 app.state.mcp_runtime = _container.mcp_runtime
 app.state.mcp_catalog = _container.mcp_catalog
+# Task 1: 会话模式应用服务。可锁定的 Agent 来自内置配置（排除调度员 yunhe）。
+_lockable_agent_ids = {c.id for c in _container.builtin_configs if c.id != "yunhe"}
+app.state.session_service = SessionService(available_agent_ids=_lockable_agent_ids)
 
 # ── CORS ──────────────────────────────────────────────────
 

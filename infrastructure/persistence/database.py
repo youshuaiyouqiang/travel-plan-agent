@@ -308,6 +308,37 @@ def _downgrade_10(conn: Any) -> None:
     )
 
 
+def _upgrade_11(conn: Any) -> None:
+    """Task 1: 为 sessions 表增加 mode/locked_agent_id/news_id 三列。
+
+    - ``mode``：会话模式，默认 ``yunhe_default``；旧数据回填为默认值。
+    - ``locked_agent_id``：``agent_locked`` 或 ``news_analysis_locked`` 模式下的锚定 Agent。
+    - ``news_id``：仅 ``news_analysis_locked`` 模式下非空，新闻研判锚点。
+    """
+    s_cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "mode" not in s_cols:
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'yunhe_default'"
+        )
+        conn.commit()
+        logger.info("Migration 11: added mode to sessions")
+    if "locked_agent_id" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN locked_agent_id TEXT DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 11: added locked_agent_id to sessions")
+    if "news_id" not in s_cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN news_id TEXT DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 11: added news_id to sessions")
+
+
+def _downgrade_11(conn: Any) -> None:
+    logger.warning(
+        "Migration 11 downgrade: SQLite cannot DROP COLUMN before 3.35; "
+        "skipping column removal for mode/locked_agent_id/news_id"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -372,6 +403,12 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Add confirmed_plan/confirmed_at to sessions",
         "upgrade": _upgrade_10,
         "downgrade": _downgrade_10,
+    },
+    {
+        "version": 11,
+        "description": "Add mode/locked_agent_id/news_id to sessions",
+        "upgrade": _upgrade_11,
+        "downgrade": _downgrade_11,
     },
 ]
 
