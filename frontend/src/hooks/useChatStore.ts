@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { SessionInfo } from '../utils/api'
+import type { SessionInfo } from '../features/chat/api'
 
 export interface ThinkingStep {
   id: string

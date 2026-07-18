@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { ActivityData, geocodeAddress } from '../../utils/api'
+import { ActivityData, geocodeAddress } from '../../features/travel/api'
 import { MapPin, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AmapView } from './AmapView'

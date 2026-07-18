@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useAuthStore } from './useAuthStore'
-import type { SessionCreateResult, SessionMode } from '../utils/api'
+import type { SessionCreateResult, SessionMode } from '../features/chat/api'
 
 function authHeaders(): HeadersInit {
   const token = useAuthStore.getState().token

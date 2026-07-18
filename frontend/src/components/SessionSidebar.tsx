@@ -3,8 +3,8 @@ import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-r
 import { useAuthStore } from '../hooks/useAuthStore'
 import { useChatStore } from '../hooks/useChatStore'
 import { useSessionStore } from '../hooks/useSessionStore'
-import { listSessions, createSession, deleteSession, getSessionMessages } from '../utils/api'
-import type { SessionInfo } from '../utils/api'
+import { listSessions, createSession, deleteSession, getSessionMessages } from '../features/chat/api'
+import type { SessionInfo } from '../features/chat/api'
 
 interface Props {
   onSessionChange: (sessionId: string) => void

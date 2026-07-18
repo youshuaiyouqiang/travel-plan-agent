@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { DayPlanData, geocodeAddress } from '../../utils/api'
+import { DayPlanData, geocodeAddress } from '../../features/travel/api'
 import { Loader2 } from 'lucide-react'
 import { AmapView } from './AmapView'
 

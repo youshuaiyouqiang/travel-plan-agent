@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MapPin, Clock, CheckCircle2, ChevronRight, Camera, Utensils, Bus, Landmark, ShoppingBag, Music, Coffee, Moon, Sun } from 'lucide-react'
-import { DayPlanData, ActivityData } from '../../utils/api'
+import { DayPlanData, ActivityData } from '../../features/travel/api'
 
 interface Props {
   days: DayPlanData[]

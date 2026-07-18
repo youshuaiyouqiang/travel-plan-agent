@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { geocodeAddress } from '../../utils/api'
+import { geocodeAddress } from '../../features/travel/api'
 import { Loader2 } from 'lucide-react'
 import { AmapView } from './AmapView'
 

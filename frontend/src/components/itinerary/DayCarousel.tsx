@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import useEmblaCarousel from 'embla-carousel-react'
 import { motion } from 'framer-motion'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
-import { DayPlanData, ActivityData } from '../../utils/api'
+import { DayPlanData, ActivityData } from '../../features/travel/api'
 import { ActivityCard } from './ActivityCard'
 
 interface Props {

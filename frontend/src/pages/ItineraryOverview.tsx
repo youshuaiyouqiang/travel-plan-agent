@@ -6,7 +6,7 @@ import { useItineraryStore } from '../hooks/useItineraryStore'
 import { DayBlinds } from '../components/itinerary/DayBlinds'
 import { ActivityDetail } from '../components/itinerary/ActivityDetail'
 import { ItineraryMap } from '../components/itinerary/ItineraryMap'
-import { createShareLink } from '../utils/api'
+import { createShareLink } from '../features/travel/api'
 
 const PUBLIC_URL = import.meta.env.VITE_PUBLIC_URL || ''
 

@@ -4,7 +4,7 @@ import {
   deleteActivity as apiDeleteActivity,
   ItineraryData,
   ActivityData,
-} from '../utils/api'
+} from '../features/travel/api'
 
 interface ItineraryState {
   itinerary: ItineraryData | null

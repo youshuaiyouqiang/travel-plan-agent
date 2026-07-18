@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { MapPin, Clock, ChevronRight, CheckCircle2, DollarSign } from 'lucide-react'
-import { ActivityData } from '../../utils/api'
+import { ActivityData } from '../../features/travel/api'
 
 interface Props {
   activity: ActivityData

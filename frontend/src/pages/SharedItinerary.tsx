@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { MapPin, Calendar, Wallet, Clock, Navigation, Lightbulb, Share2, Plane } from 'lucide-react'
-import { getSharedItinerary, ItineraryData, DayPlanData, ActivityData } from '../utils/api'
+import { MapPin, Calendar, Wallet, Navigation, Lightbulb, Share2, Plane } from 'lucide-react'
+import { getSharedItinerary, ItineraryData } from '../features/travel/api'
 import { SharedMap } from '../components/itinerary/SharedMap'
 
 export function SharedItinerary() {

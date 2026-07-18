@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Lock, Sparkles, MapPin, Calendar } from 'lucide-react'
-import { getTravelArchive, startDraftFromArchive, type TravelArchiveData } from '../utils/api'
+import { getTravelArchive, startDraftFromArchive, type TravelArchiveData } from '../features/travel/api'
 
 export function TravelArchive() {
   const { id } = useParams<{ id: string }>()

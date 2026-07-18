@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { motion, useAnimation } from 'framer-motion'
 import { MapPin, Clock, CheckCircle2, Trash2, ChevronRight } from 'lucide-react'
-import { ActivityData } from '../../utils/api'
+import { ActivityData } from '../../features/travel/api'
 
 interface Props {
   activity: ActivityData

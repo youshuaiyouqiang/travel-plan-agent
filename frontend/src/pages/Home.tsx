@@ -8,7 +8,8 @@ import { HotspotCard } from '../components/news/HotspotCard'
 import { useChatStore } from '../hooks/useChatStore'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { useSessionStore } from '../hooks/useSessionStore'
-import { sendMessageStream, createSession, listSessions, getSessionMessages, fetchAgents, type AgentInfo } from '../utils/api'
+import { sendMessageStream, createSession, listSessions, getSessionMessages } from '../features/chat/api'
+import { fetchAgents, type AgentInfo } from '../utils/api'
 import { getHotspots, createAnalysisSession, type HotspotItem } from '../features/news/api'
 import { Sparkles, Flame } from 'lucide-react'
 
@@ -225,14 +226,15 @@ export function Home() {
           case 'done':
             finishLastMessage()
             clearThinkingSteps()
-            if (event.data === 'escalated') {
+            // 后端旧格式 done.data="escalated" 会被解析为 {handled_by:"escalated", next_controller:"yunhe"}
+            if (event.data.handled_by === 'escalated') {
               setEscalated(true)
             }
             break
           case 'error':
             finishLastMessage()
             clearThinkingSteps()
-            appendToLastMessage(`\n\n⚠️ ${event.data}`)
+            appendToLastMessage(`\n\n⚠️ ${event.data.message}`)
             break
           case 'status':
             // thinking 状态，前端已经通过 thinkingSteps 展示
@@ -242,7 +244,7 @@ export function Home() {
             break
           case 'route':
             // 智能体路由事件 — 更新展示态 activeAgent
-            setActiveAgent(event.data)
+            setActiveAgent(event.data.agent_id)
             break
           case 'control_returned':
             // 默认模式单轮委派完成：控制权回到云合，清空展示态 activeAgent
@@ -267,7 +269,7 @@ export function Home() {
                 question = d
               } else if (Array.isArray(d) && d.length > 0) {
                 question = `请补充以下信息：${d.join('、')}`
-              } else if (d && typeof d === 'object' && typeof d.question === 'string') {
+              } else if (!Array.isArray(d) && d && typeof d.question === 'string') {
                 question = d.question
               }
               addMessage({

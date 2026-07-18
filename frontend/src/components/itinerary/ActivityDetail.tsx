@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, MapPin, Clock, Lightbulb, DollarSign, Navigation } from 'lucide-react'
-import { ActivityData } from '../../utils/api'
+import { ActivityData } from '../../features/travel/api'
 import { MiniMap } from './MiniMap'
 
 interface Props {
