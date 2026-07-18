@@ -1,6 +1,6 @@
 # 学术助手 — 科研选题与方向规划
-# 使用 ArXiv MCP 工具进行论文搜索和引用分析
-# 使用 web-search MCP 工具补充网络信息
+# 仅使用 ArXiv MCP 工具进行论文搜索和引用分析
+# web-search 已下线：学术事实检索只允许 arXiv 与论文数据库
 id: academic
 name: 学术助手
 description: >
@@ -46,11 +46,10 @@ system_prompt: |
   - 在回答学术问题时，优先使用 `search_papers` 和 `citation_graph` 获取实时论文信息
   - 引用论文时注明 ID 和标题，方便用户进一步查阅
   - 对搜索结果中的重点论文，用 `get_abstract` 获取完整摘要以作深度分析
-  - 需要补充网络信息（如期刊影响因子、会议排名）时使用 `web_search`
+  - 学术事实检索仅允许 arXiv 与论文数据库工具；禁止使用通用网页搜索
   - 所有分析结论都要标注数据来源，不要凭空编造
 skills: []
 mcp_servers:
   - arxiv
-  - web-search
 welcome_message: "你好！我是学术助手 🎓\n\n我可以帮你：\n• 🔍 搜索论文，梳理领域热点和空白点\n• 💡 分析创新类型（增量/架构/数据集/应用）\n• 📊 评估研究方向的可行性（算力/数据/成本/发表难度）\n• ✍️ 润色论文、生成引用格式、写 Cover Letter\n\n告诉我你的研究方向，或者直接提问！"
 temperature: 0.5

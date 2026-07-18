@@ -51,7 +51,12 @@ class AgentFactory:
         self._builtin_builders = builtin_builders or {}
 
     def create(self, config: AgentConfig) -> BaseAgent:
-        """根据配置创建智能体实例。"""
+        """根据配置创建智能体实例。
+
+        工具白名单在 ``DynamicAgent`` 内通过 ``tool_executor.policy.filter_allowed_tools``
+        强制执行：学术 Agent 即使在配置中误加 ``web-search``，也不会获得
+        ``web_search`` 工具。``yunhe`` 等未配置白名单的 Agent 保持原行为。
+        """
         # 内置智能体可能有特殊的构造逻辑（如 TravelAgent 包装完整 Agent）
         if config.source == "builtin" and config.id in self._builtin_builders:
             builder = self._builtin_builders[config.id]

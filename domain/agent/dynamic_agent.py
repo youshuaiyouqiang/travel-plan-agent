@@ -48,8 +48,9 @@ class DynamicAgent(BaseAgent):
         self._audit_logger = audit_logger
         self._mcp_runtime = mcp_runtime
 
-        # 解析工具名列表
-        self._tool_names = self._resolve_tools(config, skill_provider, mcp_runtime)
+        # 解析工具名列表（含 Agent 白名单过滤 — 学术 Agent 仅保留 arxiv 工具）
+        resolved = self._resolve_tools(config, skill_provider, mcp_runtime)
+        self._tool_names = tool_executor.policy.filter_allowed_tools(config.id, resolved)
 
         # 从全局 registry 中筛选工具子集，构建专属 ToolRegistry
         self._agent_registry = ToolRegistry()

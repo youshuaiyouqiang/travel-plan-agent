@@ -29,7 +29,21 @@ class ToolPolicy:
     - 联动 ToolSpec.confirm_required（高风险工具弹确认框）
     - 简单频率限制（每分钟/每小时，不使用外部缓存）
     - 保留 run_shell / write_file 硬编码规则
+    - Agent 工具白名单（``is_allowed``）：学术 Agent 只允许 arxiv 工具，
+      明确拒绝 web_search 等通用网页检索
     """
+
+    # Agent → 允许的工具名集合。未列入的 Agent 默认允许所有工具
+    # （向后兼容 yunhe 主调度等既有多工具 Agent）。
+    _AGENT_ALLOWLIST: dict[str, set[str]] = {
+        "academic": {
+            "search_papers",
+            "get_abstract",
+            "citation_graph",
+            "batch_abstracts",
+        },
+        "news": {"news_search", "source_lookup"},
+    }
 
     def __init__(self) -> None:
         # P2-11：简单内存频率计数器（key = f"{user_id}:{tool_name}" → list[timestamp]）。
@@ -39,6 +53,31 @@ class ToolPolicy:
         self._max_calls_per_minute = 30  # 每工具每分钟上限
         self._max_calls_per_hour = 200  # 每工具每小时上限
         self._tool_specs: dict[str, Any] = {}  # tool_name → ToolSpec（外部注入）
+
+    def is_allowed(self, agent_id: str, tool_name: str) -> bool:
+        """检查工具是否在 Agent 的白名单内。
+
+        未配置白名单的 Agent（如 ``yunhe`` 主调度）返回 ``False``；
+        调用方应仅对已配置白名单的 Agent 调用此方法，或将其作为
+        ``check()`` 的补充过滤层。学术 Agent 的白名单明确排除
+        ``web_search`` 等通用网页检索工具。
+        """
+        allowed = self._AGENT_ALLOWLIST.get(agent_id)
+        if allowed is None:
+            return False
+        return tool_name in allowed
+
+    def filter_allowed_tools(self, agent_id: str, tool_names: list[str]) -> list[str]:
+        """按白名单过滤工具名列表。
+
+        未配置白名单的 Agent（如 ``yunhe``）原样返回输入，保持向后兼容；
+        已配置白名单的 Agent 仅保留白名单内的工具。这确保即使配置中
+        误加 ``web-search``，学术 Agent 也不会获得 ``web_search`` 工具。
+        """
+        allowed = self._AGENT_ALLOWLIST.get(agent_id)
+        if allowed is None:
+            return list(tool_names)
+        return [name for name in tool_names if name in allowed]
 
     def register_spec(self, tool_name: str, spec: Any) -> None:
         """注册工具 spec（用于 confirm_required 检查）。"""
