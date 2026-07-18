@@ -14,7 +14,6 @@ class PromptContext:
     travel_intent: str = ""
     memory_context: str = ""
     mcp_context: str = ""
-    emotion_context: str = ""
     profile_context: str = ""
     cached_tool_context: str = ""
     dual_memory_context: str = ""

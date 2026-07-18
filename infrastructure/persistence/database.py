@@ -607,6 +607,81 @@ def _downgrade_15(conn: Any) -> None:
     logger.info("Migration 15 downgrade: dropped travel_drafts + travel_archives tables")
 
 
+def _upgrade_16(conn: Any) -> None:
+    """Task 2（学术计划）: 重建 ``profiles`` 表，移除 ``emotion_history`` 列。
+
+    业务红线：删除情感识别，不留兼容字段。SQLite 3.35 之前不支持 ``DROP COLUMN``，
+    故采用重建表方式：
+    1. 创建不含 ``emotion_history`` 列的新表 ``profiles_new``
+    2. 从旧表拷贝允许的元数据（不拷贝 emotion_history）
+    3. 删除旧表，重命名新表为 ``profiles``
+    4. 全新部署（旧表不存在）时仅创建新表，不执行数据拷贝
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profiles_new (
+            user_id           TEXT PRIMARY KEY,
+            tags              TEXT NOT NULL DEFAULT '[]',
+            interaction_count INTEGER NOT NULL DEFAULT 0,
+            last_intent       TEXT NOT NULL DEFAULT '',
+            preferred_categories TEXT NOT NULL DEFAULT '[]',
+            custom_attributes TEXT NOT NULL DEFAULT '{}',
+            created_at        TEXT NOT NULL DEFAULT '',
+            updated_at        TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+
+    old_cols = {row[1] for row in conn.execute("PRAGMA table_info(profiles)").fetchall()}
+    if "user_id" in old_cols:
+        # 旧表存在：拷贝允许的元数据（emotion_history 被丢弃）
+        conn.execute(
+            "INSERT OR IGNORE INTO profiles_new "
+            "(user_id, tags, interaction_count, last_intent, preferred_categories, "
+            "custom_attributes, created_at, updated_at) "
+            "SELECT user_id, tags, interaction_count, last_intent, preferred_categories, "
+            "custom_attributes, created_at, updated_at FROM profiles"
+        )
+        conn.execute("DROP TABLE profiles")
+        logger.info("Migration 16: migrated existing profiles rows (emotion_history dropped)")
+    else:
+        # 全新部署：旧表不存在，清理可能残留的占位
+        conn.execute("DROP TABLE IF EXISTS profiles")
+
+    conn.execute("ALTER TABLE profiles_new RENAME TO profiles")
+    conn.commit()
+    logger.info("Migration 16: rebuilt profiles without emotion_history column")
+
+
+def _downgrade_16(conn: Any) -> None:
+    """回滚迁移 16 — 重建带 ``emotion_history`` 列的 ``profiles`` 表。
+
+    降级是单向不可逆的：已被丢弃的 emotion_history 无法恢复。
+    重建空列仅保证 schema 兼容旧版本。
+    """
+    conn.execute("DROP TABLE IF EXISTS profiles")
+    conn.execute(
+        """
+        CREATE TABLE profiles (
+            user_id           TEXT PRIMARY KEY,
+            tags              TEXT NOT NULL DEFAULT '[]',
+            interaction_count INTEGER NOT NULL DEFAULT 0,
+            last_intent       TEXT NOT NULL DEFAULT '',
+            preferred_categories TEXT NOT NULL DEFAULT '[]',
+            emotion_history   TEXT NOT NULL DEFAULT '[]',
+            custom_attributes TEXT NOT NULL DEFAULT '{}',
+            created_at        TEXT NOT NULL DEFAULT '',
+            updated_at        TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.commit()
+    logger.warning(
+        "Migration 16 downgrade: rebuilt profiles with emotion_history column (empty; "
+        "previously dropped data cannot be restored)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -701,6 +776,12 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Create travel_drafts + travel_archives tables",
         "upgrade": _upgrade_15,
         "downgrade": _downgrade_15,
+    },
+    {
+        "version": 16,
+        "description": "Rebuild profiles without emotion_history column",
+        "upgrade": _upgrade_16,
+        "downgrade": _downgrade_16,
     },
 ]
 

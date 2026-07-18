@@ -35,11 +35,6 @@ def _init_metrics():
             ["tool_name", "status"],
         )
         # P2-4：移除 dead metric `active_sessions` Gauge（定义后从未 inc/dec）。
-        _collectors["emotion_detected"] = Counter(
-            "claw_emotion_detected_total",
-            "Emotion detection results",
-            ["emotion"],
-        )
         logger.info("Prometheus metrics initialized")
     except ImportError:
         logger.warning("prometheus_client not installed, metrics disabled")
@@ -58,11 +53,6 @@ def observe_latency(intent: str, duration: float) -> None:
 def record_tool_execution(tool_name: str, status: str) -> None:
     if "tool_execution" in _collectors:
         _collectors["tool_execution"].labels(tool_name=tool_name, status=status).inc()
-
-
-def record_emotion(emotion: str) -> None:
-    if "emotion_detected" in _collectors:
-        _collectors["emotion_detected"].labels(emotion=emotion).inc()
 
 
 @asynccontextmanager

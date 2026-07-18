@@ -190,39 +190,6 @@ class AuditLogger:
             },
         )
 
-    def log_emotion_detect(
-        self,
-        *,
-        session_id: str,
-        user_id: str,
-        message: str,
-        emotion: str,
-        score: float,
-        confidence: float,
-        response_style: str,
-        raw_llm_output: str = "",
-        duration_ms: int = 0,
-        trace_id: str = "",
-    ) -> None:
-        self.log(
-            event_type="emotion_detect",
-            session_id=session_id,
-            user_id=user_id,
-            trace_id=trace_id,
-            action=f"Emotion detected: {emotion}",
-            input_summary=message,
-            output_summary=f"emotion={emotion} score={score:.2f} confidence={confidence:.2f} style={response_style}",
-            risk_level="low",
-            llm_output=raw_llm_output,
-            duration_ms=duration_ms,
-            metadata={
-                "emotion": emotion,
-                "score": score,
-                "confidence": confidence,
-                "response_style": response_style,
-            },
-        )
-
     def log_reasoning_step(
         self,
         *,
@@ -276,7 +243,6 @@ class AuditLogger:
         dual_memory_context: str,
         mcp_context: str,
         profile_context: str,
-        emotion_context: str,
         selected_mcp_tools: list[str] | None = None,
         connected_mcp_tools: list[str] | None = None,
     ) -> None:
@@ -298,12 +264,10 @@ class AuditLogger:
                 "has_dual_memory": bool(dual_memory_context),
                 "has_mcp": bool(mcp_context),
                 "has_profile": bool(profile_context),
-                "has_emotion": bool(emotion_context),
                 "memory_context": memory_context,
                 "dual_memory_context": dual_memory_context,
                 "mcp_context": mcp_context,
                 "profile_context": profile_context,
-                "emotion_context": emotion_context,
             },
         )
 
@@ -315,7 +279,6 @@ class AuditLogger:
         user_message: str,
         reply: str,
         intent: str,
-        emotion: str,
         total_duration_ms: int,
         trace_summary: str = "",
         trace_id: str = "",
@@ -332,7 +295,6 @@ class AuditLogger:
             duration_ms=total_duration_ms,
             metadata={
                 "intent": intent,
-                "emotion": emotion,
                 "trace_summary": trace_summary,
             },
         )

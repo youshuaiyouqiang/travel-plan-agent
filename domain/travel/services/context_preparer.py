@@ -19,8 +19,6 @@ from domain.user.session.task_state import TaskStateStore
 from domain.shared.types import IntentType
 from domain.travel.intent.travel_classifier import TravelIntentClassifier, TravelIntentResult
 from domain.travel.intent.travel_schema import TravelIntentType
-from domain.user.emotion.detector import EmotionDetector
-from domain.user.emotion.schema import EmotionResult, EMOTION_STRATEGIES
 from domain.user.profile.manager import ProfileManager
 from domain.shared.audit.logger import AuditLogger
 from domain.travel.services.cache_manager import CacheManager
@@ -42,7 +40,6 @@ class ChatPreparation:
     task: Any
     intent: Any
     ops_result: Any
-    emotion_result: Any
     system: str
     tools: list[str]
     selected_mcp_tools: list
@@ -66,7 +63,6 @@ class ContextPreparer:
         session_store: SessionManager,
         task_store: TaskStateStore,
         ops_classifier: TravelIntentClassifier | None,
-        emotion_detector: EmotionDetector | None,
         prompt_builder: PromptBuilder,
         context_manager: ContextManager,
         dual_memory: DualLayerMemoryManager,
@@ -85,7 +81,6 @@ class ContextPreparer:
         self._session_store = session_store
         self._task_store = task_store
         self._ops_classifier = ops_classifier
-        self._emotion_detector = emotion_detector
         self._prompt_builder = prompt_builder
         self._context_manager = context_manager
         self._dual_memory = dual_memory
@@ -131,7 +126,6 @@ class ContextPreparer:
                 task=task,
                 intent=None,
                 ops_result=None,
-                emotion_result=None,
                 system="",
                 tools=[],
                 selected_mcp_tools=[],
@@ -215,23 +209,6 @@ class ContextPreparer:
             ops_result.intent.value if ops_result else "none",
         )
 
-        # 情绪检测
-        emotion_result: EmotionResult | None = None
-        if self._emotion_detector:
-            emotion_result = await self._emotion_detector.detect(message)
-            if self._audit_logger:
-                self._audit_logger.log_emotion_detect(
-                    session_id=session_id,
-                    user_id=memory_scope,
-                    trace_id=trace_id,
-                    message=message,
-                    emotion=emotion_result.emotion.value,
-                    score=emotion_result.score,
-                    confidence=emotion_result.confidence,
-                    response_style=emotion_result.response_style,
-                    raw_llm_output=getattr(emotion_result, "raw_output", ""),
-                )
-
         # 紧急关键词
         emergency_reply = self._check_emergency_keywords(message)
         if emergency_reply:
@@ -240,7 +217,6 @@ class ContextPreparer:
                 task=task,
                 intent=intent,
                 ops_result=ops_result,
-                emotion_result=emotion_result,
                 system="",
                 tools=[],
                 selected_mcp_tools=[],
@@ -258,11 +234,10 @@ class ContextPreparer:
         self._cache_manager.handle_invalidation(task, message, ops_result)
         self._task_store.save(task)
         logger.info(
-            "Intent analyzed: session_id=%s user_id=%s intent=%s emotion=%s force_tool=%s",
+            "Intent analyzed: session_id=%s user_id=%s intent=%s force_tool=%s",
             session_id,
             memory_scope,
             ops_result.intent.value if ops_result else intent.intent.value,
-            emotion_result.emotion.value if emotion_result else "none",
             intent.force_tool,
         )
 
@@ -275,7 +250,6 @@ class ContextPreparer:
                 task=task,
                 intent=intent,
                 ops_result=ops_result,
-                emotion_result=emotion_result,
                 system=system,
                 tools=[],
                 selected_mcp_tools=[],
@@ -297,7 +271,6 @@ class ContextPreparer:
                 task=task,
                 intent=intent,
                 ops_result=ops_result,
-                emotion_result=emotion_result,
                 system="",
                 tools=[],
                 selected_mcp_tools=[],
@@ -323,7 +296,6 @@ class ContextPreparer:
                 task=task,
                 intent=intent,
                 ops_result=ops_result,
-                emotion_result=emotion_result,
                 system="",
                 tools=[],
                 selected_mcp_tools=[],
@@ -353,28 +325,24 @@ class ContextPreparer:
         tools = list(dict.fromkeys(base_tools + [ref.proxy_name for ref in connected_mcp_tools]))
         mcp_context = self._mcp_catalog.build_prompt_block(tool_refs=connected_mcp_tools)
 
+        # 情感识别已下线（Task 2），urgency_context 保留为空字符串以维持 ChatPreparation 兼容
         urgency_context = ""
-        if emotion_result and emotion_result.response_style != "neutral":
-            strategy = EMOTION_STRATEGIES.get(emotion_result.emotion, {})
-            urgency_context = strategy.get("system_prompt_suffix", "")
 
         if self._profile_manager and user_id:
             self._profile_manager.update(
                 memory_scope,
                 intent=intent.intent.value,
-                emotion=emotion_result.emotion.value if emotion_result else None,
                 category=ops_result.rag_keywords[0] if ops_result and ops_result.rag_keywords else None,
             )
         profile_context = self._profile_manager.build_context(memory_scope) if self._profile_manager else ""
 
         logger.info(
-            "Agent reasoning path: session_id=%s user_id=%s tools=%s memory=%s mcp=%s emotion=%s",
+            "Agent reasoning path: session_id=%s user_id=%s tools=%s memory=%s mcp=%s",
             session_id,
             memory_scope,
             ",".join(tools),
             bool(memory_context),
             ",".join(ref.proxy_name for ref in connected_mcp_tools),
-            emotion_result.emotion.value if emotion_result else "none",
         )
         cached_tool_context = self._cache_manager.build_cached_context(task)
         missing_info_context = self._prompt_helper.build_missing_info_context(ops_result, dual_memory_context, user_id)
@@ -388,7 +356,6 @@ class ContextPreparer:
             travel_intent=ops_result.intent.value if ops_result else "",
             memory_context=memory_context,
             mcp_context=mcp_context,
-            emotion_context=urgency_context,
             profile_context=profile_context,
             cached_tool_context=cached_tool_context,
             dual_memory_context=dual_memory_context,
@@ -409,7 +376,6 @@ class ContextPreparer:
                 dual_memory_context=dual_memory_context,
                 mcp_context=mcp_context,
                 profile_context=profile_context,
-                emotion_context=urgency_context,
                 selected_mcp_tools=[ref.proxy_name for ref in selected_mcp_tools],
                 connected_mcp_tools=[ref.proxy_name for ref in connected_mcp_tools],
             )
@@ -426,7 +392,6 @@ class ContextPreparer:
             task=task,
             intent=intent,
             ops_result=ops_result,
-            emotion_result=emotion_result,
             system=system,
             tools=tools,
             selected_mcp_tools=selected_mcp_tools,

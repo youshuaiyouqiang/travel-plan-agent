@@ -22,7 +22,6 @@ from domain.user.session.manager import SessionManager
 from domain.user.session.task_state import TaskStatus, TaskStateStore
 from domain.shared.runtime.trace import RunTrace, TraceStore
 from domain.travel.intent.travel_classifier import TravelIntentClassifier
-from domain.user.emotion.detector import EmotionDetector
 from domain.user.profile.manager import ProfileManager
 from domain.shared.audit.logger import AuditLogger
 from domain.travel.services.context_preparer import ChatPreparation, ContextPreparer
@@ -38,7 +37,6 @@ logger = logging.getLogger(__name__)
 def _human_readable_reason(reason: str) -> str:
     mapping = {
         "user_requested": "需要人工旅行顾问协助",
-        "emotion:angry": "检测到您不满意，为您转接专属顾问",
         "max_retries": "多次尝试未能满足您的需求",
         "sensitive_topic": "涉及签证等敏感问题，需要专业顾问处理",
     }
@@ -57,7 +55,6 @@ class Agent:
         mcp_catalog: MCPCatalog | None = None,
         mcp_runtime: MCPProxyRuntime | None = None,
         ops_classifier: TravelIntentClassifier | None = None,
-        emotion_detector: EmotionDetector | None = None,
         profile_manager: ProfileManager | None = None,
         audit_logger: AuditLogger | None = None,
     ) -> None:
@@ -82,7 +79,6 @@ class Agent:
             audit_logger=audit_logger,
         )
         self._ops_classifier = ops_classifier
-        self._emotion_detector = emotion_detector
         self._profile_manager = profile_manager or ProfileManager()
         self._audit_logger = audit_logger
 
@@ -112,7 +108,6 @@ class Agent:
             session_store=self._session_store,
             task_store=self._task_store,
             ops_classifier=self._ops_classifier,
-            emotion_detector=self._emotion_detector,
             prompt_builder=self._prompt_builder,
             context_manager=self._context_manager,
             dual_memory=self._dual_memory,
@@ -151,7 +146,7 @@ class Agent:
         status: str,
         events: list[dict],
     ) -> None:
-        session, task, intent, emotion_result = prep.session, prep.task, prep.intent, prep.emotion_result
+        session, task, intent = prep.session, prep.task, prep.intent
         session.append("assistant", reply)
         self._memory.refresh_summary(session)
         self._session_store.save(session, user_id=memory_scope)
@@ -183,7 +178,6 @@ class Agent:
                 user_message=message,
                 reply=reply,
                 intent=intent.intent.value,
-                emotion=emotion_result.emotion.value if emotion_result else "none",
                 total_duration_ms=int((time.monotonic() - start_time) * 1000),
                 trace_summary=self._summarize_trace(),
             )

@@ -24,7 +24,6 @@ from infrastructure.tools.base import bind_tool
 from infrastructure.mcp.catalog import MCPCatalog
 from infrastructure.mcp.runtime import MCPProxyRuntime
 from domain.travel.intent.travel_classifier import TravelIntentClassifier
-from domain.user.emotion.detector import EmotionDetector
 from domain.user.profile.manager import ProfileManager
 from domain.shared.audit.logger import AuditLogger
 from domain.shared.metrics.collector import start_metrics_server
@@ -112,7 +111,6 @@ def _build_travel_agent_core(
     prompt_builder = PromptBuilder()
 
     travel_classifier = TravelIntentClassifier(llm=llm)
-    emotion_detector = EmotionDetector(llm=llm)
     profile_manager = ProfileManager()
 
     if not skip_init:
@@ -127,7 +125,6 @@ def _build_travel_agent_core(
         mcp_catalog=mcp_catalog,
         mcp_runtime=mcp_runtime,
         ops_classifier=travel_classifier,
-        emotion_detector=emotion_detector,
         profile_manager=profile_manager,
         audit_logger=audit_logger,
     )

@@ -333,8 +333,6 @@ class PromptBuilder:
 
     def _build_session_section(self, ctx: PromptContext) -> str:
         lines = ["## Context"]
-        if ctx.emotion_context:
-            lines.append(f"交互策略:\n{ctx.emotion_context}")
         if ctx.profile_context:
             lines.append(f"用户画像:\n{ctx.profile_context}")
         if ctx.cached_tool_context:

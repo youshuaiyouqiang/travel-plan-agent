@@ -33,7 +33,6 @@ class ProfileManager:
         *,
         tags: list[str] | None = None,
         intent: str | None = None,
-        emotion: str | None = None,
         category: str | None = None,
         custom: dict[str, Any] | None = None,
     ) -> UserProfile:
@@ -53,11 +52,6 @@ class ProfileManager:
                 profile.preferred_categories.append(category)
             if len(profile.preferred_categories) > 10:
                 profile.preferred_categories = profile.preferred_categories[-10:]
-
-        if emotion:
-            profile.emotion_history.append(emotion)
-            if len(profile.emotion_history) > 20:
-                profile.emotion_history = profile.emotion_history[-20:]
 
         if custom:
             profile.custom_attributes.update(custom)
@@ -84,7 +78,7 @@ class ProfileManager:
         conn = get_connection()
         row = conn.execute(
             "SELECT user_id, tags, interaction_count, last_intent, preferred_categories, "
-            "emotion_history, custom_attributes, created_at, updated_at "
+            "custom_attributes, created_at, updated_at "
             "FROM profiles WHERE user_id = ?",
             (user_id,),
         ).fetchone()
@@ -96,7 +90,6 @@ class ProfileManager:
             interaction_count=int(row["interaction_count"]),
             last_intent=row["last_intent"],
             preferred_categories=_json_loads(row["preferred_categories"], []),
-            emotion_history=_json_loads(row["emotion_history"], []),
             custom_attributes=_json_loads(row["custom_attributes"], {}),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
@@ -106,11 +99,10 @@ class ProfileManager:
         conn = get_connection()
         conn.execute(
             "INSERT INTO profiles (user_id, tags, interaction_count, last_intent, preferred_categories, "
-            "emotion_history, custom_attributes, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "custom_attributes, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET tags=excluded.tags, interaction_count=excluded.interaction_count, "
             "last_intent=excluded.last_intent, preferred_categories=excluded.preferred_categories, "
-            "emotion_history=excluded.emotion_history, "
             "custom_attributes=excluded.custom_attributes, updated_at=excluded.updated_at",
             (
                 profile.user_id,
@@ -118,7 +110,6 @@ class ProfileManager:
                 profile.interaction_count,
                 profile.last_intent,
                 _json_dumps(profile.preferred_categories),
-                _json_dumps(profile.emotion_history),
                 _json_dumps(profile.custom_attributes),
                 profile.created_at,
                 profile.updated_at,

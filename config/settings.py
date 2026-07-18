@@ -68,10 +68,6 @@ class Settings(BaseSettings):
     session_backend: str = "file"
     rate_limit_rpm: int = 60
 
-    # ===== 情绪检测 =====
-    emotion_enabled: bool = True
-    emotion_backend: str = "local"
-
     # ===== 监控 =====
     metrics_enabled: bool = True
     metrics_port: int = 9090
