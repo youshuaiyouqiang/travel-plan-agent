@@ -184,7 +184,7 @@ export async function listSessions(): Promise<SessionInfo[]> {
   return data.sessions || []
 }
 
-export type SessionMode = 'yunhe_default' | 'agent_locked'
+export type SessionMode = 'yunhe_default' | 'agent_locked' | 'news_analysis_locked'
 
 export interface SessionCreateResult {
   session_id: string
@@ -250,7 +250,6 @@ export interface TrendingItem {
   title: string
   tag: string
   summary: string
-  content?: string
   url?: string
   img?: string
   hotScore?: string
@@ -274,7 +273,6 @@ export interface NewsFavorite {
   id: number
   title: string
   summary: string
-  content: string
   url: string
   source: string
   tag: string
@@ -291,7 +289,6 @@ export async function listNewsFavorites(): Promise<NewsFavorite[]> {
 export async function addNewsFavorite(item: {
   title: string
   summary?: string
-  content?: string
   url?: string
   source?: string
   tag?: string

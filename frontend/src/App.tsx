@@ -11,6 +11,7 @@ import { AgentEditor } from './pages/AgentEditor'
 import { SkillCenter } from './pages/SkillCenter'
 import { MCPCenter } from './pages/MCPCenter'
 import { FavoritesPage } from './pages/FavoritesPage'
+import { NewsAdmin } from './pages/NewsAdmin'
 import { useAuthStore } from './hooks/useAuthStore'
 import { AgentRouteGuard } from './components/AgentRouteGuard'
 import { AppLayout } from './components/AppLayout'
@@ -105,6 +106,16 @@ function App() {
           element={
             <PrivateRoute>
               <FavoritesPage />
+            </PrivateRoute>
+          }
+        />
+
+        {/* 新闻来源审核后台 — 路由对所有人开放，授权边界由后端 403 强制 */}
+        <Route
+          path="/admin/news"
+          element={
+            <PrivateRoute>
+              <NewsAdmin />
             </PrivateRoute>
           }
         />

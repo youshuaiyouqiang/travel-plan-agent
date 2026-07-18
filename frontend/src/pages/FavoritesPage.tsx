@@ -79,9 +79,9 @@ export function FavoritesPage() {
                         </a>
                       ) : item.title}
                     </h3>
-                    {(item.content || item.summary) && (
+                    {item.summary && (
                       <p className="text-xs text-slate-500 mt-1.5 line-clamp-4 leading-relaxed">
-                        {item.content || item.summary}
+                        {item.summary}
                       </p>
                     )}
                     <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">

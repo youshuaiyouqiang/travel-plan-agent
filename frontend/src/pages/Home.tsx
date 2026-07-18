@@ -4,11 +4,13 @@ import { ChatWindow } from '../components/ChatWindow'
 import { ChatInput } from '../components/ChatInput'
 import { SessionSidebar } from '../components/SessionSidebar'
 import { NavSidebar } from '../components/NavSidebar'
+import { HotspotCard } from '../components/news/HotspotCard'
 import { useChatStore } from '../hooks/useChatStore'
 import { useAuthStore } from '../hooks/useAuthStore'
 import { useSessionStore } from '../hooks/useSessionStore'
 import { sendMessageStream, createSession, listSessions, getSessionMessages, fetchAgents, type AgentInfo } from '../utils/api'
-import { Sparkles } from 'lucide-react'
+import { getHotspots, createAnalysisSession, type HotspotItem } from '../features/news/api'
+import { Sparkles, Flame } from 'lucide-react'
 
 export function Home() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -39,6 +41,9 @@ export function Home() {
   const [agentMap, setAgentMap] = useState<Record<string, AgentInfo>>({})
   const activeAgent = useSessionStore((s) => s.activeAgent)
   const [sessionListRefresh, setSessionListRefresh] = useState(0)
+  const [hotspots, setHotspots] = useState<HotspotItem[]>([])
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const thinkingClearedRef = useRef(false)
 
@@ -47,6 +52,15 @@ export function Home() {
       setUserId(authUserId)
     }
   }, [authUserId, userId, setUserId])
+
+  // 拉取热点池（只读缓存；后端不发起外部抓取）
+  useEffect(() => {
+    getHotspots()
+      .then((items) => setHotspots(items.slice(0, 6)))
+      .catch(() => {
+        // 热点拉取失败不阻塞主对话
+      })
+  }, [sessionListRefresh])
 
   // 加载智能体列表，用于 header 动态显示当前激活智能体的名称/图标
   useEffect(() => {
@@ -127,6 +141,25 @@ export function Home() {
       useChatStore.getState().loadMessages(msgs)
     } catch {
       // 消息加载失败，不阻塞
+    }
+  }
+
+  // 点击"AI 深度研判"：创建 news_analysis_locked 会话并切换到该会话。
+  // 业务红线：不向会话传递新闻全文；锚点信息由后端 session.news_id 关联。
+  const handleAnalyzeHotspot = async (item: HotspotItem) => {
+    if (analyzing) return
+    setAnalyzing(true)
+    setAnalyzeError(null)
+    try {
+      const result = await createAnalysisSession(item.id)
+      // 切换到新建的锁定会话；不自动发送消息，由用户输入具体问题
+      await handleSessionChange(result.session_id)
+      // 触发会话列表刷新，让侧边栏看到新会话
+      setSessionListRefresh((n) => n + 1)
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : '创建研判会话失败')
+    } finally {
+      setAnalyzing(false)
     }
   }
 
@@ -303,6 +336,29 @@ export function Home() {
               </p>
             </div>
           </header>
+        )}
+
+        {/* 欢迎态热点卡片：仅在没有消息时展示，独立于 ChatWindow 内的 TrendingBar */}
+        {!hasMessages && hotspots.length > 0 && (
+          <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 flex-shrink-0">
+            <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-slate-500">
+              <Flame size={13} className="text-orange-400" />
+              今日热点 · 点击"深度研判"进入新闻 Agent 锁定会话
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {hotspots.map((item) => (
+                <div key={item.id} className="w-[280px] shrink-0">
+                  <HotspotCard item={item} onAnalyze={handleAnalyzeHotspot} />
+                </div>
+              ))}
+            </div>
+            {analyzing && (
+              <p className="mt-2 text-xs text-indigo-500">正在创建研判会话…</p>
+            )}
+            {analyzeError && (
+              <p className="mt-2 text-xs text-rose-500">{analyzeError}</p>
+            )}
+          </div>
         )}
 
         <ChatWindow

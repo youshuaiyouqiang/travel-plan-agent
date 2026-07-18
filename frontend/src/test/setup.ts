@@ -2,6 +2,7 @@
  * Vitest 测试环境 setup — 在每个测试前重置浏览器存储与 cookie。
  */
 
+import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach } from 'vitest'
 
 beforeEach(() => {

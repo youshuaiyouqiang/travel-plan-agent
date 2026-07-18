@@ -37,7 +37,6 @@ export function TrendingBar({ onSelect }: Props) {
         await addNewsFavorite({
           title: item.title,
           summary: item.summary || '',
-          content: item.content || item.summary || '',
           url: item.url || '',
           source: item.source || '',
           tag: item.tag || '',
@@ -93,7 +92,7 @@ export function TrendingBar({ onSelect }: Props) {
                   <Star size={12} fill={favorited ? 'currentColor' : 'none'} />
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); onSelect(`帮我深入分析这条新闻：${item.title}。${item.content || item.summary || ''}`) }}
+                  onClick={(e) => { e.stopPropagation(); onSelect(`帮我深入分析这条新闻：${item.title}。${item.summary || ''}`) }}
                   className="p-1.5 rounded text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors"
                   title="AI 分析"
                 >
