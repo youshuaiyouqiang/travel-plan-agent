@@ -339,6 +339,84 @@ def _downgrade_11(conn: Any) -> None:
     )
 
 
+def _upgrade_12(conn: Any) -> None:
+    """Task 4: 令牌安全 — 用 ``auth_token_hashes`` 表替代旧 ``auth_tokens``。
+
+    - 新表只存 ``sha256(token)``，原 token 明文不入库。
+    - 旧表 ``auth_tokens`` 数据迁移到新表（对每行 token 取 sha256 后入库）。
+    - 旧表 ``auth_tokens`` 在数据迁移完成后删除，避免误存明文。
+    - 旧表不存在的环境（全新部署）直接建新表。
+    """
+    import hashlib as _hashlib
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_token_hashes (
+            token_hash TEXT PRIMARY KEY,
+            user_id    TEXT NOT NULL,
+            expires_at REAL NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_auth_token_hashes_user ON auth_token_hashes(user_id)"
+    )
+
+    # 旧表存在时迁移历史数据
+    legacy_rows: list[Any] = []
+    try:
+        legacy_rows = conn.execute(
+            "SELECT token, user_id, expires_at FROM auth_tokens"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # 旧表不存在 — 全新部署，无需迁移
+        legacy_rows = []
+
+    migrated = 0
+    for row in legacy_rows:
+        token_value = row["token"] if isinstance(row, sqlite3.Row) else row[0]
+        user_id = row["user_id"] if isinstance(row, sqlite3.Row) else row[1]
+        expires_at = row["expires_at"] if isinstance(row, sqlite3.Row) else row[2]
+        token_hash = _hashlib.sha256(token_value.encode("utf-8")).hexdigest()
+        conn.execute(
+            "INSERT OR IGNORE INTO auth_token_hashes (token_hash, user_id, expires_at) "
+            "VALUES (?, ?, ?)",
+            (token_hash, user_id, expires_at),
+        )
+        migrated += 1
+
+    # 旧表迁移完成后删除，避免明文残留
+    conn.execute("DROP TABLE IF EXISTS auth_tokens")
+    conn.commit()
+    logger.info(
+        "Migration 12: ensured auth_token_hashes table exists, migrated %d legacy tokens, dropped auth_tokens",
+        migrated,
+    )
+
+
+def _downgrade_12(conn: Any) -> None:
+    """回滚迁移 12 — 重建 ``auth_tokens`` 表，但无法从哈希还原原 token。
+
+    降级是单向不可逆的：哈希无法还原明文。重建空表仅保证 schema 兼容旧版本。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            expires_at REAL NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id)")
+    conn.execute("DROP TABLE IF EXISTS auth_token_hashes")
+    conn.commit()
+    logger.warning(
+        "Migration 12 downgrade: dropped auth_token_hashes; auth_tokens rebuilt empty "
+        "(hashed tokens cannot be reversed to plaintext)"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -409,6 +487,12 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Add mode/locked_agent_id/news_id to sessions",
         "upgrade": _upgrade_11,
         "downgrade": _downgrade_11,
+    },
+    {
+        "version": 12,
+        "description": "Replace auth_tokens with auth_token_hashes (sha256 only)",
+        "upgrade": _upgrade_12,
+        "downgrade": _downgrade_12,
     },
 ]
 

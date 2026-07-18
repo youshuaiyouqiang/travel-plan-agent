@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "tsc -b --noEmit"
+    "check": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
@@ -43,6 +45,11 @@
     "typescript-eslint": "^8.30.1",
     "vite": "^6.3.5",
     "vite-plugin-trae-solo-badge": "^1.0.0",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.9",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "jsdom": "^25.0.1",
+    "@vitest/ui": "^2.1.9"
   }
 }

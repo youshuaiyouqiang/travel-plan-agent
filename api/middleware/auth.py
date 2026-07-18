@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 _PUBLIC_PATHS = {"/api/auth/register", "/api/auth/login", "/api/news/trending", "/api/health", "/api/health/metrics", "/api/shared", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/news/trending", "/api/v1/health", "/api/v1/health/metrics", "/api/v1/shared", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
 _PUBLIC_PREFIXES = ("/docs", "/openapi.json", "/redoc")
 
+# Task 4: 不安全方法（非 GET/HEAD/OPTIONS）使用 cookie 认证时必须携带匹配的 CSRF header
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_CSRF_HEADER = "X-CSRF-Token"
+_AUTH_COOKIE = "auth_token"
+_CSRF_COOKIE = "csrf_token"
+
 _rate_counters: dict[str, dict[str, float]] = {}
 _RATE_WINDOW = 60
 _RATE_MAX_REQUESTS = settings.rate_limit_rpm
@@ -54,6 +60,35 @@ def _check_rate(user_id: str, ip: str, path: str) -> bool:
     return counter["count"] <= _RATE_MAX_REQUESTS
 
 
+def _extract_bearer_token(request: Request) -> str | None:
+    """从 Authorization 头提取 Bearer token；其他形式返回 None。"""
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.removeprefix("Bearer ").strip()
+    return None
+
+
+def _extract_cookie_token(request: Request) -> str | None:
+    """从 ``auth_token`` cookie 提取 token。"""
+    return request.cookies.get(_AUTH_COOKIE)
+
+
+def _csrf_check_passes(request: Request) -> bool:
+    """对 cookie 认证的不安全方法做 double-submit CSRF 校验。
+
+    - 安全方法（GET/HEAD/OPTIONS）：不需要 CSRF header
+    - 不安全方法：``X-CSRF-Token`` header 必须存在且等于 ``csrf_token`` cookie 值
+    - Bearer 模式：不调用此函数，天然免疫 CSRF
+    """
+    if request.method in _SAFE_METHODS:
+        return True
+    cookie_csrf = request.cookies.get(_CSRF_COOKIE)
+    header_csrf = request.headers.get(_CSRF_HEADER)
+    if not cookie_csrf or not header_csrf:
+        return False
+    return cookie_csrf == header_csrf
+
+
 async def auth_middleware(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
@@ -66,12 +101,16 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     if any(path.startswith(prefix) for prefix in _PUBLIC_PREFIXES):
         return await call_next(request)
-    auth_header = request.headers.get("Authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
-    if token:
-        user_id = verify_token(token)
+
+    # 优先 Bearer token（非浏览器客户端）
+    bearer_token = _extract_bearer_token(request)
+    cookie_token = _extract_cookie_token(request)
+
+    if bearer_token is not None:
+        user_id = verify_token(bearer_token)
         if user_id:
             request.state.user_id = user_id
+            request.state.auth_method = "bearer"
             client_ip = request.client.host if request.client else "unknown"
             rate_key = _make_rate_key(user_id, client_ip, path)
             if _rate_limiter:
@@ -81,6 +120,27 @@ async def auth_middleware(request: Request, call_next):
             elif not _check_rate(user_id, client_ip, path):
                 return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
             return await call_next(request)
+        return JSONResponse(status_code=401, content={"detail": "未登录或登录已过期"})
+
+    # 浏览器流程：cookie + CSRF
+    if cookie_token:
+        if not _csrf_check_passes(request):
+            return JSONResponse(status_code=401, content={"detail": "CSRF 校验失败"})
+        user_id = verify_token(cookie_token)
+        if user_id:
+            request.state.user_id = user_id
+            request.state.auth_method = "cookie"
+            client_ip = request.client.host if request.client else "unknown"
+            rate_key = _make_rate_key(user_id, client_ip, path)
+            if _rate_limiter:
+                allowed, _info = _rate_limiter.is_allowed(rate_key, _RATE_MAX_REQUESTS, _RATE_WINDOW)
+                if not allowed:
+                    return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
+            elif not _check_rate(user_id, client_ip, path):
+                return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
+            return await call_next(request)
+        return JSONResponse(status_code=401, content={"detail": "未登录或登录已过期"})
+
     return JSONResponse(status_code=401, content={"detail": "未登录或登录已过期"})
 
 
