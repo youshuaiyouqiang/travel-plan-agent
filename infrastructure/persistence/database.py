@@ -552,6 +552,61 @@ def _downgrade_14(conn: Any) -> None:
     )
 
 
+def _upgrade_15(conn: Any) -> None:
+    """Task 1（旅行计划）: 创建旅行草稿与存档表。
+
+    - ``travel_drafts``: 可编辑的当前草稿；``is_read_only`` 在确认后置 1。
+      ``manual_edit_fields`` 以 JSON 数组保存用户手工编辑过的字段路径，
+      供后续任务保护手工编辑不被 Agent 覆盖。
+      ``source_archive_id`` 仅在该草稿由存档续编而来时非空。
+    - ``travel_archives``: 不可变的确认存档快照；只保存行程 JSON 与来源草稿 id。
+
+    两表均不保存原始外部数据；行程外部信息仅在用户点击"更新信息"时查询。
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS travel_drafts (
+            id                  TEXT PRIMARY KEY,
+            user_id             TEXT NOT NULL,
+            session_id          TEXT NOT NULL,
+            plan_json           TEXT NOT NULL DEFAULT '{}',
+            manual_edit_fields  TEXT NOT NULL DEFAULT '[]',
+            is_read_only        INTEGER NOT NULL DEFAULT 0,
+            source_archive_id   TEXT,
+            created_at          TEXT NOT NULL,
+            updated_at          TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_travel_drafts_user_session "
+        "ON travel_drafts(user_id, session_id)"
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS travel_archives (
+            id              TEXT PRIMARY KEY,
+            user_id         TEXT NOT NULL,
+            source_draft_id TEXT NOT NULL,
+            plan_json       TEXT NOT NULL,
+            confirmed_at    TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_travel_archives_user ON travel_archives(user_id)"
+    )
+    conn.commit()
+    logger.info("Migration 15: ensured travel_drafts + travel_archives tables exist")
+
+
+def _downgrade_15(conn: Any) -> None:
+    conn.execute("DROP TABLE IF EXISTS travel_archives")
+    conn.execute("DROP TABLE IF EXISTS travel_drafts")
+    conn.commit()
+    logger.info("Migration 15 downgrade: dropped travel_drafts + travel_archives tables")
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -640,6 +695,12 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Rebuild news_favorites without content column",
         "upgrade": _upgrade_14,
         "downgrade": _downgrade_14,
+    },
+    {
+        "version": 15,
+        "description": "Create travel_drafts + travel_archives tables",
+        "upgrade": _upgrade_15,
+        "downgrade": _downgrade_15,
     },
 ]
 
