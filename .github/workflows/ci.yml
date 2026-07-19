@@ -6,33 +6,48 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint:
+  python-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
-      - run: ruff check .
+      - run: pip install -r requirements.lock
+      - run: python -m ruff check .
+      - run: python -m mypy api application domain infrastructure
+        continue-on-error: true  # TODO: 预存类型债务修复后改为阻断
+      - run: python -m bandit -r api application domain infrastructure -lll
+      - run: pip-audit -r requirements.lock
 
-  test:
+  python-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
-      - run: pytest --ignore-glob="*test_prompting*" --cov=. --cov-report=xml
-      - uses: codecov/codecov-action@v4
+      - run: pip install -r requirements.lock
+      - run: python -m pytest --cov=api --cov=application --cov=domain --cov=infrastructure --cov-fail-under=70
 
   security:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install bandit
-      - run: bandit -r api application domain infrastructure || echo "Bandit warnings (non-blocking)"
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint && npm run check && npm run test && npm run build
+        working-directory: frontend

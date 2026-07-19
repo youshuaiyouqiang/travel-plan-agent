@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useAuthStore } from '../hooks/useAuthStore'
 import { useChatStore } from '../hooks/useChatStore'
 import { useSessionStore } from '../hooks/useSessionStore'
 import { listSessions, createSession, deleteSession, getSessionMessages } from '../features/chat/api'

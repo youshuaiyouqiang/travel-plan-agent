@@ -5,10 +5,8 @@ import { DayPlanData, ActivityData } from '../../features/travel/api'
 
 interface Props {
   days: DayPlanData[]
-  itineraryId: string
   selectedIndex: number
   onSelectDay: (index: number) => void
-  onDelete: (activityId: number) => void
   onActivityClick: (activity: ActivityData) => void
 }
 
@@ -163,10 +161,8 @@ function TimelineActivity({
 
 export function DayBlinds({
   days,
-  itineraryId,
   selectedIndex,
   onSelectDay,
-  onDelete,
   onActivityClick,
 }: Props) {
   const [animKey, setAnimKey] = useState(0)

@@ -115,7 +115,7 @@ export function AmapView({
         opacity: 0.8,
         lineJoin: 'round',
         lineCap: 'round',
-        dashArray: null,
+        dashArray: undefined,
       })
       polyline.addTo(map)
       polylineRef.current = polyline

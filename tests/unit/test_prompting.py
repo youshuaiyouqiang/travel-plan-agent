@@ -43,14 +43,14 @@ class TestPromptBuilder:
         builder = PromptBuilder()
         intent = IntentResult(intent=IntentType.CHAT, goal="casual reply", fast_reply=True)
         result = builder.build_fast_reply_system(intent)
-        assert "克劳" in result or "Claw" in result
-        assert "旅行" in result or "简洁" in result
+        assert "旅行" in result or "助手" in result
+        assert "社交" in result or "对话" in result
 
     def test_build_fast_reply_query(self):
         builder = PromptBuilder()
         intent = IntentResult(intent=IntentType.QUERY, goal="what is X", fast_reply=True)
         result = builder.build_fast_reply_system(intent)
-        assert "克劳" in result or "Claw" in result
+        assert "旅行" in result or "助手" in result
 
     def test_build_react_system_basic(self):
         builder = PromptBuilder()

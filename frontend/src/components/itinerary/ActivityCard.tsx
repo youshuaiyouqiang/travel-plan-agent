@@ -5,7 +5,6 @@ import { ActivityData } from '../../features/travel/api'
 
 interface Props {
   activity: ActivityData
-  itineraryId: string
   onCheckIn: (activityId: number, checkedIn: boolean) => void
   onDelete: (activityId: number) => void
   onClick: (activity: ActivityData) => void
@@ -26,7 +25,7 @@ function _getGradient(index: number): string {
 
 const SLAT_COUNT = 6
 
-export function ActivityCard({ activity, itineraryId, onCheckIn, onDelete, onClick }: Props) {
+export function ActivityCard({ activity, onCheckIn, onDelete, onClick }: Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const controls = useAnimation()
@@ -74,7 +73,7 @@ export function ActivityCard({ activity, itineraryId, onCheckIn, onDelete, onCli
   const gradient = _getGradient(activity.activity_index)
 
   const slatVariants = {
-    hidden: (i: number) => ({
+    hidden: () => ({
       rotateX: -90,
       opacity: 0,
     }),

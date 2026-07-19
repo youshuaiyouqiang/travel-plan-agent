@@ -33,7 +33,6 @@ export function ItineraryOverview() {
     selectedDayIndex,
     detailActivity,
     loadItinerary,
-    removeActivity,
     setSelectedDay,
     setDetailActivity,
   } = useItineraryStore()
@@ -220,10 +219,8 @@ export function ItineraryOverview() {
         {itinerary.days && itinerary.days.length > 0 ? (
           <DayBlinds
             days={itinerary.days}
-            itineraryId={itinerary.id}
             selectedIndex={selectedDayIndex}
             onSelectDay={setSelectedDay}
-            onDelete={removeActivity}
             onActivityClick={setDetailActivity}
           />
         ) : (

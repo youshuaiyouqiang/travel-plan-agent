@@ -289,7 +289,7 @@ api.interceptors.response.use(
 ```bash
 python -m venv .venv
 # Windows: .venv\Scripts\activate  |  macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt   # 若 requirements.txt 为空，可执行：pip install -e .   （依赖见 pyproject.toml）
+pip install -r requirements.lock   # 锁定依赖；开发依赖见 pyproject.toml [dev]
 cp config/.env.example .env
 # 编辑 .env，至少填入 CLAW_API_KEY 和 AMAP_WEBSERVICE_KEY
 uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
@@ -324,7 +324,7 @@ npm run dev         # 端口 5173，自动代理 /api → localhost:8000
 2. 点击 "New" → "Web Service"
 3. 连接你的 GitHub 仓库
 4. 配置构建命令：
-   - **Build Command**: `pip install -r requirements.txt && cd frontend && npm install && npm run build`
+   - **Build Command**: `pip install -r requirements.lock && cd frontend && npm ci && npm run build`
    - **Start Command**: `uvicorn api.server:app --host 0.0.0.0 --port $PORT`
 5. 添加环境变量，部署
 
@@ -343,7 +343,7 @@ chmod +x start.sh && ./start.sh
 ## 项目结构
 
 ```
-claw7/
+yunhe/
 ├── api/                    # API 路由与中间件
 │   ├── server.py           # FastAPI 主入口（60 个接口，含认证/限流中间件）
 │   └── intl_coords.py      # 国际目的地坐标库
@@ -379,7 +379,7 @@ claw7/
 │   └── DEVELOPMENT_SPECIFICATION.md  # 开发规范与详细规格
 ├── app.py                  # Agent 构建（依赖注入容器）
 ├── start.ps1 / start.sh    # 启动脚本（Windows / Linux）
-└── requirements.txt        # Python 依赖
+└── requirements.lock       # Python 锁定依赖
 ```
 
 ---

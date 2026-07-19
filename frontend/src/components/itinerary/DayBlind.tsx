@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MapPin, Clock, ChevronRight, CheckCircle2, Calendar } from 'lucide-react'
+import { MapPin, Clock, ChevronRight, CheckCircle2 } from 'lucide-react'
 import { DayPlanData, ActivityData } from '../../features/travel/api'
 
 interface Props {
   day: DayPlanData
   dayIndex: number
-  itineraryId: string
-  onCheckIn: (activityId: number, checkedIn: boolean) => void
-  onDelete: (activityId: number) => void
   onActivityClick: (activity: ActivityData) => void
 }
 
@@ -28,9 +25,6 @@ function _getGradient(index: number): string {
 export function DayBlind({
   day,
   dayIndex,
-  itineraryId,
-  onCheckIn,
-  onDelete,
   onActivityClick,
 }: Props) {
   const [isHovered, setIsHovered] = useState(false)

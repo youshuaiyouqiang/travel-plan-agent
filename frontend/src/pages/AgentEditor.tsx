@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { fetchSkills, fetchAgents, fetchMCPServers, createCustomAgent, updateCustomAgent, SkillInfo, AgentInfo, MCPServerInfo } from '../utils/api'
+import { fetchSkills, fetchAgents, fetchMCPServers, createCustomAgent, updateCustomAgent, SkillInfo, MCPServerInfo } from '../utils/api'
 
 export function AgentEditor() {
   const navigate = useNavigate()
@@ -9,7 +9,6 @@ export function AgentEditor() {
   const location = useLocation()
   const isEdit = location.pathname.startsWith('/agents/edit/')
   const isView = location.pathname.startsWith('/agents/view/')
-  const isCreate = !isEdit && !isView
 
   const [form, setForm] = useState({
     name: '',

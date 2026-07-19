@@ -416,9 +416,6 @@ class Agent:
     def _cache_tool_results_from_trace(self, task: Any) -> None:
         self._cache_manager.cache_results_from_trace(task)
 
-    def _check_emergency_keywords(self, message: str) -> str | None:
-        return ContextPreparer.check_emergency_keywords(message)
-
     # ===== 内部工具 =====
 
     def _summarize_trace(self) -> str:

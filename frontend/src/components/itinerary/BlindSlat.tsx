@@ -1,12 +1,10 @@
 import { motion } from 'framer-motion'
-import { MapPin, Clock, ChevronRight, CheckCircle2, DollarSign } from 'lucide-react'
+import { MapPin, Clock, ChevronRight, CheckCircle2 } from 'lucide-react'
 import { ActivityData } from '../../features/travel/api'
 
 interface Props {
   activity: ActivityData
   index: number
-  onCheckIn: (activityId: number, checkedIn: boolean) => void
-  onDelete: (activityId: number) => void
   onClick: (activity: ActivityData) => void
 }
 
@@ -23,7 +21,7 @@ function _getGradient(index: number): string {
   return _GRADIENTS[index % _GRADIENTS.length]
 }
 
-export function BlindSlat({ activity, index, onCheckIn, onDelete, onClick }: Props) {
+export function BlindSlat({ activity, index, onClick }: Props) {
   const gradient = _getGradient(index)
 
   return (

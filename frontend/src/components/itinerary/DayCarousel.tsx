@@ -7,7 +7,6 @@ import { ActivityCard } from './ActivityCard'
 
 interface Props {
   days: DayPlanData[]
-  itineraryId: string
   selectedIndex: number
   onSelectDay: (index: number) => void
   onCheckIn: (activityId: number, checkedIn: boolean) => void
@@ -19,7 +18,6 @@ const SLAT_COUNT = 8
 
 export function DayCarousel({
   days,
-  itineraryId,
   selectedIndex,
   onSelectDay,
   onCheckIn,
@@ -57,7 +55,7 @@ export function DayCarousel({
   }
 
   const slatVariants = {
-    hidden: (i: number) => ({
+    hidden: () => ({
       scaleY: 0,
       opacity: 0,
     }),
@@ -173,7 +171,6 @@ export function DayCarousel({
                       >
                         <ActivityCard
                           activity={act}
-                          itineraryId={itineraryId}
                           onCheckIn={onCheckIn}
                           onDelete={onDelete}
                           onClick={onActivityClick}
