@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     # 生产环境必须配置且对应用户必须存在，否则管理员 API 不可用。
     admin_username: str = ""
 
+    # ===== 运行环境 =====
+    # ``production`` 启用 fail-fast 行为；``development`` 允许宽松降级。
+    # 由 ``CLAW_ENVIRONMENT`` 环境变量控制；默认 ``development``。
+    environment: str = "development"
+
     @staticmethod
     def _root() -> Path:
         return Path(__file__).resolve().parents[1]

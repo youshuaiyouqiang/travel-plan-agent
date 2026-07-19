@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from domain.travel.core import Agent
 from domain.agent.base import BaseAgent
@@ -115,7 +116,9 @@ class TravelAgent(BaseAgent):
         return actions
 
     async def chat(self, *, session_id: str, message: str, user_id: str | None = None, **kwargs) -> dict:
-        result = await self._agent.chat(session_id=session_id, message=message, user_id=user_id)
+        result: dict[str, Any] = await self._agent.chat(
+            session_id=session_id, message=message, user_id=user_id
+        )
 
         # ★ 后端保障注入多方案锚点
         reply = result.get("reply", "")

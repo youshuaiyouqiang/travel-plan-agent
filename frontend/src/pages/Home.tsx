@@ -47,6 +47,8 @@ export function Home() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const thinkingClearedRef = useRef(false)
+  // P2-2：mount 一次守卫，避免 StrictMode 双调用导致重复初始化
+  const initRef = useRef(false)
 
   useEffect(() => {
     if (authUserId && !userId) {
@@ -89,12 +91,6 @@ export function Home() {
     }
   }, [searchParams, setActiveAgent, setSearchParams])
 
-  useEffect(() => {
-    if (!sessionId) {
-      initSession()
-    }
-  }, [])
-
   const initSession = useCallback(async () => {
     try {
       // 先尝试恢复上一次的会话
@@ -126,6 +122,16 @@ export function Home() {
     }
   }, [authUserId, setSessionId, setUserId, resetSession])
 
+  useEffect(() => {
+    // P2-2：ref 守卫确保只在 mount 后执行一次初始化，
+    // 同时把 initSession 列入依赖以满足 exhaustive-deps。
+    if (initRef.current) return
+    initRef.current = true
+    if (!sessionId) {
+      initSession()
+    }
+  }, [sessionId, initSession])
+
   const handleSessionChange = async (newSessionId: string) => {
     setActiveSessionId(newSessionId)
     setSessionId(newSessionId)
@@ -155,6 +161,14 @@ export function Home() {
       const result = await createAnalysisSession(item.id)
       // 切换到新建的锁定会话；不自动发送消息，由用户输入具体问题
       await handleSessionChange(result.session_id)
+      // handleSessionChange 会清空展示态 activeAgent，这里再写回锁定 Agent，
+      // 让 header 与后续对话反映 news_analysis_locked 状态。
+      useSessionStore.getState().applySessionRecord({
+        mode: result.mode,
+        locked_agent_id: result.locked_agent_id,
+        news_id: result.news_id,
+      })
+      setActiveAgent(result.locked_agent_id)
       // 触发会话列表刷新，让侧边栏看到新会话
       setSessionListRefresh((n) => n + 1)
     } catch (e) {

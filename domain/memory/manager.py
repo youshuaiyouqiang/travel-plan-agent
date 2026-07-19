@@ -161,13 +161,13 @@ class DualLayerMemoryManager:
 
             category_labels = {"preference": "偏好", "fact": "事实", "experience": "经验"}
             stm_lines: list[str] = []
-            for mem in stm_list:
-                label = category_labels.get(mem.category, mem.category)
-                text = mem.content
-                if mem.category == "experience" and mem.experience_tag:
-                    tag_label = "✓" if mem.experience_tag == "success" else "✗"
+            for stm_mem in stm_list:
+                label = category_labels.get(stm_mem.category, stm_mem.category)
+                text = stm_mem.content
+                if stm_mem.category == "experience" and stm_mem.experience_tag:
+                    tag_label = "✓" if stm_mem.experience_tag == "success" else "✗"
                     text = f"[{tag_label}] {text}"
-                if mem.category == "fact":
+                if stm_mem.category == "fact":
                     text = f"[待确认] {text}"
                 stm_lines.append(f"  {label}: {text}")
             parts.append("【近期记忆】\n" + "\n".join(stm_lines))
@@ -210,7 +210,7 @@ class DualLayerMemoryManager:
             (session_id, user_id, summary[:200], now),
         )
         conn.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid or 0
 
 
 class SessionMemory:

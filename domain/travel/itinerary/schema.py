@@ -136,9 +136,7 @@ class Activity:
     description: str = ""
     image_url: str = ""
     cost: float = 0.0
-    actual_cost: float = 0.0
     tips: str = ""
-    checked_in: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -151,9 +149,7 @@ class Activity:
             "description": self.description,
             "image_url": self.image_url,
             "cost": self.cost,
-            "actual_cost": self.actual_cost,
             "tips": self.tips,
-            "checked_in": self.checked_in,
         }
 
     @classmethod
@@ -168,9 +164,7 @@ class Activity:
             description=row.get("description", ""),
             image_url=row.get("image_url", ""),
             cost=float(row.get("cost", 0)),
-            actual_cost=float(row.get("actual_cost", 0)),
             tips=row.get("tips", ""),
-            checked_in=bool(row.get("checked_in", 0)),
         )
 
 
@@ -225,7 +219,7 @@ class Itinerary:
     days: list[DayPlan] = field(default_factory=list)
 
     def to_dict(self, include_days: bool = True) -> dict:
-        result = {
+        result: dict = {
             "id": self.id,
             "user_id": self.user_id,
             "session_id": self.session_id,

@@ -16,7 +16,7 @@ async def _save_itinerary(arguments: dict) -> dict:
     from config import settings
     from pathlib import Path
 
-    path = settings.workspace / "itineraries" / f"{title}.md"
+    path = settings.project_root / "itineraries" / f"{title}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return {"content": f"wrote {len(content)} chars to itineraries/{title}.md"}

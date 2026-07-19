@@ -32,7 +32,9 @@ export function LoginPage() {
       const result = isRegister
         ? await register(username.trim(), password)
         : await login(username.trim(), password)
-      authLogin(result.user_id, result.username, result.token)
+      // P0-1: 登录响应体不再返回 token；浏览器凭据由后端 HttpOnly cookie 下发，
+      // 前端不持有任何长期认证令牌。authLogin 仅记录 UI 展示态。
+      authLogin(result.user_id, result.username)
       navigate('/', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : '操作失败')
@@ -52,7 +54,7 @@ export function LoginPage() {
             className="text-2xl font-bold text-slate-800"
             style={{ fontFamily: 'var(--font-display)' }}
           >
-            Claw7
+            云合
           </h1>
           <p className="text-sm text-slate-500 mt-1">AI 规划 · 实时搜索 · 一键保存行程</p>
         </div>

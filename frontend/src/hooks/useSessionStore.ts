@@ -1,14 +1,13 @@
 import { create } from 'zustand'
-import { useAuthStore } from './useAuthStore'
+import { AuthClient } from '../features/auth/client'
 import type { SessionCreateResult, SessionMode } from '../features/chat/api'
 
-function authHeaders(): HeadersInit {
-  const token = useAuthStore.getState().token
-  const headers: HeadersInit = { 'Content-Type': 'application/json' }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  return headers
+function authClient(): AuthClient {
+  return new AuthClient()
+}
+
+function jsonHeaders(): HeadersInit {
+  return { 'Content-Type': 'application/json' }
 }
 
 export interface AgentAction {
@@ -67,9 +66,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   confirmPlan: async (planType, itineraryId, sessionId) => {
     set({ isConfirming: true })
     try {
-      const res = await fetch(`/api/session/${sessionId}/confirm-plan`, {
+      const res = await authClient().request(`/api/session/${sessionId}/confirm-plan`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({ plan_type: planType === 'plan1' ? 'sightseeing' : 'budget', itinerary_id: itineraryId })
       })
       if (res.status === 409) {
@@ -86,9 +85,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   revokeConfirm: async (itineraryId, sessionId) => {
     try {
-      const res = await fetch(`/api/session/${sessionId}/revoke-confirm`, {
+      const res = await authClient().request(`/api/session/${sessionId}/revoke-confirm`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: jsonHeaders(),
         body: JSON.stringify({ itinerary_id: itineraryId })
       })
       if (res.ok) {
@@ -101,7 +100,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   syncConfirmStatus: async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/session/${sessionId}/confirm-status`, { headers: authHeaders() })
+      const res = await authClient().request(`/api/session/${sessionId}/confirm-status`)
       if (res.ok) {
         const data = await res.json()
         // 后端存储 sightseeing/budget，前端使用 plan1/plan2

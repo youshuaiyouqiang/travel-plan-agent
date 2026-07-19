@@ -22,7 +22,9 @@ import contextvars
 from dataclasses import dataclass
 
 
-_audit_ctx: contextvars.ContextVar["AuditContextData"] = contextvars.ContextVar("audit_ctx", default=None)
+_audit_ctx: contextvars.ContextVar[AuditContextData | None] = contextvars.ContextVar(
+    "audit_ctx", default=None
+)
 
 
 @dataclass

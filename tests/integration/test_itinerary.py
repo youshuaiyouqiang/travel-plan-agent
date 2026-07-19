@@ -122,8 +122,16 @@ class TestItineraryRepository:
         assert len(fetched.days[0].activities) == 1
         assert fetched.days[0].activities[0].title == "宽窄巷子漫步"
 
-    def test_check_in_activity(self):
+    def test_check_in_activity_removed(self):
+        """P1-1: 打卡与实际费用功能已下线，相关方法不得再存在。
+
+        旧测试 ``test_check_in_activity`` 验证了已下线功能；此测试改为回归守卫，
+        确保未来不会被误恢复。详见 ``docs/FINAL_ACCEPTANCE_REVIEW_2026-07-19.md``。
+        """
         repo = ItineraryRepository()
+        for forbidden in ("check_in_activity", "uncheck_activity", "update_actual_cost"):
+            assert hasattr(repo, forbidden) is False
+
         created = repo.create_itinerary(
             user_id="u1",
             title="成都5日游",
@@ -134,14 +142,13 @@ class TestItineraryRepository:
         day = repo.add_day(itinerary_id=created.id, day_index=0)
         act = repo.add_activity(day_id=day.id, activity_index=0, title="测试活动")
 
-        assert act.checked_in is False
-        repo.check_in_activity(act.id)
+        # Activity schema 不得再持有 checked_in / actual_cost
+        assert not hasattr(act, "checked_in")
+        assert not hasattr(act, "checked_in")
         fetched = repo.get_activity(act.id)
-        assert fetched.checked_in is True
-
-        repo.uncheck_activity(act.id)
-        fetched2 = repo.get_activity(act.id)
-        assert fetched2.checked_in is False
+        assert fetched is not None
+        assert not hasattr(fetched, "checked_in")
+        assert not hasattr(fetched, "actual_cost")
 
     def test_delete_activity(self):
         repo = ItineraryRepository()
@@ -277,11 +284,12 @@ class TestItinerarySchema:
                 "image_url": "",
                 "cost": 50,
                 "tips": "贴士",
-                "checked_in": 1,
             }
         )
-        assert act.checked_in is True
         assert act.cost == 50.0
+        # P1-1: actual_cost / checked_in 不应再出现于 Activity schema
+        assert not hasattr(act, "actual_cost")
+        assert not hasattr(act, "checked_in")
 
 
 class TestItineraryParserSimple:

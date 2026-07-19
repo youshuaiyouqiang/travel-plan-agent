@@ -39,6 +39,55 @@ _HOTSPOT_CLEANUP_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
 
 
+# ── 启动期管理员解析 ────────────────────────────────────────
+
+
+def resolve_admin_user_id() -> str | None:
+    """启动期解析 ``CLAW_ADMIN_USERNAME`` → ``admin_user_id``。
+
+    P1-2 行为：
+    - 生产环境（``settings.environment == "production"``）下，
+      ``CLAW_ADMIN_USERNAME`` 为空或对应用户不存在时必须 fail-fast
+      抛 ``RuntimeError``，禁止静默降级到无管理员状态。
+    - 开发环境允许缺失/找不到，仅记录 warning，返回 None。
+
+    Returns:
+        解析成功时返回 ``user_id``；开发环境未配置或找不到时返回 None。
+
+    Raises:
+        RuntimeError: 生产环境下管理员未配置或用户不存在。
+    """
+    from domain.user.auth.auth import UserStore
+
+    username = settings.admin_username
+    is_production = settings.environment == "production"
+
+    if not username:
+        if is_production:
+            raise RuntimeError(
+                "CLAW_ADMIN_USERNAME is not configured; production deployments "
+                "must define a system administrator before startup."
+            )
+        logger.info("CLAW_ADMIN_USERNAME not configured; admin API disabled (development mode)")
+        return None
+
+    user = UserStore().get_by_username(username)
+    if user is None:
+        if is_production:
+            raise RuntimeError(
+                f"CLAW_ADMIN_USERNAME={username!r} does not match any existing user; "
+                "production deployments must reference a valid administrator account."
+            )
+        logger.warning(
+            "CLAW_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用（开发模式降级）",
+            username,
+        )
+        return None
+
+    logger.info("Admin resolved: username=%s user_id=%s", username, user.user_id)
+    return user.user_id
+
+
 # ── 后台任务 ──────────────────────────────────────────────
 
 
@@ -135,22 +184,10 @@ app.state.authz_service = AuthorizationService(session_service=app.state.session
 from application.news.hotspot_service import get_default_service as _get_default_hotspot_service
 
 app.state.hotspot_service = _get_default_hotspot_service()
-# 新闻来源治理：启动期解析 CLAW_ADMIN_USERNAME → admin_user_id；未配置或用户不存在则为 None。
-# 生产环境必须配置且对应用户必须存在，否则管理员 API 不可用（统一 403）。
-_admin_user_id: str | None = None
-if settings.admin_username:
-    from domain.user.auth.auth import UserStore
-
-    _admin_user = UserStore().get_by_username(settings.admin_username)
-    if _admin_user is not None:
-        _admin_user_id = _admin_user.user_id
-        logger.info("Admin resolved: username=%s user_id=%s", settings.admin_username, _admin_user_id)
-    else:
-        logger.warning(
-            "CLAW_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用",
-            settings.admin_username,
-        )
-app.state.admin_user_id = _admin_user_id
+# 新闻来源治理：启动期解析 CLAW_ADMIN_USERNAME → admin_user_id。
+# P1-2: 生产环境（environment == "production"）下，CLAW_ADMIN_USERNAME 缺失
+# 或找不到对应用户时必须 fail-fast，禁止静默降级。
+app.state.admin_user_id = resolve_admin_user_id()
 
 # ── CORS ──────────────────────────────────────────────────
 
@@ -169,7 +206,10 @@ app.middleware("http")(rate_limit_middleware)
 
 # ── 全局异常处理器 ─────────────────────────────────────────
 
-app.add_exception_handler(ClawException, claw_exception_handler)
+# Starlette 期望异常处理器签名为 (Request, Exception)；此处 claw_exception_handler
+# 接受更窄的 ClawException，运行时仅注册到 ClawException 路由上，
+# 类型不匹配是 Starlette 类型契约的已知限制。
+app.add_exception_handler(ClawException, claw_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # ── 路由挂载 ──────────────────────────────────────────────

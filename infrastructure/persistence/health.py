@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class HealthStatus:
     status: str
+    sqlite: str = "unknown"
     redis: str = "unknown"
     details: dict | None = None
 

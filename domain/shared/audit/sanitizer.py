@@ -23,7 +23,7 @@ def sanitize(text: str) -> str:
 
 
 def sanitize_dict(data: dict[str, Any]) -> dict[str, Any]:
-    sanitized = {}
+    sanitized: dict[str, Any] = {}
     for key, value in data.items():
         if isinstance(value, str):
             sanitized[key] = sanitize(value)

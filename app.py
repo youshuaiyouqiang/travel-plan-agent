@@ -150,6 +150,10 @@ def build_orchestrator() -> AppContainer:
                 model=settings.fallback_model or None,
             )
         )
+    # llm 在运行时可能是 OpenAILLM 或 FallbackLLM；二者具备相同方法集，
+    # 但静态类型不共享基类。下游消费者按 OpenAILLM 接口编码，
+    # 调用点用 # type: ignore[arg-type] 显式标注此契约。
+    llm: OpenAILLM | FallbackLLM
     if fallback_providers:
         llm = FallbackLLM(providers=[primary_llm] + fallback_providers)
     else:
@@ -174,7 +178,7 @@ def build_orchestrator() -> AppContainer:
 
     # ===== 旅行智能体的特殊构造器（需要完整 Agent 主循环） =====
     travel_agent_core = _build_travel_agent_core(
-        llm=llm,
+        llm=llm,  # type: ignore[arg-type]
         audit_logger=audit_logger,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
@@ -189,7 +193,7 @@ def build_orchestrator() -> AppContainer:
 
     # ===== 工厂（注入所有全局依赖） =====
     factory = AgentFactory(
-        llm=llm,
+        llm=llm,  # type: ignore[arg-type]
         skill_provider=skill_provider,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
@@ -208,7 +212,7 @@ def build_orchestrator() -> AppContainer:
     # Tier 0（快路径）→ Tier 1（function calling 委派）→ Tier 2（委派执行）。
     # 如需灰度回退，将 default_agent 改回 "travel" 即可恢复 prompt 路由模式。
     orchestrator = OrchestratorAgent(
-        llm=llm,
+        llm=llm,  # type: ignore[arg-type]
         factory=factory,
         builtin_configs=builtin_configs,
         custom_repo=custom_repo,

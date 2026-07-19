@@ -143,7 +143,8 @@ async def _http_web_search(
         if link is None:
             continue
         title = link.get_text(" ", strip=True)
-        href = _decode_duckduckgo_url(link.get("href", ""))
+        href_raw = link.get("href", "")
+        href = _decode_duckduckgo_url(href_raw if isinstance(href_raw, str) else "")
         snippet_node = node.select_one(".result__snippet")
         snippet = snippet_node.get_text(" ", strip=True) if snippet_node else ""
         results.append({"title": title, "href": href, "body": snippet})

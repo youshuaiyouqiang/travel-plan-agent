@@ -59,7 +59,7 @@ async def batch_geocode(req: BatchGeocodeRequest, request: Request) -> dict:
     if not amap_key:
         raise ServiceUnavailableException("高德地图服务未配置")
 
-    results = []
+    results: list[dict[str, str | float | None]] = []
     for addr in req.addresses:
         addr = str(addr).strip()
         if not addr:

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { MapPin, Clock, CheckCircle2, ChevronRight, Camera, Utensils, Bus, Landmark, ShoppingBag, Music, Coffee, Moon, Sun } from 'lucide-react'
+import { MapPin, Clock, ChevronRight, Camera, Utensils, Bus, Landmark, ShoppingBag, Music, Coffee, Moon, Sun } from 'lucide-react'
 import { DayPlanData, ActivityData } from '../../features/travel/api'
 
 interface Props {
@@ -95,7 +95,7 @@ function TimelineActivity({
     >
       {/* Timeline Left Rail */}
       <div className="flex flex-col items-center w-10 flex-shrink-0 pt-0.5">
-        <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm ${activity.checked_in ? 'ring-2 ring-emerald-300 ring-offset-1' : ''}`}>
+        <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-sm`}>
           <Icon size={14} className="text-white" />
         </div>
         {!isLast && (
@@ -110,19 +110,15 @@ function TimelineActivity({
           flex-1 mb-3 rounded-2xl cursor-pointer transition-all duration-200 active:scale-[0.98]
           bg-white shadow-sm border border-slate-100
           hover:shadow-md hover:border-slate-200
-          ${activity.checked_in ? 'border-emerald-100 bg-emerald-50/30' : ''}
         `}
       >
         <div className="px-3.5 py-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className={`text-sm font-semibold truncate ${activity.checked_in ? 'text-emerald-700' : 'text-slate-800'}`}>
+                <h3 className="text-sm font-semibold truncate text-slate-800">
                   {activity.title}
                 </h3>
-                {activity.checked_in && (
-                  <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
-                )}
               </div>
               {activity.location && (
                 <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1 truncate">
@@ -190,7 +186,6 @@ export function DayBlinds({
           {days.map((d, idx) => {
             const isActive = idx === selectedIndex
             const actCount = d.activities?.length || 0
-            const checkedInCount = d.activities?.filter(a => a.checked_in).length || 0
 
             return (
               <button
@@ -212,7 +207,7 @@ export function DayBlinds({
                 </div>
                 {actCount > 0 && (
                   <div className={`text-[10px] mt-0.5 ${isActive ? 'text-white/60' : 'text-slate-400'}`}>
-                    {checkedInCount > 0 && `${checkedInCount}/`}{actCount}活动
+                    {actCount}活动
                   </div>
                 )}
               </button>

@@ -122,8 +122,6 @@ class Agent:
             memory=self._memory,
         )
 
-    ChatPreparation = ChatPreparation
-
     async def _prepare_chat_context(
         self, *, session_id: str, user_id: str | None, message: str, memory_scope: str, trace_id: str
     ) -> ChatPreparation:

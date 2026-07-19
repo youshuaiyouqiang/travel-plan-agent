@@ -238,8 +238,11 @@ class EarlyActionHandler:
             self._task_store.save(task)
             await self._memory_processor.process(session, session_id, memory_scope, user_id)
             yield {"type": "chunk", "data": reply}
-            done_data = {"status": "completed", "itinerary_id": itinerary_id} if itinerary_id else "completed"
-            yield {"type": "done", "data": done_data}
+            if itinerary_id:
+                done_data: dict[str, str] | str = {"status": "completed", "itinerary_id": itinerary_id}
+            else:
+                done_data = "completed"
+            yield {"type": "done", "data": done_data}  # type: ignore[dict-item]
             return
 
         if kind == "need_input":

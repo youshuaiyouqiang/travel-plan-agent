@@ -44,6 +44,9 @@ class Session:
     mode: str = "yunhe_default"
     locked_agent_id: str | None = None
     news_id: str | None = None
+    # P1-5：增量持久化标记，记录已写入数据库的 turn 数量。
+    # 仅在持久化层使用，对外不可见；不参与比较与展示。
+    _last_persisted_turn: int = field(default=0, repr=False, compare=False)
 
     def append(self, role: str, content: str) -> None:
         self.turns.append(Turn(role=role, content=content))

@@ -33,9 +33,7 @@ export interface ActivityData {
   description: string
   image_url: string
   cost: number
-  actual_cost: number
   tips: string
-  checked_in: boolean
 }
 
 export interface DayPlanData {

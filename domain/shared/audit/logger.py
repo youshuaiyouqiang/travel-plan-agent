@@ -337,6 +337,11 @@ class AuditLogger:
         try:
             with self._lock:
                 self._rotate_if_needed()
+                # _rotate_if_needed() 保证 _log_file 在启用审计时已被赋值；
+                # 关闭审计时 _write 不会被调用。此处断言为 mypy 与防御性检查。
+                if self._log_file is None:
+                    logger.warning("Audit log file not initialized; event dropped")
+                    return
                 with open(self._log_file, "a", encoding="utf-8") as f:
                     f.write(line + "\n")
         except Exception:

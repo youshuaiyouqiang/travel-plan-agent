@@ -682,6 +682,181 @@ def _downgrade_16(conn: Any) -> None:
     )
 
 
+def _upgrade_17(conn: Any) -> None:
+    """P1-1: 重建 ``itinerary_activities`` 表，移除 ``actual_cost`` / ``checked_in`` 列。
+
+    业务红线：删除打卡与实际费用，不留兼容字段。SQLite 3.35 之前不支持
+    ``DROP COLUMN``，故采用重建表方式：
+
+    1. 创建不含 ``actual_cost`` / ``checked_in`` 列的新表 ``itinerary_activities_new``
+    2. 从旧表拷贝允许的字段（丢弃 actual_cost / checked_in）
+    3. 删除旧表，重命名新表为 ``itinerary_activities``
+    4. 重建索引
+    5. 全新部署（旧表不存在）时仅创建新表，不执行数据拷贝
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS itinerary_activities_new (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            day_id       INTEGER NOT NULL,
+            activity_index INTEGER NOT NULL DEFAULT 0,
+            time_slot    TEXT NOT NULL DEFAULT '',
+            title        TEXT NOT NULL DEFAULT '',
+            location     TEXT NOT NULL DEFAULT '',
+            description  TEXT NOT NULL DEFAULT '',
+            image_url    TEXT NOT NULL DEFAULT '',
+            cost         REAL NOT NULL DEFAULT 0,
+            tips         TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (day_id) REFERENCES itinerary_days(id) ON DELETE CASCADE
+        )
+        """
+    )
+
+    old_cols = {row[1] for row in conn.execute("PRAGMA table_info(itinerary_activities)").fetchall()}
+    if "id" in old_cols:
+        # 旧表存在：拷贝允许的字段（actual_cost / checked_in 被丢弃）
+        conn.execute(
+            "INSERT OR IGNORE INTO itinerary_activities_new "
+            "(id, day_id, activity_index, time_slot, title, location, description, "
+            "image_url, cost, tips) "
+            "SELECT id, day_id, activity_index, time_slot, title, location, description, "
+            "image_url, cost, tips FROM itinerary_activities"
+        )
+        conn.execute("DROP TABLE itinerary_activities")
+        logger.info("Migration 17: migrated existing itinerary_activities rows (actual_cost/checked_in dropped)")
+    else:
+        conn.execute("DROP TABLE IF EXISTS itinerary_activities")
+
+    conn.execute("ALTER TABLE itinerary_activities_new RENAME TO itinerary_activities")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_day ON itinerary_activities(day_id)")
+    conn.commit()
+    logger.info("Migration 17: rebuilt itinerary_activities without actual_cost/checked_in columns")
+
+
+def _downgrade_17(conn: Any) -> None:
+    """回滚迁移 17 — 重建带 ``actual_cost`` / ``checked_in`` 列的 ``itinerary_activities`` 表。
+
+    降级是单向不可逆的：已被丢弃的打卡/实际费用数据无法恢复。
+    重建空列仅保证 schema 兼容旧版本。
+    """
+    conn.execute("DROP TABLE IF EXISTS itinerary_activities")
+    conn.execute(
+        """
+        CREATE TABLE itinerary_activities (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            day_id       INTEGER NOT NULL,
+            activity_index INTEGER NOT NULL DEFAULT 0,
+            time_slot    TEXT NOT NULL DEFAULT '',
+            title        TEXT NOT NULL DEFAULT '',
+            location     TEXT NOT NULL DEFAULT '',
+            description  TEXT NOT NULL DEFAULT '',
+            image_url    TEXT NOT NULL DEFAULT '',
+            cost         REAL NOT NULL DEFAULT 0,
+            actual_cost  REAL NOT NULL DEFAULT 0,
+            tips         TEXT NOT NULL DEFAULT '',
+            checked_in   INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (day_id) REFERENCES itinerary_days(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_day ON itinerary_activities(day_id)")
+    conn.commit()
+    logger.warning(
+        "Migration 17 downgrade: rebuilt itinerary_activities with actual_cost/checked_in columns (empty; "
+        "previously dropped data cannot be restored)"
+    )
+
+
+def _upgrade_18(conn: Any) -> None:
+    """P1-3: 修复 ``custom_agents`` 表的外键引用错误。
+
+    迁移 3 创建表时误用 ``FOREIGN KEY (user_id) REFERENCES users(id)``，
+    但 ``users`` 表的主键列名是 ``user_id`` 而非 ``id``。当 ``PRAGMA foreign_keys=ON``
+    时，任何 INSERT/UPDATE/DELETE 都会抛 ``foreign key mismatch`` 错误。
+
+    修复方式（SQLite 3.35 之前不支持 DROP COLUMN，采用重建）：
+    1. 创建带正确外键引用的 ``custom_agents_new`` 表
+    2. 从旧表拷贝全部字段
+    3. 删除旧表，重命名新表为 ``custom_agents``
+    4. 重建索引
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS custom_agents_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            icon TEXT DEFAULT '🤖',
+            system_prompt TEXT NOT NULL,
+            skills TEXT DEFAULT '[]',
+            mcp_servers TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'published',
+            welcome_message TEXT,
+            temperature REAL DEFAULT 0.7,
+            is_public INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+        """
+    )
+
+    old_cols = {row[1] for row in conn.execute("PRAGMA table_info(custom_agents)").fetchall()}
+    if "id" in old_cols:
+        # 旧表存在：拷贝所有字段
+        conn.execute(
+            "INSERT OR IGNORE INTO custom_agents_new "
+            "(id, user_id, name, description, icon, system_prompt, skills, mcp_servers, "
+            "status, welcome_message, temperature, is_public, created_at, updated_at) "
+            "SELECT id, user_id, name, description, icon, system_prompt, skills, mcp_servers, "
+            "status, welcome_message, temperature, is_public, created_at, updated_at FROM custom_agents"
+        )
+        conn.execute("DROP TABLE custom_agents")
+        logger.info("Migration 18: migrated existing custom_agents rows with corrected FK")
+    else:
+        conn.execute("DROP TABLE IF EXISTS custom_agents")
+
+    conn.execute("ALTER TABLE custom_agents_new RENAME TO custom_agents")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_user ON custom_agents(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_public ON custom_agents(is_public)")
+    conn.commit()
+    logger.info("Migration 18: rebuilt custom_agents with correct FK reference to users(user_id)")
+
+
+def _downgrade_18(conn: Any) -> None:
+    """回滚迁移 18 — 重建带错误外键的 ``custom_agents`` 表（仅用于回滚兼容）。
+
+    注意：回滚后表恢复到错误状态（FK 指向 users(id)），生产环境不应回滚。
+    """
+    conn.execute("DROP TABLE IF EXISTS custom_agents")
+    conn.execute(
+        """
+        CREATE TABLE custom_agents (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            icon TEXT DEFAULT '🤖',
+            system_prompt TEXT NOT NULL,
+            skills TEXT DEFAULT '[]',
+            mcp_servers TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'published',
+            welcome_message TEXT,
+            temperature REAL DEFAULT 0.7,
+            is_public INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_user ON custom_agents(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_custom_agents_public ON custom_agents(is_public)")
+    conn.commit()
+    logger.warning("Migration 18 downgrade: restored custom_agents with original (broken) FK")
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -782,6 +957,18 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Rebuild profiles without emotion_history column",
         "upgrade": _upgrade_16,
         "downgrade": _downgrade_16,
+    },
+    {
+        "version": 17,
+        "description": "Rebuild itinerary_activities without actual_cost/checked_in columns",
+        "upgrade": _upgrade_17,
+        "downgrade": _downgrade_17,
+    },
+    {
+        "version": 18,
+        "description": "Fix custom_agents FK to reference users(user_id)",
+        "upgrade": _upgrade_18,
+        "downgrade": _downgrade_18,
     },
 ]
 
@@ -1017,9 +1204,7 @@ CREATE TABLE IF NOT EXISTS itinerary_activities (
     description  TEXT NOT NULL DEFAULT '',
     image_url    TEXT NOT NULL DEFAULT '',
     cost         REAL NOT NULL DEFAULT 0,
-    actual_cost  REAL NOT NULL DEFAULT 0,
     tips         TEXT NOT NULL DEFAULT '',
-    checked_in   INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (day_id) REFERENCES itinerary_days(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_activities_day ON itinerary_activities(day_id);

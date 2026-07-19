@@ -7,6 +7,11 @@
 - 中间件支持 Bearer 与 cookie 两种认证方式
 - 不安全方法（POST/PATCH/DELETE）的 cookie 请求必须带匹配的 ``X-CSRF-Token`` header
 - 已 revoke 的 token 被拒绝
+
+P0-1/P0-2 修复后追加：
+- 登录响应体不再暴露 ``token`` 字段（浏览器 JS 无法读取）
+- ``csrf_token`` cookie 与 ``auth_token`` cookie 值不同（HttpOnly 认证 token 不通过 CSRF cookie 泄露）
+- 浏览器持久化存储（localStorage/sessionStorage）不含 token — 由前端测试覆盖
 """
 
 from __future__ import annotations
@@ -185,6 +190,43 @@ class TestCookieAndCSRF:
         assert "csrf_token=" in set_cookie
 
     @pytest.mark.asyncio
+    async def test_login_response_body_does_not_expose_token(self, client):
+        """P0-1: 浏览器登录响应体不得暴露 token，避免 JS 读取后写入 localStorage。"""
+        UserStore().create("alice", "secret123")
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "alice", "password": "secret123"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        # 响应体只允许出现 user_id 与 username，不得包含 token
+        assert "token" not in body, f"login response body leaked token: {body}"
+        assert "user_id" in body
+        assert "username" in body
+
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_value_differs_from_auth_token(self, client):
+        """P0-2: csrf_token cookie 不得等于 auth_token cookie 值。
+
+        若两者相同，JS 可借由可读的 csrf cookie 直接获得 HttpOnly 认证 token，
+        HttpOnly 保护失效。
+        """
+        UserStore().create("alice", "secret123")
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "alice", "password": "secret123"},
+        )
+        assert response.status_code == 200
+        auth_cookie = response.cookies.get("auth_token")
+        csrf_cookie = response.cookies.get("csrf_token")
+        assert auth_cookie is not None, "auth_token cookie missing"
+        assert csrf_cookie is not None, "csrf_token cookie missing"
+        assert auth_cookie != csrf_cookie, (
+            "csrf_token cookie must NOT equal auth_token cookie; "
+            "otherwise HttpOnly protection is bypassed"
+        )
+
+    @pytest.mark.asyncio
     async def test_cookie_authenticates_safe_request(self, client, issued_token):
         # 模拟浏览器：cookie 携带 auth_token，无 CSRF header，GET 应通过
         cookies = {"auth_token": issued_token}
@@ -210,22 +252,37 @@ class TestCookieAndCSRF:
         assert response.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_unsafe_cookie_request_with_matching_csrf_accepted(self, client, issued_token):
-        # 先从登录响应拿到 csrf cookie 值（这里直接用同 token 简化）
-        cookies = {"auth_token": issued_token, "csrf_token": issued_token}
-        headers = {"X-CSRF-Token": issued_token}
-        # middleware 鉴权通过后才会路由，sessions 未挂载会 404
+    async def test_unsafe_cookie_request_with_matching_csrf_accepted(self, client):
+        """P0-2 修复后必须从登录响应中提取真实的 csrf_token cookie 值。
+
+        旧测试假设 ``csrf_token == auth_token``（这正是 P0-2 漏洞）；修复后两者不同，
+        必须使用后端实际下发的 csrf 值才能通过 double-submit 校验。
+        """
+        UserStore().create("alice", "secret123")
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "alice", "password": "secret123"},
+        )
+        assert login_resp.status_code == 200
+        auth_cookie = login_resp.cookies.get("auth_token")
+        csrf_cookie = login_resp.cookies.get("csrf_token")
+        assert auth_cookie and csrf_cookie
+        # 使用后端实际下发的 csrf cookie 值作为 X-CSRF-Token header
+        cookies = {"auth_token": auth_cookie, "csrf_token": csrf_cookie}
+        headers = {"X-CSRF-Token": csrf_cookie}
         response = await client.post(
             "/api/v1/sessions",
             cookies=cookies,
             headers=headers,
             json={},
         )
+        # middleware 鉴权通过后才会路由，sessions 未挂载会 404，但不应是 401
         assert response.status_code != 401
 
     @pytest.mark.asyncio
     async def test_unsafe_cookie_request_with_mismatched_csrf_rejected(self, client, issued_token):
-        cookies = {"auth_token": issued_token, "csrf_token": issued_token}
+        # csrf cookie 与 X-CSRF-Token header 不匹配应被拒绝
+        cookies = {"auth_token": issued_token, "csrf_token": "some-csrf-value"}
         headers = {"X-CSRF-Token": "different-value"}
         response = await client.post(
             "/api/v1/sessions",

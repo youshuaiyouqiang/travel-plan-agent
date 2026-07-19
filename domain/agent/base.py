@@ -58,3 +58,6 @@ class BaseAgent(ABC):
         **kwargs,
     ) -> AsyncGenerator[dict, None]:
         """流式对话，yield {type, data, ...}"""
+        # 仅为 mypy 标记：使该方法被识别为 async generator function。
+        # 子类必须重写并提供实际 yield 实现；此处的 yield 永远不会执行。
+        yield {}  # pragma: no cover

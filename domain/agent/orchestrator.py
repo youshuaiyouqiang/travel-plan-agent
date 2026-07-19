@@ -256,6 +256,7 @@ class OrchestratorAgent(BaseAgent):
         cache_key = (agent_id, user_id or "")
         if cache_key in self._agent_cache:
             return self._agent_cache[cache_key]
+        config: AgentConfig | None
         if agent_id in self._builtin_configs:
             config = self._builtin_configs[agent_id]
         else:
@@ -576,7 +577,7 @@ class OrchestratorAgent(BaseAgent):
 
     # ===== 主入口 =====
 
-    async def chat(
+    async def chat(  # type: ignore[override]
         self,
         session_id: str,
         user_id: str | None,
@@ -597,6 +598,10 @@ class OrchestratorAgent(BaseAgent):
           锁定模式留在锁定 Agent）
 
         ``agent_id`` 仅作为管理员/调试显式覆盖；传入时绕过 mode 路由。
+
+        注意：签名与 BaseAgent.chat 不一致（额外接受 mode/locked_agent_id 位置参数），
+        因为 OrchestratorAgent 是顶层调度器，由 API 路由按 mode-first 语义直接调用，
+        不参与 BaseAgent 的多态替换场景。
         """
         # admin/debug 显式覆盖
         if agent_id:
@@ -651,7 +656,7 @@ class OrchestratorAgent(BaseAgent):
             "next_controller": next_controller,
         }
 
-    async def chat_stream(
+    async def chat_stream(  # type: ignore[override]
         self,
         session_id: str,
         user_id: str | None,

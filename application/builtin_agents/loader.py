@@ -20,7 +20,7 @@ class BuiltinAgentLoader:
 
     def load_all(self) -> list[AgentConfig]:
         """扫描目录，加载所有 .yaml 配置文件。"""
-        configs = []
+        configs: list[AgentConfig] = []
         if not self._dir.exists():
             logger.warning("Builtin agents dir not found: %s", self._dir)
             return configs

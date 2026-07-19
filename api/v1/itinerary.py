@@ -148,6 +148,10 @@ async def update_itinerary(
 
     _itinerary_repo.update_itinerary(itinerary_id, **req.model_dump())
     updated = _itinerary_repo.get_itinerary(itinerary_id)
+    if updated is None:
+        # update_itinerary 成功后 get_itinerary 仅在数据库异常时返回 None；
+        # 此处以 404 兜底，避免向客户端暴露内部状态。
+        raise NotFoundException("Itinerary", itinerary_id)
     return updated.to_dict()
 
 

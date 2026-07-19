@@ -117,8 +117,9 @@ class ItineraryRepository:
             (itinerary_id, day_index, date, title, summary),
         )
         conn.commit()
+        day_id = cursor.lastrowid or 0
         return DayPlan(
-            id=cursor.lastrowid,
+            id=day_id,
             itinerary_id=itinerary_id,
             day_index=day_index,
             date=date,
@@ -142,13 +143,14 @@ class ItineraryRepository:
         cursor = conn.execute(
             "INSERT INTO itinerary_activities "
             "(day_id, activity_index, time_slot, title, location, description, "
-            "image_url, cost, tips, checked_in) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            "image_url, cost, tips) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (day_id, activity_index, time_slot, title, location, description, image_url, cost, tips),
         )
         conn.commit()
+        activity_id = cursor.lastrowid or 0
         return Activity(
-            id=cursor.lastrowid,
+            id=activity_id,
             day_id=day_id,
             activity_index=activity_index,
             time_slot=time_slot,
@@ -159,30 +161,6 @@ class ItineraryRepository:
             cost=cost,
             tips=tips,
         )
-
-    def check_in_activity(self, activity_id: int, actual_cost: float | None = None) -> bool:
-        conn = get_connection()
-        if actual_cost is not None:
-            conn.execute(
-                "UPDATE itinerary_activities SET checked_in = 1, actual_cost = ? WHERE id = ?",
-                (actual_cost, activity_id),
-            )
-        else:
-            conn.execute(
-                "UPDATE itinerary_activities SET checked_in = 1 WHERE id = ?",
-                (activity_id,),
-            )
-        conn.commit()
-        return True
-
-    def uncheck_activity(self, activity_id: int) -> bool:
-        conn = get_connection()
-        cursor = conn.execute(
-            "UPDATE itinerary_activities SET checked_in = 0 WHERE id = ?",
-            (activity_id,),
-        )
-        conn.commit()
-        return cursor.rowcount > 0
 
     def delete_activity(self, activity_id: int) -> bool:
         conn = get_connection()
@@ -248,16 +226,10 @@ class ItineraryRepository:
                     cost=act.cost,
                     tips=act.tips,
                 )
-        return self.get_itinerary(created.id)
-
-    def update_actual_cost(self, activity_id: int, actual_cost: float) -> bool:
-        conn = get_connection()
-        conn.execute(
-            "UPDATE itinerary_activities SET actual_cost = ? WHERE id = ?",
-            (actual_cost, activity_id),
-        )
-        conn.commit()
-        return True
+        saved = self.get_itinerary(created.id)
+        # create_itinerary 已成功写入；get_itinerary 仅在数据库异常时返回 None，
+        # 此处返回 created 作为兜底以保证契约。
+        return saved if saved is not None else created
 
     def create_share_link(self, itinerary_id: str, user_id: str, expires_at: str = "") -> str:
         conn = get_connection()

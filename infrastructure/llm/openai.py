@@ -53,9 +53,11 @@ class OpenAILLM:
 
     async def complete(self, *, system: str, messages: list[dict[str, Any]]) -> str:
         start = time.monotonic()
+        # openai SDK 的消息类型为严格的联合类型，与 list[dict[str, Any]] 不兼容；
+        # 此处保留 dict 形式以承接上游动态构造，运行时由 SDK 校验。
         response = await self._client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": system}, *messages],
+            messages=[{"role": "system", "content": system}, *messages],  # type: ignore[list-item]
         )
         content = response.choices[0].message.content or ""
         duration_ms = int((time.monotonic() - start) * 1000)
@@ -84,12 +86,14 @@ class OpenAILLM:
         """流式输出，逐 token yield 文本片段。"""
         start = time.monotonic()
         full_content = ""
+        # openai SDK 的消息类型为严格的联合类型，与 list[dict[str, Any]] 不兼容；
+        # stream=True 时返回 AsyncStream[ChatCompletionChunk]，但 SDK overload 未正确收窄。
         stream = await self._client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": system}, *messages],
+            messages=[{"role": "system", "content": system}, *messages],  # type: ignore[list-item]
             stream=True,
         )
-        async for chunk in stream:
+        async for chunk in stream:  # type: ignore[union-attr]
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 full_content += delta.content

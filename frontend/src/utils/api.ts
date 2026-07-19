@@ -12,47 +12,41 @@
  * - memory（计划明确不在本任务中调整）
  * - agent/skill/mcp 中心
  *
- * 注意：本文件继续使用 Bearer token + ``useAuthStore`` 模式；新领域模块已切换到
- * ``features/auth/client.ts`` 的 cookie + CSRF 流程。两套模式在后端 ``auth_middleware``
- * 中均被接受，可平滑共存。
+ * P0-1 修复：本文件不再使用 Bearer token + ``useAuthStore``；所有请求统一走
+ * ``features/auth/client.ts`` 的 cookie + CSRF 流程。浏览器不持有长期认证令牌。
  */
-import { useAuthStore } from '../hooks/useAuthStore'
+import { AuthClient } from '../features/auth/client'
 
 const API_BASE = '/api'
+
+// 每次调用都构造 AuthClient，使其引用当前 ``globalThis.fetch``。
+function authClient(): AuthClient {
+  return new AuthClient()
+}
+
+function jsonHeaders(): HeadersInit {
+  return { 'Content-Type': 'application/json' }
+}
 
 export interface AuthResponse {
   user_id: string
   username: string
-  token: string
-}
-
-function getToken(): string | null {
-  return useAuthStore.getState().token || null
-}
-
-function authHeaders(): HeadersInit {
-  const token = getToken()
-  const headers: HeadersInit = { 'Content-Type': 'application/json' }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-  return headers
 }
 
 export async function register(username: string, password: string): Promise<AuthResponse> {
   let res: Response
   try {
-    res = await fetch(`${API_BASE}/auth/register`, {
+    res = await authClient().request(`${API_BASE}/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
       body: JSON.stringify({ username, password }),
     })
   } catch {
     throw new Error('无法连接到服务器，请检查网络')
   }
-  const data = await res.json().catch(() => ({ detail: '服务器响应异常' }))
+  const data = await res.json().catch(() => ({ message: '服务器响应异常' }))
   if (!res.ok) {
-    throw new Error(data.detail || '注册失败')
+    throw new Error(data.message || data.detail || '注册失败')
   }
   return data
 }
@@ -60,17 +54,17 @@ export async function register(username: string, password: string): Promise<Auth
 export async function login(username: string, password: string): Promise<AuthResponse> {
   let res: Response
   try {
-    res = await fetch(`${API_BASE}/auth/login`, {
+    res = await authClient().request(`${API_BASE}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonHeaders(),
       body: JSON.stringify({ username, password }),
     })
   } catch {
     throw new Error('无法连接到服务器，请检查网络')
   }
-  const data = await res.json().catch(() => ({ detail: '服务器响应异常' }))
+  const data = await res.json().catch(() => ({ message: '服务器响应异常' }))
   if (!res.ok) {
-    throw new Error(data.detail || '登录失败')
+    throw new Error(data.message || data.detail || '登录失败')
   }
   return data
 }
@@ -90,8 +84,8 @@ export interface TrendingItem {
 
 export async function getTrending(refresh: boolean = false): Promise<TrendingItem[]> {
   try {
-    const url = refresh ? `${API_BASE}/trending?refresh=true` : `${API_BASE}/trending`
-    const res = await fetch(url)
+    const url = refresh ? `${API_BASE}/news/trending?refresh=true` : `${API_BASE}/news/trending`
+    const res = await authClient().request(url)
     if (!res.ok) return []
     const data = await res.json()
     return data.items || []
@@ -111,7 +105,7 @@ export interface NewsFavorite {
 }
 
 export async function listNewsFavorites(): Promise<NewsFavorite[]> {
-  const res = await fetch(`${API_BASE}/news/favorites`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/news/favorites`)
   if (!res.ok) throw new Error('获取收藏失败')
   const data = await res.json()
   return data.favorites || []
@@ -124,9 +118,9 @@ export async function addNewsFavorite(item: {
   source?: string
   tag?: string
 }): Promise<{ status: string }> {
-  const res = await fetch(`${API_BASE}/news/favorites`, {
+  const res = await authClient().request(`${API_BASE}/news/favorites`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(item),
   })
   if (!res.ok) throw new Error('收藏失败')
@@ -134,9 +128,8 @@ export async function addNewsFavorite(item: {
 }
 
 export async function deleteNewsFavorite(favoriteId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/news/favorites/${favoriteId}`, {
+  const res = await authClient().request(`${API_BASE}/news/favorites/${favoriteId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
   })
   if (!res.ok) throw new Error('取消收藏失败')
 }
@@ -169,9 +162,7 @@ export interface MemoriesResponse {
 }
 
 export async function getMemories(): Promise<MemoriesResponse> {
-  const res = await fetch(`${API_BASE}/memories`, {
-    headers: authHeaders(),
-  })
+  const res = await authClient().request(`${API_BASE}/memories`)
   if (!res.ok) {
     throw new Error('获取记忆失败')
   }
@@ -179,9 +170,8 @@ export async function getMemories(): Promise<MemoriesResponse> {
 }
 
 export async function deleteMemory(memoryType: string, memoryId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/memories/${memoryType}/${memoryId}`, {
+  const res = await authClient().request(`${API_BASE}/memories/${memoryType}/${memoryId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
   })
   if (!res.ok) {
     throw new Error('删除记忆失败')
@@ -238,7 +228,7 @@ export interface MCPServerInfo {
 
 // 获取 skill 列表
 export async function fetchSkills(): Promise<SkillInfo[]> {
-  const res = await fetch(`${API_BASE}/skills`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/skills`)
   if (!res.ok) throw new Error('获取 Skill 列表失败')
   const data = await res.json()
   return data.skills
@@ -246,14 +236,14 @@ export async function fetchSkills(): Promise<SkillInfo[]> {
 
 // 获取单个 skill 详情
 export async function fetchSkillDetail(name: string): Promise<SkillInfo> {
-  const res = await fetch(`${API_BASE}/skills/${encodeURIComponent(name)}`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/skills/${encodeURIComponent(name)}`)
   if (!res.ok) throw new Error('获取 Skill 详情失败')
   return res.json()
 }
 
 // 获取 MCP Server 列表
 export async function fetchMCPServers(): Promise<MCPServerInfo[]> {
-  const res = await fetch(`${API_BASE}/mcp/servers`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/mcp/servers`)
   if (!res.ok) throw new Error('获取 MCP 列表失败')
   const data = await res.json()
   return data.servers
@@ -261,7 +251,7 @@ export async function fetchMCPServers(): Promise<MCPServerInfo[]> {
 
 // 获取单个 MCP Server 详情
 export async function fetchMCPServer(serverId: string): Promise<MCPServerInfo> {
-  const res = await fetch(`${API_BASE}/mcp/servers/${encodeURIComponent(serverId)}`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/mcp/servers/${encodeURIComponent(serverId)}`)
   if (!res.ok) throw new Error('获取 MCP 详情失败')
   return res.json()
 }
@@ -272,16 +262,16 @@ export async function fetchAgents(): Promise<{
   custom: AgentInfo[]
   public: AgentInfo[]
 }> {
-  const res = await fetch(`${API_BASE}/agents`, { headers: authHeaders() })
+  const res = await authClient().request(`${API_BASE}/agents`)
   if (!res.ok) throw new Error('获取智能体列表失败')
   return res.json()
 }
 
 // 创建自定义智能体
 export async function createCustomAgent(data: Partial<AgentInfo>): Promise<AgentInfo> {
-  const res = await fetch(`${API_BASE}/agents/custom`, {
+  const res = await authClient().request(`${API_BASE}/agents/custom`, {
     method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
   })
   if (!res.ok) {
@@ -293,9 +283,9 @@ export async function createCustomAgent(data: Partial<AgentInfo>): Promise<Agent
 
 // 更新自定义智能体
 export async function updateCustomAgent(agentId: string, data: Partial<AgentInfo>): Promise<AgentInfo> {
-  const res = await fetch(`${API_BASE}/agents/custom/${agentId}`, {
+  const res = await authClient().request(`${API_BASE}/agents/custom/${agentId}`, {
     method: 'PUT',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    headers: jsonHeaders(),
     body: JSON.stringify(data),
   })
   if (!res.ok) {
@@ -307,9 +297,8 @@ export async function updateCustomAgent(agentId: string, data: Partial<AgentInfo
 
 // 删除自定义智能体
 export async function deleteCustomAgent(agentId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/agents/custom/${agentId}`, {
+  const res = await authClient().request(`${API_BASE}/agents/custom/${agentId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -319,9 +308,8 @@ export async function deleteCustomAgent(agentId: string): Promise<void> {
 
 // 克隆社区智能体
 export async function cloneCustomAgent(agentId: string): Promise<AgentInfo> {
-  const res = await fetch(`${API_BASE}/agents/custom/${agentId}/clone`, {
+  const res = await authClient().request(`${API_BASE}/agents/custom/${agentId}/clone`, {
     method: 'POST',
-    headers: authHeaders(),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

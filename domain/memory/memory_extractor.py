@@ -149,7 +149,7 @@ class MemoryExtractor:
                     "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
                     (user_id, mem.category, mem.content, conversation_id, mem.experience_tag, now, now),
                 )
-                saved_ids.append(cursor.lastrowid)
+                saved_ids.append(cursor.lastrowid or 0)
 
         conn.commit()
         return saved_ids
