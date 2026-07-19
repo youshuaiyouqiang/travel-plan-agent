@@ -203,7 +203,7 @@ class TestTravelAgentDelegation:
         core = _StubCoreAgent()
         agent = TravelAgent(core)
         with pytest.raises(AttributeError):
-            agent._private_attr
+            _ = agent._private_attr
 
     def test_name_property(self):
         agent = TravelAgent(_StubCoreAgent())
