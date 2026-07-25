@@ -96,21 +96,35 @@ class TestSourceServiceCandidates:
         assert source.ai_reason == "publisher-looks-legit"
         assert source.id
 
-    def test_discover_candidate_returns_existing_pending(self, service):
+    async def test_discover_candidate_returns_existing_pending(self, service):
         first = service.create_candidate("example.com", 0.5, "initial")
-        second = service.discover_candidate("example.com")
+        second = await service.discover_candidate("example.com")
         assert second is not None
         assert second.id == first.id
 
-    def test_blocked_domain_is_not_recreated_as_candidate(self, service):
+    async def test_blocked_domain_is_not_recreated_as_candidate(self, service):
         source = service.create_candidate("blocked.example", 0.4, "risk")
         service.review_source("admin-1", source.id, "blocked", "impersonation")
-        assert service.discover_candidate("blocked.example") is None
+        assert await service.discover_candidate("blocked.example") is None
 
     def test_create_candidate_is_idempotent_for_pending_domain(self, service):
         first = service.create_candidate("example.com", 0.5, "first")
         second = service.create_candidate("example.com", 0.6, "second")
         assert second.id == first.id
+
+    def test_create_candidate_uses_ai_candidate_mode(self, service):
+        """``create_candidate`` 必须显式写入 ``scoring_mode='ai_candidate'``。
+
+        builtin_whitelist 与 ai_candidate 共用 ai_score/ai_reason，但语义互斥；
+        候选来源必须用 ai_candidate 模式以便后续 LLM rubric 评分。
+        """
+        source = service.create_candidate("new.example", 0.4, "test")
+        assert source.scoring_mode == "ai_candidate"
+        assert source.ai_subscores == "{}"
+        # 数据库里的列也对得上
+        fetched = service.get_source_by_id(source.id)
+        assert fetched is not None
+        assert fetched.scoring_mode == "ai_candidate"
 
 
 # ---------------------------------------------------------------------------

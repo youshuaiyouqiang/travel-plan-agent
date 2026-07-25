@@ -226,7 +226,7 @@ class OrchestratorAgent(BaseAgent):
         agents_desc = self._get_all_descriptions(user_id)
         try:
             resp = await self._llm.complete(
-                system="你是 Claw 系统的智能路由器。判断用户消息应该交给哪个专业智能体处理。只返回智能体 ID，不要解释。无法判断返回默认值。",
+                system="你是 Yunhe 系统的智能路由器。判断用户消息应该交给哪个专业智能体处理。只返回智能体 ID，不要解释。无法判断返回默认值。",
                 messages=[
                     {
                         "role": "user",

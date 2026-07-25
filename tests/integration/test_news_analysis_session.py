@@ -21,9 +21,9 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.middleware.auth import auth_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from api.v1.news import router as news_router
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from application.news.hotspot_service import HotspotService
 from application.news.models import NewsItem
 from application.session.service import SessionService
@@ -91,7 +91,7 @@ async def app(db, hotspot_service, user_and_token):
     test_app.state.hotspot_service = hotspot_service
     test_app.state.session_service = SessionService(available_agent_ids={"travel", "academic"})
     test_app.middleware("http")(auth_middleware)
-    test_app.add_exception_handler(ClawException, claw_exception_handler)
+    test_app.add_exception_handler(YunheException, yunhe_exception_handler)
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(news_router, prefix="/api/v1/news")
     return test_app

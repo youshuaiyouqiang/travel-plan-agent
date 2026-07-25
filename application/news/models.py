@@ -23,6 +23,13 @@ SourceStatus = Literal[
     "pending", "enabled", "lead_only", "rejected", "blocked", "needs_review"
 ]
 
+# 来源评分模式：
+# - builtin_whitelist  产品内置白名单（tier 与 ai_score 由产品/管理员指定，非 AI 评分）
+# - ai_candidate       AI 评分候选；由 LLM rubric 评分，存 ai_subscores 明细
+# 两种模式共用 ``ai_score/ai_reason`` 字段，但语义互斥：
+# builtin_whitelist 的 ai_score 必须为 None，ai_reason 固定为"产品内置白名单"。
+ScoringMode = Literal["builtin_whitelist", "ai_candidate"]
+
 
 @dataclass
 class Source:
@@ -33,10 +40,31 @@ class Source:
     domain: str
     tier: str
     status: SourceStatus
+    scoring_mode: ScoringMode
     ai_score: float | None
     ai_reason: str
+    # 6 维度子分明细（JSON 字符串，ai_candidate 模式才有意义）：
+    # {"publisher_authority":0.30, "domain_brand":0.20, ...}
+    # builtin_whitelist 模式固定为 "{}"。
+    ai_subscores: str
     created_at: str
     updated_at: str
+
+
+@dataclass
+class NewsSourceInit:
+    """系统初始化事件（替代"初始化内置来源"占位审计行）。
+
+    记录：何时由何种理由把某个来源初始化进白名单/候选池。
+    不属于"管理员审核动作"，不进入 ``news_source_audits``。
+    """
+
+    id: str
+    source_id: str
+    tier: str
+    scoring_mode: ScoringMode
+    init_at: str
+    init_reason: str
 
 
 @dataclass
@@ -71,10 +99,20 @@ class SourceCandidateInput:
 
 @dataclass
 class SourceScore:
-    """候选来源评分结果。"""
+    """候选来源评分结果。
+
+    - ``score``: 总分 ``[0.0, 1.0]``。
+    - ``reason``: 评分理由标签；启发式模式拼接维度标签，LLM rubric 模式固定为
+      ``"LLM rubric"`` 或降级信息。
+    - ``subscores``: 6 维度 JSON 明细（``publisher_authority`` /
+      ``domain_brand`` / ``topic_relevance`` / ``editorial_standard`` /
+      ``accessibility`` / ``risk_signals``）。启发式模式固定为 ``"{}"``；
+      LLM rubric 模式由 :class:`SourceRubricScorer` 序列化。
+    """
 
     score: float
     reason: str
+    subscores: str = "{}"
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +175,13 @@ class EvidenceCard:
 
     - ``verified``：单一或多个 ``enabled`` 来源一致
     - ``conflicted``：多个 ``enabled`` 来源 claim 相互矛盾
+
+    ``source_id`` 携带原始来源记录 ID，便于前端跳转到该来源的人工审核页
+    （``/admin/news?source=xxx``）。绝不在 prompt / 报告中输出，仅用于前端
+    跳转与审计追溯。
     """
 
+    source_id: str
     source_name: str
     url: str
     claim: str

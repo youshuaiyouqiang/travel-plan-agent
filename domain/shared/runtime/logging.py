@@ -73,8 +73,8 @@ def setup_logging(
     if to_file and log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        log_file = log_dir / f"claw-{date_str}.log"
-        json_file = log_dir / f"claw-{date_str}.jsonl"
+        log_file = log_dir / f"yunhe-{date_str}.log"
+        json_file = log_dir / f"yunhe-{date_str}.jsonl"
 
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
@@ -93,7 +93,7 @@ def setup_logging(
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("posthog").setLevel(logging.WARNING)
 
-    logging.getLogger("claw").info(
+    logging.getLogger("yunhe").info(
         "Logging initialized",
         extra={"extra_data": {"level": level, "log_dir": str(log_dir), "to_file": to_file}},
     )

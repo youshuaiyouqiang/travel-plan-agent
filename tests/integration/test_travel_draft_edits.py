@@ -16,10 +16,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.middleware.auth import auth_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from api.v1.travel import router as travel_router
 from application.exceptions import NotFoundException
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from application.travel.service import TravelService
 from domain.user.auth.auth import UserStore
 from domain.user.auth.token import generate_token
@@ -89,7 +89,7 @@ async def app(db):
     test_app = FastAPI()
     test_app.state.travel_service = TravelService()
     test_app.middleware("http")(auth_middleware)
-    test_app.add_exception_handler(ClawException, claw_exception_handler)
+    test_app.add_exception_handler(YunheException, yunhe_exception_handler)
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(travel_router, prefix="/api/v1/travel")
     return test_app

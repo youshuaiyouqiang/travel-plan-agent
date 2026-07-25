@@ -12,7 +12,7 @@
 
 - 不抓取、保存或注入新闻全文；收藏仅保存标题、来源、URL、摘要、标签与时间。
 - 正式事实结论和证据卡片只能由 `enabled` 来源支撑；未审核来源只能是 `unverified_leads`。
-- 单一系统管理员由启动配置 `CLAW_ADMIN_USERNAME` 确定，不从 HTTP 请求接收管理员 ID。
+- 单一系统管理员由启动配置 `YUNHE_ADMIN_USERNAME` 确定，不从 HTTP 请求接收管理员 ID。
 - `GET /hotspots` 只读缓存，严禁发起外部抓取。
 - 新闻分析会话必须为 `news_analysis_locked`、锁定 Agent 为 `news`，并锚定 `news_id`。
 
@@ -81,7 +81,7 @@ CREATE TABLE news_source_audits (
 );
 ```
 
-Resolve `CLAW_ADMIN_USERNAME` to exactly one user at startup; production startup fails if it is absent or unmatched. Score newly discovered, non-blocked domains from publisher type, domain-brand consistency, HTTPS, topic relevance, syndication ratio and risk signals, then create them as `pending`. Add a migration that rebuilds `news_favorites` without `content` and copies only allowed metadata; remove full-content reads, writes and memory injection.
+Resolve `YUNHE_ADMIN_USERNAME` to exactly one user at startup; production startup fails if it is absent or unmatched. Score newly discovered, non-blocked domains from publisher type, domain-brand consistency, HTTPS, topic relevance, syndication ratio and risk signals, then create them as `pending`. Add a migration that rebuilds `news_favorites` without `content` and copies only allowed metadata; remove full-content reads, writes and memory injection.
 Expose the three source-administration endpoints from `api/v1/admin_news.py`, and mount that router with `prefix="/admin/news"`; keep public hotspot routes in `api/v1/news.py` under `/news`.
 
 - [ ] **Step 4: 验证通过**

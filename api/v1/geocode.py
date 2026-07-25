@@ -32,7 +32,7 @@ def _nominatim_lookup(query: str) -> dict | None:
             }
         )
         url = f"https://nominatim.openstreetmap.org/search?{qs}"
-        req = urllib.request.Request(url, headers={"User-Agent": "ClawTravelApp/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "YunheTravelApp/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = _json.loads(resp.read().decode())
         if data and len(data) > 0:

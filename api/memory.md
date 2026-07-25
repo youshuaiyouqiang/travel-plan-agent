@@ -14,6 +14,6 @@
 - `v1/`：全部 HTTP 路由实现。
 
 ## 业务边界要点
-- 管理员启动期从 `CLAW_ADMIN_USERNAME` 解析：生产环境缺失必须 fail-fast（RuntimeError），开发环境降级为 `None`。
+- 管理员启动期从 `YUNHE_ADMIN_USERNAME` 解析：生产环境缺失必须 fail-fast（RuntimeError），开发环境降级为 `None`。
 - 可锁定 Agent 白名单排除调度员 `yunhe` 与新闻锚点 `news`，仅 `travel`/`academic` 等可被用户手动锁定。
 - 路由双前缀 `/api/v1` 与 `/api` 复用同一套 v1 路由，保证前端平滑迁移；新契约优先放 `/api/v1`。

@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Agent Skills](https://img.shields.io/badge/Agent%20Skills-Standard-green)](https://agentskills.io)
 [![skills.sh](https://img.shields.io/badge/skills.sh-Compatible-blue)](https://skills.sh)
-[![Multi-Runtime](https://img.shields.io/badge/Runtime-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20OpenClaw%20·%20Hermes-blueviolet)](#安装)
+[![Multi-Runtime](https://img.shields.io/badge/Runtime-Claude%20Code%20·%20Codex%20·%20Cursor%20·%20OpenYunhe%20·%20Hermes-blueviolet)](#安装)
 [![Nuwa](https://img.shields.io/badge/Made%20with-女娲.skill-orange)](https://github.com/alchaincyf/nuwa-skill)
 
 <br>
@@ -179,7 +179,7 @@
 
 ## 安装
 
-本 skill 基于开放的 [Agent Skills](https://agentskills.io) 协议，可在任何 skills-compatible 的 AI agent runtime 中运行（Claude Code、Codex、Cursor、OpenClaw、Hermes Agent、CodeBuddy、Workbuddy、Gemini CLI、OpenCode 等 50+ runtime）。
+本 skill 基于开放的 [Agent Skills](https://agentskills.io) 协议，可在任何 skills-compatible 的 AI agent runtime 中运行（Claude Code、Codex、Cursor、OpenYunhe、Hermes Agent、CodeBuddy、Workbuddy、Gemini CLI、OpenCode 等 50+ runtime）。
 
 ### 方式一：一行命令（推荐，跨 runtime 自动检测）
 
@@ -187,7 +187,7 @@
 npx skills add alchaincyf/zhangxuefeng-skill
 ```
 
-通用 CLI 安装器（[vercel-labs/skills](https://github.com/vercel-labs/skills)，支持 55+ runtime）会自动识别当前 runtime 并把 skill 放到正确目录。需要指定 runtime 时加 `-a claude-code` / `-a codex` / `-a cursor` / `-a openclaw` 等参数。
+通用 CLI 安装器（[vercel-labs/skills](https://github.com/vercel-labs/skills)，支持 55+ runtime）会自动识别当前 runtime 并把 skill 放到正确目录。需要指定 runtime 时加 `-a claude-code` / `-a codex` / `-a cursor` / `-a openyunhe` 等参数。
 
 ### 方式二：手动安装
 
@@ -199,7 +199,7 @@ npx skills add alchaincyf/zhangxuefeng-skill
 | Claude Code | `~/.claude/skills/zhangxuefeng-skill/` |
 | Codex CLI | `~/.codex/skills/zhangxuefeng-skill/` |
 | Cursor | `~/.cursor/skills/zhangxuefeng-skill/` |
-| OpenClaw | `~/.openclaw/workspace/skills/zhangxuefeng-skill/` |
+| OpenYunhe | `~/.openyunhe/workspace/skills/zhangxuefeng-skill/` |
 | Hermes Agent | 跑该 runtime 的 install 脚本或 clone 到其 skills 目录 |
 
 ```bash

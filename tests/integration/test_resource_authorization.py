@@ -18,12 +18,12 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.middleware.auth import auth_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from api.v1.debug import router as debug_router
 from api.v1.itinerary import router as itinerary_router
 from api.v1.session import confirm_router as session_confirm_router
 from api.v1.session import router as session_router
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from application.session.service import SessionService
 from domain.travel.itinerary.repository import ItineraryRepository
 from domain.user.auth.auth import UserStore
@@ -54,7 +54,7 @@ async def app(db):
     # debug 路由依赖 app.state.agent；本测试用 None 占位，断言在到达 agent 之前就被授权层拦截。
     test_app.state.agent = None
     test_app.middleware("http")(auth_middleware)
-    test_app.add_exception_handler(ClawException, claw_exception_handler)
+    test_app.add_exception_handler(YunheException, yunhe_exception_handler)
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(itinerary_router, prefix="/api/v1/itineraries")
     test_app.include_router(session_router, prefix="/api/v1/sessions")

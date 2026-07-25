@@ -237,7 +237,7 @@ const api = axios.create({
 
 // 自动携带 Token
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('claw_token');
+  const token = localStorage.getItem('yunhe_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -247,7 +247,7 @@ api.interceptors.response.use(
   res => res,
   err => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('claw_token');
+      localStorage.removeItem('yunhe_token');
       window.location.href = '/login';
     }
     return Promise.reject(err);
@@ -291,7 +291,7 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate  |  macOS/Linux: source .venv/bin/activate
 pip install -r requirements.lock   # 锁定依赖；开发依赖见 pyproject.toml [dev]
 cp config/.env.example .env
-# 编辑 .env，至少填入 CLAW_API_KEY 和 AMAP_WEBSERVICE_KEY
+# 编辑 .env，至少填入 YUNHE_API_KEY 和 AMAP_WEBSERVICE_KEY
 uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -315,7 +315,7 @@ npm run dev         # 端口 5173，自动代理 /api → localhost:8000
 2. 访问 [Railway](https://railway.app/)，使用 GitHub 登录
 3. 点击 "New Project" → "Deploy from GitHub repo"
 4. 选择你的仓库，Railway 会自动检测并构建
-5. 在 "Variables" 中添加环境变量（`CLAW_API_KEY`、`AMAP_WEBSERVICE_KEY` 等）
+5. 在 "Variables" 中添加环境变量（`YUNHE_API_KEY`、`AMAP_WEBSERVICE_KEY` 等）
 6. 等待部署完成，获取访问链接
 
 ### 方式二：Render
@@ -388,9 +388,9 @@ yunhe/
 
 | 变量 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
-| `CLAW_API_KEY` | ✅ | — | LLM API 密钥 |
-| `CLAW_MODEL` | ❌ | `qwen3.5-122b-a10b` | 模型名称 |
-| `CLAW_BASE_URL` | ❌ | 通义千问 DashScope | OpenAI 兼容 API 地址 |
+| `YUNHE_API_KEY` | ✅ | — | LLM API 密钥 |
+| `YUNHE_MODEL` | ❌ | `qwen3.5-122b-a10b` | 模型名称 |
+| `YUNHE_BASE_URL` | ❌ | 通义千问 DashScope | OpenAI 兼容 API 地址 |
 | `AMAP_WEBSERVICE_KEY` | ✅ | — | 高德地图 Web服务 Key |
 | `AMAP_JS_API_KEY` | ❌ | — | 高德地图 JS API Key（前端） |
 | `FLYAI_API_KEY` | ❌ | — | 飞猪旅行 API Key |
@@ -398,16 +398,16 @@ yunhe/
 | `FALLBACK_API_KEY` | ❌ | — | LLM 降级备用 API 密钥 |
 | `FALLBACK_BASE_URL` | ❌ | — | LLM 降级备用 API 地址 |
 | `FALLBACK_MODEL` | ❌ | — | LLM 降级备用模型名称 |
-| `CLAW_LOG_LEVEL` | ❌ | `DEBUG` | 日志级别 |
-| `CLAW_DATABASE_PATH` | ❌ | `data/claw.db` | SQLite 数据库路径 |
-| `CLAW_RATE_LIMIT_RPM` | ❌ | `60` | 每分钟请求限制 |
-| `CLAW_METRICS_ENABLED` | ❌ | `true` | 是否启用 Prometheus 监控 |
-| `CLAW_METRICS_PORT` | ❌ | `9090` | Prometheus 指标端口 |
-| `CLAW_REDIS_URL` | ❌ | `redis://localhost:6379/0` | Redis 连接地址 |
-| `CLAW_EMOTION_ENABLED` | ❌ | `true` | 是否启用情感检测 |
-| `CLAW_AUDIT_ENABLED` | ❌ | `true` | 是否启用审计日志 |
-| `CLAW_MAX_ITERATIONS` | ❌ | `15` | Agent 最大推理轮次 |
-| `CLAW_MEMORY_DISTILL_THRESHOLD` | ❌ | `2` | 记忆蒸馏阈值 |
+| `YUNHE_LOG_LEVEL` | ❌ | `DEBUG` | 日志级别 |
+| `YUNHE_DATABASE_PATH` | ❌ | `data/yunhe.db` | SQLite 数据库路径 |
+| `YUNHE_RATE_LIMIT_RPM` | ❌ | `60` | 每分钟请求限制 |
+| `YUNHE_METRICS_ENABLED` | ❌ | `true` | 是否启用 Prometheus 监控 |
+| `YUNHE_METRICS_PORT` | ❌ | `9090` | Prometheus 指标端口 |
+| `YUNHE_REDIS_URL` | ❌ | `redis://localhost:6379/0` | Redis 连接地址 |
+| `YUNHE_EMOTION_ENABLED` | ❌ | `true` | 是否启用情感检测 |
+| `YUNHE_AUDIT_ENABLED` | ❌ | `true` | 是否启用审计日志 |
+| `YUNHE_MAX_ITERATIONS` | ❌ | `15` | Agent 最大推理轮次 |
+| `YUNHE_MEMORY_DISTILL_THRESHOLD` | ❌ | `2` | 记忆蒸馏阈值 |
 
 完整配置项参见 [config/.env.example](config/.env.example)。
 

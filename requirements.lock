@@ -22,11 +22,11 @@ anyio==4.14.2
 ast-serialize==0.6.0
     # via mypy
 bandit==1.9.4
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 bcrypt==5.0.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 beautifulsoup4==4.15.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 boolean-py==5.0
     # via license-expression
 cachecontrol[filecache]==0.14.4
@@ -56,7 +56,7 @@ defusedxml==0.7.1
 distro==1.9.0
     # via openai
 fastapi==0.139.2
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 filelock==3.31.0
     # via cachecontrol
 h11==0.16.0
@@ -69,7 +69,7 @@ httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
     # via
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   openai
 idna==3.18
     # via
@@ -91,11 +91,11 @@ mdurl==0.1.2
 msgpack==1.2.1
     # via cachecontrol
 mypy==2.3.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 mypy-extensions==1.1.0
     # via mypy
 openai==2.46.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
 packaging==26.2
@@ -106,11 +106,11 @@ packaging==26.2
 pathspec==1.1.1
     # via mypy
 pillow==12.3.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 pip-api==0.0.34
     # via pip-audit
 pip-audit==2.10.1
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 pip-requirements-parser==32.0.1
     # via pip-audit
 platformdirs==4.10.1
@@ -120,19 +120,19 @@ pluggy==1.6.0
     #   pytest
     #   pytest-cov
 prometheus-client==0.25.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 py-serializable==2.1.0
     # via cyclonedx-python-lib
 pydantic==2.13.4
     # via
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   fastapi
     #   openai
     #   pydantic-settings
 pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.2
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 pygments==2.20.0
     # via
     #   pytest
@@ -141,27 +141,27 @@ pyparsing==3.3.2
     # via pip-requirements-parser
 pytest==9.1.1
     # via
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   pytest-asyncio
     #   pytest-cov
 pytest-asyncio==1.4.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 pytest-cov==7.1.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 python-dotenv==1.2.2
     # via
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   pydantic-settings
     #   uvicorn
 python-multipart==0.0.32
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 pyyaml==6.0.3
     # via
     #   bandit
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   uvicorn
 redis==8.0.1
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 requests==2.34.2
     # via
     #   cachecontrol
@@ -169,11 +169,11 @@ requests==2.34.2
 rich==15.0.0
     # via
     #   bandit
-    #   claw (pyproject.toml)
+    #   yunhe (pyproject.toml)
     #   pip-audit
     #   typer
 ruff==0.15.22
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 shellingham==1.5.4
     # via typer
 sniffio==1.3.1
@@ -193,7 +193,7 @@ tomli-w==1.2.0
 tqdm==4.69.0
     # via openai
 typer==0.27.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 typing-extensions==4.16.0
     # via
     #   anyio
@@ -215,7 +215,7 @@ typing-inspection==0.4.2
 urllib3==2.7.0
     # via requests
 uvicorn[standard]==0.51.0
-    # via claw (pyproject.toml)
+    # via yunhe (pyproject.toml)
 watchfiles==1.2.0
     # via uvicorn
 websockets==16.1.1

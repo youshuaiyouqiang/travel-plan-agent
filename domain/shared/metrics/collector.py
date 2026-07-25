@@ -19,18 +19,18 @@ def _init_metrics():
         from prometheus_client import Counter, Histogram, Gauge
 
         _collectors["request_count"] = Counter(
-            "claw_requests_total",
-            "Total Claw chat requests",
+            "yunhe_requests_total",
+            "Total Yunhe chat requests",
             ["session_id", "intent", "status"],
         )
         _collectors["request_latency"] = Histogram(
-            "claw_request_duration_seconds",
+            "yunhe_request_duration_seconds",
             "Request latency in seconds",
             ["intent"],
             buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0],
         )
         _collectors["tool_execution"] = Counter(
-            "claw_tool_execution_total",
+            "yunhe_tool_execution_total",
             "Total tool executions",
             ["tool_name", "status"],
         )

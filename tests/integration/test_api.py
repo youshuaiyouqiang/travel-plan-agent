@@ -11,7 +11,7 @@ def app():
     from fastapi import FastAPI
     from pydantic import BaseModel
 
-    mock_app = FastAPI(title="Claw Test API")
+    mock_app = FastAPI(title="Yunhe Test API")
 
     class ChatRequest(BaseModel):
         session_id: str

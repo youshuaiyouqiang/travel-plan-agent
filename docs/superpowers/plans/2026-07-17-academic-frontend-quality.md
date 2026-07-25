@@ -100,7 +100,7 @@ def test_emotion_module_is_absent_after_removal():
     assert not Path("domain/user/emotion").exists()
     for path in (Path("app.py"), Path("config/settings.py"), Path("domain/travel/core.py")):
         assert "domain.user.emotion" not in path.read_text(encoding="utf-8")
-        assert "CLAW_EMOTION_" not in path.read_text(encoding="utf-8")
+        assert "YUNHE_EMOTION_" not in path.read_text(encoding="utf-8")
 
 def test_orchestrator_starts_without_emotion_components():
     container = build_orchestrator()

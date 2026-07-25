@@ -1,6 +1,6 @@
 # MCP 配置目录
 
-此目录存放 claw 专用的 MCP (Model Context Protocol) 服务器配置。
+此目录存放 yunhe 专用的 MCP (Model Context Protocol) 服务器配置。
 
 ## 目录结构
 

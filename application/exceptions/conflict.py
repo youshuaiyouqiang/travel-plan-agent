@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 
-class ConflictException(ClawException):
+class ConflictException(YunheException):
     """资源冲突异常"""
 
     def __init__(self, message: str, details: dict | None = None):

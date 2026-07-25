@@ -9,16 +9,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.v1 import router as v1_router
 from api.middleware.auth import auth_middleware, rate_limit_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from application.authz import AuthorizationService
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from application.session.service import SessionService
 from application.trending.manager import refresh_pool
 from app import build_orchestrator
 from config import settings
 from domain.shared.runtime.logging import init_from_settings
 
-"""Claw7 API 服务器入口。
+"""Yunhe API 服务器入口。
 
 本文件仅负责：
 1. 创建 FastAPI 应用实例
@@ -43,11 +43,11 @@ _POOL_REFRESH_INTERVAL = 1800
 
 
 def resolve_admin_user_id() -> str | None:
-    """启动期解析 ``CLAW_ADMIN_USERNAME`` → ``admin_user_id``。
+    """启动期解析 ``YUNHE_ADMIN_USERNAME`` → ``admin_user_id``。
 
     P1-2 行为：
     - 生产环境（``settings.environment == "production"``）下，
-      ``CLAW_ADMIN_USERNAME`` 为空或对应用户不存在时必须 fail-fast
+      ``YUNHE_ADMIN_USERNAME`` 为空或对应用户不存在时必须 fail-fast
       抛 ``RuntimeError``，禁止静默降级到无管理员状态。
     - 开发环境允许缺失/找不到，仅记录 warning，返回 None。
 
@@ -65,21 +65,21 @@ def resolve_admin_user_id() -> str | None:
     if not username:
         if is_production:
             raise RuntimeError(
-                "CLAW_ADMIN_USERNAME is not configured; production deployments "
+                "YUNHE_ADMIN_USERNAME is not configured; production deployments "
                 "must define a system administrator before startup."
             )
-        logger.info("CLAW_ADMIN_USERNAME not configured; admin API disabled (development mode)")
+        logger.info("YUNHE_ADMIN_USERNAME not configured; admin API disabled (development mode)")
         return None
 
     user = UserStore().get_by_username(username)
     if user is None:
         if is_production:
             raise RuntimeError(
-                f"CLAW_ADMIN_USERNAME={username!r} does not match any existing user; "
+                f"YUNHE_ADMIN_USERNAME={username!r} does not match any existing user; "
                 "production deployments must reference a valid administrator account."
             )
         logger.warning(
-            "CLAW_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用（开发模式降级）",
+            "YUNHE_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用（开发模式降级）",
             username,
         )
         return None
@@ -139,6 +139,20 @@ async def lifespan(app: FastAPI):
         logger.info("Trending pool warmup done: %d items", count)
     except Exception as e:
         logger.warning("Trending pool warmup failed: %s", e)
+    # Task 1（新闻治理）：启动期 idempotent 注册内置白名单。
+    # 不抛异常：与 hotspot warmup 行为一致；管理员可手动 POST /admin/news/sources/register-builtin 补救。
+    try:
+        from application.news.source_service import (
+            BUILTIN_WHITELIST,
+            SourceService,
+        )
+
+        service = SourceService()
+        for domain, name, tier in BUILTIN_WHITELIST:
+            service.register_builtin_whitelist(domain=domain, name=name, tier=tier)
+        logger.info("Built-in whitelist seeded: %d sources", len(BUILTIN_WHITELIST))
+    except Exception as e:
+        logger.warning("Built-in whitelist seed failed: %s", e)
     _BACKGROUND_TASK = asyncio.create_task(_periodic_refresh_pool())
     _MEMORY_TASK = asyncio.create_task(_periodic_memory_maintenance())
     _HOTSPOT_REFRESH_TASK = asyncio.create_task(_periodic_hotspot_refresh())
@@ -161,7 +175,7 @@ async def lifespan(app: FastAPI):
 # ── 应用创建 ──────────────────────────────────────────────
 
 
-app = FastAPI(title="Claw7 API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
+app = FastAPI(title="Yunhe API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
 # 初始化编排器，存储到 app.state 供路由使用
 _container = build_orchestrator()
@@ -184,8 +198,20 @@ app.state.authz_service = AuthorizationService(session_service=app.state.session
 from application.news.hotspot_service import get_default_service as _get_default_hotspot_service
 
 app.state.hotspot_service = _get_default_hotspot_service()
-# 新闻来源治理：启动期解析 CLAW_ADMIN_USERNAME → admin_user_id。
-# P1-2: 生产环境（environment == "production"）下，CLAW_ADMIN_USERNAME 缺失
+# 新闻研判分析服务：调用 ``analyze`` 把证据按来源状态分类为 verified / conflicted
+# / unverified_leads。当前生产默认使用空证据提供者（未接入真实证据通道），
+# 后续可替换为 LLM 抽取或检索器实现。chat 端点在 news_analysis_locked 会话下
+# 自动调用本服务取证并注入到 user message，让新闻 Agent 基于已注入上下文
+# 直接产出研判（不再要求用户补充证据）。
+from application.news.analysis_service import NewsAnalysisService
+from application.news.empty_evidence_provider import EmptyEvidenceProvider
+from application.news.source_service import SourceService
+
+app.state.news_analysis_service = NewsAnalysisService(
+    sources=SourceService(), evidence_provider=EmptyEvidenceProvider()
+)
+# 新闻来源治理：启动期解析 YUNHE_ADMIN_USERNAME → admin_user_id。
+# P1-2: 生产环境（environment == "production"）下，YUNHE_ADMIN_USERNAME 缺失
 # 或找不到对应用户时必须 fail-fast，禁止静默降级。
 app.state.admin_user_id = resolve_admin_user_id()
 
@@ -206,10 +232,10 @@ app.middleware("http")(rate_limit_middleware)
 
 # ── 全局异常处理器 ─────────────────────────────────────────
 
-# Starlette 期望异常处理器签名为 (Request, Exception)；此处 claw_exception_handler
-# 接受更窄的 ClawException，运行时仅注册到 ClawException 路由上，
+# Starlette 期望异常处理器签名为 (Request, Exception)；此处 yunhe_exception_handler
+# 接受更窄的 YunheException，运行时仅注册到 YunheException 路由上，
 # 类型不匹配是 Starlette 类型契约的已知限制。
-app.add_exception_handler(ClawException, claw_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(YunheException, yunhe_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # ── 路由挂载 ──────────────────────────────────────────────

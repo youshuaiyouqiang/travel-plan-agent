@@ -43,14 +43,29 @@ export type SourceStatus =
   | 'blocked'
   | 'needs_review'
 
+/** 来源评分模式：区分内置白名单与 AI 评分候选。 */
+export type ScoringMode = 'builtin_whitelist' | 'ai_candidate'
+
+/** 6 维度子分明细（仅 ai_candidate 模式有意义）。 */
+export type SourceSubscores = {
+  publisher_authority?: number
+  domain_brand?: number
+  topic_relevance?: number
+  editorial_standard?: number
+  accessibility?: number
+  risk_signals?: number
+}
+
 export interface NewsSource {
   id: string
   name: string
   domain: string
   tier: string
   status: SourceStatus
+  scoring_mode: ScoringMode
   ai_score: number | null
   ai_reason: string
+  ai_subscores: SourceSubscores
   created_at: string
   updated_at: string
 }
@@ -58,6 +73,10 @@ export interface NewsSource {
 export interface NewsSourceAudit {
   id: string
   source_id: string
+  /** 来源显示名（JOIN 来自 news_sources.name）。 */
+  source_name: string
+  /** 来源域名（JOIN 来自 news_sources.domain），审核项的"主键"信息。 */
+  source_domain: string
   admin_id: string
   previous_status: string
   decision: SourceStatus
@@ -65,9 +84,22 @@ export interface NewsSourceAudit {
   created_at: string
 }
 
+/** 系统初始化事件（替代"初始化内置来源"占位审计行）。 */
+export interface NewsSourceInit {
+  id: string
+  source_id: string
+  domain: string
+  tier: string
+  scoring_mode: ScoringMode
+  init_at: string
+  init_reason: string
+}
+
 export type EvidenceCardStatus = 'verified' | 'conflicted'
 
 export interface EvidenceCard {
+  /** 来源记录 ID；用于跳转到该来源的人工审核页（/admin/news?source=xxx）。 */
+  source_id: string
   source_name: string
   url: string
   claim: string
@@ -147,4 +179,33 @@ export async function listNewsSourceAudits(): Promise<NewsSourceAudit[]> {
   if (!res.ok) throw new Error('获取审计记录失败')
   const data = await res.json()
   return (data?.items ?? []) as NewsSourceAudit[]
+}
+
+/** GET /admin/news/source-inits — 系统初始化事件列表。 */
+export async function listNewsSourceInits(): Promise<NewsSourceInit[]> {
+  const res = await authClient().request(`${ADMIN_BASE}/source-inits`)
+  if (res.status === 403) throw new Error('FORBIDDEN')
+  if (!res.ok) throw new Error('获取来源初始化事件失败')
+  const data = await res.json()
+  return (data?.items ?? []) as NewsSourceInit[]
+}
+
+/** POST /admin/news/sources/register-builtin — 管理员注册内置白名单。 */
+export async function registerBuiltinSource(req: {
+  domain: string
+  name: string
+  tier: 'mainstream' | 'aggregator' | 'official'
+  init_reason?: string
+}): Promise<NewsSource> {
+  const res = await authClient().request(
+    `${ADMIN_BASE}/sources/register-builtin`,
+    {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify(req),
+    },
+  )
+  if (res.status === 403) throw new Error('FORBIDDEN')
+  if (!res.ok) throw new Error('注册内置白名单失败')
+  return (await res.json()) as NewsSource
 }

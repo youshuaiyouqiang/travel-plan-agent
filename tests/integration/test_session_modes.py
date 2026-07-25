@@ -15,10 +15,10 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.middleware.auth import auth_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from api.v1.session import router as session_router
 from application.exceptions import NotFoundException, ValidationException
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from application.session.schema import SessionRecord
 from application.session.service import SessionService
 from domain.user.auth.auth import UserStore
@@ -65,7 +65,7 @@ async def app(db):
     # 现有 GET/DELETE /sessions 路由依赖 app.state.agent；本次 Task 不测试它们。
     test_app.state.agent = None
     test_app.middleware("http")(auth_middleware)
-    test_app.add_exception_handler(ClawException, claw_exception_handler)
+    test_app.add_exception_handler(YunheException, yunhe_exception_handler)
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(session_router, prefix="/api/v1/sessions")
     return test_app

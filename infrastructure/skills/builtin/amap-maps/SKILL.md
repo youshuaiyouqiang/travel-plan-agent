@@ -46,7 +46,7 @@ node scripts/travel-planner.js --city=北京 --interests=景点,美食,酒店
 
 ## 场景六：热力图
 
-http://a.amap.com/jsapi_demo_show/static/openclaw/heatmap.html?mapStyle=grey&dataUrl={编码后数据地址}
+http://a.amap.com/jsapi_demo_show/static/openyunhe/heatmap.html?mapStyle=grey&dataUrl={编码后数据地址}
 
 ## 预置脚本
 

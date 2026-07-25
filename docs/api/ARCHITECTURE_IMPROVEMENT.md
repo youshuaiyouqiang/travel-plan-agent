@@ -87,7 +87,7 @@
 | ISS-09 | 🟡 P2 | CI 无前端构建/类型检查/lint | §8 |
 | ISS-10 | 🟡 P2 | 无 Dockerfile / docker-compose，无法容器化部署 | §9 |
 | ISS-11 | 🟡 P2 | 无 Python 多版本矩阵测试 | §8 |
-| ISS-12 | 🟢 P3 | `pyproject.toml` name=`claw` 与项目名"云合"不一致 | §10 |
+| ISS-12 | 🟢 P3 | `pyproject.toml` name=`yunhe` 与项目名"云合"不一致 | §10 |
 | ISS-13 | 🟢 P3 | AGENTS.md 引用已删除的 `DEVELOPMENT_SPECIFICATION.md` | §10 |
 | ISS-14 | 🟢 P3 | `infrastructure/external/` 空目录未实现 | §10 |
 | ISS-15 | 🟢 P3 | `domain/shared/` 下 audit/metrics/runtime 职责混杂 | §10 |
@@ -872,7 +872,7 @@ volumes:
 
 | 编号 | 问题 | 处理方式 |
 |------|------|----------|
-| ISS-12 | `pyproject.toml` 中 `name = "claw"` 与项目名"云合"不一致 | 统一为 `yunhe` 或在文档说明 `claw` 为内部代号 |
+| ISS-12 | `pyproject.toml` 中 `name = "yunhe"` 与项目名"云合"不一致 | 统一为 `yunhe` 或在文档说明 `yunhe` 为内部代号 |
 | ISS-13 | `AGENTS.md` 引用 `DEVELOPMENT_SPECIFICATION.md` 作为配套文档，但该文件已被删除（git status: `D docs/DEVELOPMENT_SPECIFICATION.md`） | 更新 AGENTS.md 引用，指向本文档或恢复该文件 |
 | ISS-14 | `infrastructure/external/` 空目录（仅 `__init__.py`），未实现 | 实现或删除占位 |
 | ISS-15 | `domain/shared/` 下 `audit/`、`metrics/`、`runtime/` 职责混杂 | 评估是否需要重组（低优先级） |

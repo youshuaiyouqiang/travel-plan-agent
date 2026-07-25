@@ -5,11 +5,12 @@
  * - 不接受/不发送客户端 ``user_id``：用户身份只能从服务端认证上下文（cookie/Bearer）取得
  * - 请求体仅包含 ``session_id`` 与 ``message``；其他业务字段（如 ``agent_id``）由后端基于会话模式决定
  * - 使用 ``features/auth/client.ts`` 共享 cookie + CSRF 流程，不再向 localStorage 持久化 token
- * - SSE 事件按 ``StreamEvent`` 判别联合解析（chunk/route/error/done/tool_status/need_input/actions/control_returned/status）；
+ * - SSE 事件按 ``StreamEvent`` 判别联合解析（chunk/route/error/done/tool_status/need_input/actions/control_returned/status/evidence）；
  *   解析失败或事件 data 形态不符合契约的行被忽略
  */
 import { AuthClient } from '../auth/client'
-import type { StreamActionsEvent, StreamEvent } from './types'
+import type { StreamActionsEvent, StreamEvidenceEvent, StreamEvent } from './types'
+import type { EvidenceCard, EvidenceCardStatus } from '../news/api'
 
 const API_BASE = '/api/v1'
 
@@ -282,6 +283,42 @@ export async function* sendMessageStream(
             return { type: 'status', data: raw.data }
           }
           return null
+        case 'evidence': {
+          // 结构化 evidence 卡片：后端 news_analysis_locked 会话 SSE 推送。
+          // 必须是 EvidenceCard[]；空数组也合法（表示"无证据"），不视为事件丢失。
+          if (!Array.isArray(raw.data)) return null
+          const validStatuses: EvidenceCardStatus[] = ['verified', 'conflicted']
+          const cards: EvidenceCard[] = []
+          for (const item of raw.data) {
+            if (
+              item &&
+              typeof item === 'object' &&
+              typeof (item as { source_id?: unknown }).source_id === 'string' &&
+              typeof (item as { source_name?: unknown }).source_name === 'string' &&
+              typeof (item as { url?: unknown }).url === 'string' &&
+              typeof (item as { claim?: unknown }).claim === 'string' &&
+              validStatuses.includes((item as { status?: unknown }).status as EvidenceCardStatus)
+            ) {
+              const it = item as {
+                source_id: string
+                source_name: string
+                url: string
+                claim: string
+                status: EvidenceCardStatus
+              }
+              cards.push({
+                source_id: it.source_id,
+                source_name: it.source_name,
+                url: it.url,
+                claim: it.claim,
+                status: it.status,
+              })
+            }
+            // 形态不合法单条直接丢弃；不抛错，保持其他合法卡片可用
+          }
+          const out: StreamEvidenceEvent = { type: 'evidence', data: cards }
+          return out
+        }
         default:
           return null
       }

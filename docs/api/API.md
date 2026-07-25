@@ -55,8 +55,8 @@ cd frontend && npm run dev
 ```typescript
 // 登录成功后
 const { token, user_id, username } = await login(username, password);
-localStorage.setItem('claw_token', token);
-localStorage.setItem('claw_user_id', user_id);
+localStorage.setItem('yunhe_token', token);
+localStorage.setItem('yunhe_user_id', user_id);
 ```
 
 ### Token 使用
@@ -66,7 +66,7 @@ localStorage.setItem('claw_user_id', user_id);
 ```typescript
 // 方式一：axios 全局拦截器（推荐）
 axios.interceptors.request.use(config => {
-  const token = localStorage.getItem('claw_token');
+  const token = localStorage.getItem('yunhe_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -76,7 +76,7 @@ axios.interceptors.request.use(config => {
 // 方式二：fetch 手动携带
 fetch('/api/sessions', {
   headers: {
-    'Authorization': `Bearer ${localStorage.getItem('claw_token')}`,
+    'Authorization': `Bearer ${localStorage.getItem('yunhe_token')}`,
     'Content-Type': 'application/json',
   },
 });
@@ -91,7 +91,7 @@ axios.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('claw_token');
+      localStorage.removeItem('yunhe_token');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -309,7 +309,7 @@ async function chatStream(
   onDone?: () => void,                       // 完成回调
   onError?: (error: string) => void,         // 出错回调
 ): Promise<string> {
-  const token = localStorage.getItem('claw_token');
+  const token = localStorage.getItem('yunhe_token');
   let fullReply = '';
 
   const response = await fetch('/api/chat/stream', {
@@ -1851,7 +1851,7 @@ async function apiCall<T>(fn: () => Promise<AxiosResponse<T>>): Promise<T> {
       switch (status) {
         case 401:
           // Token 过期 → 跳转登录
-          localStorage.removeItem('claw_token');
+          localStorage.removeItem('yunhe_token');
           window.location.href = '/login';
           break;
         case 429:

@@ -10,7 +10,8 @@ import { useAuthStore } from '../hooks/useAuthStore'
 import { useSessionStore } from '../hooks/useSessionStore'
 import { sendMessageStream, createSession, listSessions, getSessionMessages } from '../features/chat/api'
 import { fetchAgents, type AgentInfo } from '../utils/api'
-import { getHotspots, createAnalysisSession, type HotspotItem } from '../features/news/api'
+import { createAnalysisSession, getHotspots, type HotspotItem } from '../features/news/api'
+import { triggerNewsAnalysis } from '../features/news/analysis'
 import { Sparkles, Flame } from 'lucide-react'
 
 export function Home() {
@@ -151,24 +152,31 @@ export function Home() {
     }
   }
 
-  // 点击"AI 深度研判"：创建 news_analysis_locked 会话并切换到该会话。
-  // 业务红线：不向会话传递新闻全文；锚点信息由后端 session.news_id 关联。
+  // 点击"AI 深度研判"：创建 news_analysis_locked 会话，并自动驱动新闻 Agent
+  // 基于锚点做一次深度研判。用户期望"点了就要看到分析"，因此创建会话后立即
+  // 以默认研判问题调用 handleSend，触发后端 news agent 启动。
+  // 业务红线：仅发送研判指令文本，不向会话或请求注入新闻全文；锚点由后端
+  // chat 端点按 session.news_id 自动注入到 user message 前面。
+  // 核心流程（createSession → switchSession → sendAnalysisPrompt）由
+  // features/news/analysis.ts 的 triggerNewsAnalysis 封装，便于单测。
   const handleAnalyzeHotspot = async (item: HotspotItem) => {
     if (analyzing) return
     setAnalyzing(true)
     setAnalyzeError(null)
     try {
-      const result = await createAnalysisSession(item.id)
-      // 切换到新建的锁定会话；不自动发送消息，由用户输入具体问题
-      await handleSessionChange(result.session_id)
+      const { session } = await triggerNewsAnalysis(item, {
+        createSession: createAnalysisSession,
+        sendAnalysisPrompt: handleSend,
+        switchSession: handleSessionChange,
+      })
       // handleSessionChange 会清空展示态 activeAgent，这里再写回锁定 Agent，
       // 让 header 与后续对话反映 news_analysis_locked 状态。
       useSessionStore.getState().applySessionRecord({
-        mode: result.mode,
-        locked_agent_id: result.locked_agent_id,
-        news_id: result.news_id,
+        mode: session.mode,
+        locked_agent_id: session.locked_agent_id,
+        news_id: session.news_id,
       })
-      setActiveAgent(result.locked_agent_id)
+      setActiveAgent(session.locked_agent_id)
       // 触发会话列表刷新，让侧边栏看到新会话
       setSessionListRefresh((n) => n + 1)
     } catch (e) {
@@ -267,6 +275,12 @@ export function Home() {
           case 'actions':
             // 智能体操作建议 — 更新操作卡片
             setAgentActions(event.data)
+            break
+          case 'evidence':
+            // 结构化 evidence 卡片：来自后端 news_analysis_locked 会话的 SSE 事件，
+            // 在 agent 文本前推送。把卡片挂到当前 streaming 的 assistant 消息上，
+            // 由 ChatWindow 在气泡下方用 EvidenceCards 组件渲染。
+            useChatStore.getState().attachEvidenceCards(event.data)
             break
           case 'need_input':
             // DynamicAgent 追问：把问题作为一条 assistant 消息追加显示。

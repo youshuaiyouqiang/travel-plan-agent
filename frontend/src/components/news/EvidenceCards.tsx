@@ -5,8 +5,13 @@
  * - 只渲染 verified / conflicted 的 EvidenceCard；正式事实结论仅由 enabled 来源支撑。
  * - unverified_leads 不得作为证据卡片呈现，也不得在此区域显示其 claim/source_name。
  * - conflicted 必须可见标识，便于用户识别分歧。
+ * - 每张卡片右上角可显示两个跳转按钮：
+ *   1. 原文 URL（ExternalLink）；已有来源 URL 时显示
+ *   2. 人工审核详情（ShieldCheck）：当 ``source_id`` 非空时显示，点击跳转到
+ *      ``/admin/news?source={source_id}`` 让用户查看该来源的人工审核记录与审计链
  */
-import { CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, ExternalLink, ShieldCheck } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import type { EvidenceCard, UnverifiedLead } from '../../features/news/api'
 
 interface Props {
@@ -18,6 +23,8 @@ interface Props {
 }
 
 export function EvidenceCards({ cards, unverifiedLeads = [], showLeadCount = false }: Props) {
+  const navigate = useNavigate()
+
   if (cards.length === 0 && (!showLeadCount || unverifiedLeads.length === 0)) {
     return null
   }
@@ -28,7 +35,7 @@ export function EvidenceCards({ cards, unverifiedLeads = [], showLeadCount = fal
         const isConflicted = card.status === 'conflicted'
         return (
           <article
-            key={`${card.source_name}-${idx}`}
+            key={`${card.source_id || card.source_name}-${idx}`}
             role="article"
             className={
               'rounded-lg border px-3 py-2 text-xs ' +
@@ -54,17 +61,32 @@ export function EvidenceCards({ cards, unverifiedLeads = [], showLeadCount = fal
                   </span>
                 )}
               </span>
-              {card.url && (
-                <a
-                  href={card.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-0.5 text-slate-400 hover:text-indigo-600"
-                  aria-label="查看来源"
-                >
-                  <ExternalLink size={11} />
-                </a>
-              )}
+              <span className="flex items-center gap-1">
+                {card.source_id && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/admin/news?source=${encodeURIComponent(card.source_id)}`)}
+                    className="inline-flex items-center gap-0.5 text-slate-400 hover:text-indigo-600"
+                    aria-label="查看来源人工审核"
+                    title="查看该来源的人工审核详情"
+                  >
+                    <ShieldCheck size={11} />
+                    <span className="text-[10px]">审核</span>
+                  </button>
+                )}
+                {card.url && (
+                  <a
+                    href={card.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-slate-400 hover:text-indigo-600"
+                    aria-label="查看来源"
+                    title="打开原文"
+                  >
+                    <ExternalLink size={11} />
+                  </a>
+                )}
+              </span>
             </div>
             <p className="mt-1 text-slate-600">{card.claim}</p>
           </article>

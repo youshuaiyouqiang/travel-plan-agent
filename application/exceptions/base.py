@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-class ClawException(Exception):
+class YunheException(Exception):
     """业务异常基类"""
 
     def __init__(

@@ -10,6 +10,21 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { sendMessageStream } from './api'
 import type { StreamEvent } from './types'
 
+/** 用 ReadableStream 构造一个 SSE Response：比 new Response(string) 更稳。 */
+function makeSSEResponse(body: string): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(body))
+      controller.close()
+    },
+  })
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  })
+}
+
 describe('chat api', () => {
   let originalFetch: typeof globalThis.fetch
   let fetchMock: ReturnType<typeof vi.fn>
@@ -70,6 +85,52 @@ describe('chat api', () => {
       { type: 'route', data: { agent_id: 'news', delegated: true } },
       { type: 'done', data: { handled_by: 'news', next_controller: 'locked_agent' } },
     ])
+  })
+
+  it('parses the evidence SSE event with structured cards', async () => {
+    const evidencePayload = [
+      { source_id: 'src-a', source_name: 'A', url: 'https://a/x', claim: 'claim-1', status: 'verified' },
+      { source_id: 'src-b', source_name: 'B', url: 'https://b/x', claim: 'claim-2', status: 'conflicted' },
+    ]
+    const sseBody =
+      'data: ' +
+      JSON.stringify({ type: 'evidence', data: evidencePayload }) +
+      '\n\n' +
+      'data: {"type":"chunk","data":"result"}\n\n' +
+      'data: {"type":"done","data":{"handled_by":"news","next_controller":"locked_agent"}}\n\n'
+    fetchMock.mockResolvedValueOnce(makeSSEResponse(sseBody))
+
+    const events: StreamEvent[] = []
+    for await (const event of sendMessageStream({ session_id: 's1', message: 'analyze' })) {
+      events.push(event)
+    }
+
+    const evidence = events.find((e) => e.type === 'evidence')
+    expect(evidence).toBeDefined()
+    if (evidence && evidence.type === 'evidence') {
+      expect(evidence.data).toHaveLength(2)
+      expect(evidence.data[0].source_id).toBe('src-a')
+      expect(evidence.data[0].status).toBe('verified')
+      expect(evidence.data[1].status).toBe('conflicted')
+    }
+  })
+
+  it('parses an empty evidence event (无证据) as type=evidence with [] data', async () => {
+    const sseBody =
+      'data: {"type":"evidence","data":[]}\n\n' +
+      'data: {"type":"done","data":{"handled_by":"news","next_controller":"locked_agent"}}\n\n'
+    fetchMock.mockResolvedValueOnce(makeSSEResponse(sseBody))
+
+    const events: StreamEvent[] = []
+    for await (const event of sendMessageStream({ session_id: 's1', message: 'analyze' })) {
+      events.push(event)
+    }
+
+    const evidence = events.find((e) => e.type === 'evidence')
+    expect(evidence).toBeDefined()
+    if (evidence && evidence.type === 'evidence') {
+      expect(evidence.data).toEqual([])
+    }
   })
 
   it('throws AUTH_EXPIRED on 401 responses', async () => {

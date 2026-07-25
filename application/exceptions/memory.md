@@ -4,7 +4,7 @@
 统一业务异常体系：所有异常携带业务码 + HTTP 状态码，由 api/middleware/error_handler.py 统一转为结构化 JSON 响应。
 
 ## 关键文件
-- `base.py`：`ClawException` 基类（code / message / http_status / details）。
+- `base.py`：`YunheException` 基类（code / message / http_status / details）。
 - `auth.py`：认证/授权异常（401/403）。
 - `not_found.py`：资源未找到（404）。
 - `validation.py`：参数校验失败（400）。

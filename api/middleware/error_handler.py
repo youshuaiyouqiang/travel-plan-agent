@@ -5,13 +5,13 @@ import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 logger = logging.getLogger(__name__)
 
 
-async def claw_exception_handler(request: Request, exc: ClawException) -> JSONResponse:
-    """Handle all ClawException subclasses."""
+async def yunhe_exception_handler(request: Request, exc: YunheException) -> JSONResponse:
+    """Handle all YunheException subclasses."""
     return JSONResponse(
         status_code=exc.http_status,
         content={

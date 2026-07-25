@@ -12,7 +12,7 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CLAW_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="YUNHE_", extra="ignore")
 
     # ===== 项目根目录 =====
     project_root: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[1])
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # ===== 数据目录 =====
     data_dir: Path = Field(default_factory=lambda: Settings._root() / "data")
-    database_path: Path = Field(default_factory=lambda: Settings._root() / "data" / "claw.db")
+    database_path: Path = Field(default_factory=lambda: Settings._root() / "data" / "yunhe.db")
 
     # ===== 日志 =====
     log_level: str = "DEBUG"
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
 
     # ===== 运行环境 =====
     # ``production`` 启用 fail-fast 行为；``development`` 允许宽松降级。
-    # 由 ``CLAW_ENVIRONMENT`` 环境变量控制；默认 ``development``。
+    # 由 ``YUNHE_ENVIRONMENT`` 环境变量控制；默认 ``development``。
     environment: str = "development"
 
     @staticmethod

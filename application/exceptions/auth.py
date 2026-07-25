@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 
-class UnauthorizedException(ClawException):
+class UnauthorizedException(YunheException):
     """未登录或登录已过期异常"""
 
     def __init__(self, message: str = "未登录或登录已过期"):
         super().__init__(code=401001, message=message, http_status=401)
 
 
-class ForbiddenException(ClawException):
+class ForbiddenException(YunheException):
     """权限不足异常"""
 
     def __init__(self, message: str = "权限不足"):

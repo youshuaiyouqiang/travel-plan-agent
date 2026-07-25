@@ -1,10 +1,10 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Bot, Brain, LogOut, Sparkles, Wrench, Plug, Star } from 'lucide-react'
+import { Bot, Brain, LogOut, Sparkles, Wrench, Plug, Star, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
 
 /**
  * 左侧导航栏 — 通用智能体框架的主导航。
- * 模块入口：Agent 中心、Skill 中心、MCP 中心、记忆、退出登录。
+ * 模块入口：Agent 中心、Skill 中心、MCP 中心、记忆、新闻来源审核、我的收藏、退出登录。
  */
 export function NavSidebar() {
   const navigate = useNavigate()
@@ -16,6 +16,7 @@ export function NavSidebar() {
   const isMemories = location.pathname.startsWith('/memories')
   const isSkills = location.pathname.startsWith('/skills')
   const isMcps = location.pathname.startsWith('/mcps')
+  const isAdminNews = location.pathname.startsWith('/admin/news')
 
   return (
     <div className="w-56 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
@@ -77,6 +78,17 @@ export function NavSidebar() {
         >
           <Brain size={18} className="flex-shrink-0" />
           记忆
+        </button>
+        <button
+          onClick={() => navigate('/admin/news')}
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            isAdminNews
+              ? 'bg-amber-50 text-amber-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <ShieldCheck size={18} className="flex-shrink-0" />
+          新闻来源审核
         </button>
         <button
           onClick={() => navigate('/favorites')}

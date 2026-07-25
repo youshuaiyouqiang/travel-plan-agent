@@ -5,6 +5,7 @@ import { User, AlertTriangle, MapPin, Sparkles, ThumbsUp, Loader2, Check } from 
 import { AgentActivationBanner } from './AgentActivationBanner'
 import { AgentActionCard } from './AgentActionCard'
 import { TrendingBar } from './TrendingBar'
+import { EvidenceCards } from './news/EvidenceCards'
 
 import type { AgentInfo } from '../utils/api'
 
@@ -125,6 +126,11 @@ export function ChatWindow({ messages, isLoading, isEscalated, thinkingSteps, on
               <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
                 <AlertTriangle size={12} />
                 已转接旅行顾问
+              </div>
+            )}
+            {msg.role === 'assistant' && msg.evidenceCards && (
+              <div className="mt-3 max-w-[85%]">
+                <EvidenceCards cards={msg.evidenceCards} />
               </div>
             )}
             {msg.role === 'assistant' && !msg.isStreaming && (() => {

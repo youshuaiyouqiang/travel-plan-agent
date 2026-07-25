@@ -24,8 +24,10 @@ def _make_source(
         domain=domain,
         tier="t1",
         status=status,  # type: ignore[arg-type]
+        scoring_mode="ai_candidate",
         ai_score=None,
         ai_reason="",
+        ai_subscores="{}",
         created_at="",
         updated_at="",
     )

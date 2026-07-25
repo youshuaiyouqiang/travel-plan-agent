@@ -100,7 +100,7 @@ class UserStore:
     def get_by_username(self, username: str) -> User | None:
         """按 username 查找用户；找不到返回 None。
 
-        供启动期解析 ``CLAW_ADMIN_USERNAME`` → ``user_id`` 使用。
+        供启动期解析 ``YUNHE_ADMIN_USERNAME`` → ``user_id`` 使用。
         """
         self._load_to_cache()
         user_id = self._username_index.get(username)

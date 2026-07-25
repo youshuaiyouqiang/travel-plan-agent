@@ -24,9 +24,9 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from api.middleware.auth import auth_middleware
-from api.middleware.error_handler import claw_exception_handler, unhandled_exception_handler
+from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from api.v1.auth import router as auth_router
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 from domain.user.auth.auth import UserStore
 from domain.user.auth.token import (
     generate_token,
@@ -68,7 +68,7 @@ async def app(db):
     test_app = FastAPI()
     test_app.state.agent = None
     test_app.middleware("http")(auth_middleware)
-    test_app.add_exception_handler(ClawException, claw_exception_handler)
+    test_app.add_exception_handler(YunheException, yunhe_exception_handler)
     test_app.add_exception_handler(Exception, unhandled_exception_handler)
     test_app.include_router(auth_router, prefix="/api/v1/auth")
     return test_app

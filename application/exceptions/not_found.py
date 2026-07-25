@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 
-class NotFoundException(ClawException):
+class NotFoundException(YunheException):
     """资源未找到异常"""
 
     def __init__(self, resource: str, resource_id: str | int):

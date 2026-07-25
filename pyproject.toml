@@ -1,5 +1,5 @@
 [project]
-name = "claw"
+name = "yunhe"
 version = "0.1.0"
 description = "通用智能体平台 — 通用调度 + 领域 Agent + Skill + MCP"
 readme = "README.md"

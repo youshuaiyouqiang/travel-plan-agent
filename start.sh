@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claw 项目一键启动脚本（Bash 版，适用于 Git Bash / WSL / macOS）
+# Yunhe 项目一键启动脚本（Bash 版，适用于 Git Bash / WSL / macOS）
 # 启动后端 FastAPI（http://localhost:8000）和前端 Vite（http://localhost:5173）。
 # 首次运行自动安装 Python 与前端依赖。Ctrl+C 退出时自动清理子进程。
 set -euo pipefail

@@ -22,7 +22,7 @@ _SEARCH_HEADERS = {
 
 
 def _missing_dependency_message(package: str) -> str:
-    return f"missing dependency: {package}. Install it with `pip install {package}` and restart Claw."
+    return f"missing dependency: {package}. Install it with `pip install {package}` and restart Yunhe."
 
 
 def _normalize_max_results(value: Any, default: int = 5) -> int:
@@ -291,7 +291,7 @@ async def _run_news_search(arguments: dict) -> dict:
 
 _ARXIV_API_URL = "https://export.arxiv.org/api/query"
 _ARXIV_S2_URL = "https://api.semanticscholar.org/graph/v1/paper"
-_ARXIV_HEADERS = {"User-Agent": "claw7-research/1.0 (arxiv-mcp-adapter; github.com/user/claw7)"}
+_ARXIV_HEADERS = {"User-Agent": "yunhe-research/1.0 (arxiv-mcp-adapter; github.com/user/yunhe)"}
 _ARXIV_NS = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
 _S2_FIELDS = (
     "title,year,authors,externalIds,"

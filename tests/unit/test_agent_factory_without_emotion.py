@@ -2,7 +2,7 @@
 
 覆盖范围：
 - ``domain/user/emotion/`` 目录必须删除
-- 关键模块不得再 import ``domain.user.emotion`` 或读取 ``CLAW_EMOTION_`` 配置
+- 关键模块不得再 import ``domain.user.emotion`` 或读取 ``YUNHE_EMOTION_`` 配置
 - ``Agent`` 构造器不得再接收 ``emotion_detector`` 参数
 - ``ContextPreparer`` 与 ``ChatPreparation`` 不得再保留 emotion 字段
 - 审计日志、Prometheus 指标不得保留 emotion 相关方法或收集器
@@ -51,7 +51,7 @@ def test_no_emotion_references_in_key_modules(rel_path: str):
     assert "domain.user.emotion" not in text, f"{rel_path} 仍引用 domain.user.emotion"
     assert "EmotionDetector" not in text, f"{rel_path} 仍引用 EmotionDetector"
     assert "EmotionResult" not in text, f"{rel_path} 仍引用 EmotionResult"
-    assert "CLAW_EMOTION_" not in text, f"{rel_path} 仍包含 CLAW_EMOTION_ 配置前缀"
+    assert "YUNHE_EMOTION_" not in text, f"{rel_path} 仍包含 YUNHE_EMOTION_ 配置前缀"
     assert "emotion_detector" not in text, f"{rel_path} 仍包含 emotion_detector 标识符"
     assert "emotion_result" not in text, f"{rel_path} 仍包含 emotion_result 标识符"
     assert "emotion_history" not in text, f"{rel_path} 仍包含 emotion_history 标识符"

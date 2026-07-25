@@ -96,6 +96,7 @@ class NewsAnalysisService:
 
         cards = [
             EvidenceCard(
+                source_id=ev.source_id,
                 source_name=ev.source_name,
                 url=ev.url,
                 claim=ev.claim,

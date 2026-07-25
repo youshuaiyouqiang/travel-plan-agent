@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Claw 项目一键启动脚本（Windows PowerShell 版）
+    Yunhe 项目一键启动脚本（Windows PowerShell 版）
 .DESCRIPTION
     启动后端 FastAPI（uvicorn，http://localhost:8000）和前端 Vite Dev Server（http://localhost:5173）。
     首次运行会自动安装 Python 依赖和前端 node_modules。

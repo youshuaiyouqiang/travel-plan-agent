@@ -2,7 +2,7 @@
 
 # 默认目标
 help: ## 显示所有可用命令
-	@echo "Claw 通用智能体平台 — 开发命令"
+	@echo "Yunhe 通用智能体平台 — 开发命令"
 	@echo ""
 	@echo "  make install    安装后端依赖（含 dev 工具）"
 	@echo "  make dev        安装后端 + 前端依赖"

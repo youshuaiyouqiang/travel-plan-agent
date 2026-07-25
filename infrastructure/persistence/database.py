@@ -857,6 +857,184 @@ def _downgrade_18(conn: Any) -> None:
     logger.warning("Migration 18 downgrade: restored custom_agents with original (broken) FK")
 
 
+def _upgrade_19(conn: Any) -> None:
+    """新闻来源治理：分离内置白名单与 AI 评分候选。
+
+    业务背景：当前 ``news_sources.ai_score/ai_reason`` 被双重使用——
+    既承载 AI 评分候选，也被内置白名单占用为伪 AI 评分（``ai_score=0.9`` +
+    ``ai_reason="内置默认热搜来源"``），语义错位；且 4 条占位审计行
+    （``reason="初始化内置来源"``）没有承载真实审核信息。
+
+    变更：
+    1. 给 ``news_sources`` 加 ``scoring_mode`` 和 ``ai_subscores`` 两列（幂等）。
+    2. 把内置 4 条域名升级为 ``scoring_mode=builtin_whitelist``：
+       ``ai_score=NULL``、``ai_reason='产品内置白名单'``、tier 改为
+       ``mainstream`` / ``aggregator``。
+    3. 删除 ``news_source_audits`` 里 ``reason='初始化内置来源'`` 的占位行。
+    4. 新建 ``news_source_inits`` 表，承载"系统初始化事件"，替代占位审计。
+    """
+    # 1) ALTER TABLE 幂等添加新列
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(news_sources)").fetchall()}
+    if "scoring_mode" not in cols:
+        conn.execute(
+            "ALTER TABLE news_sources ADD COLUMN scoring_mode TEXT "
+            "NOT NULL DEFAULT 'ai_candidate'"
+        )
+        logger.info("Migration 19: added news_sources.scoring_mode")
+    if "ai_subscores" not in cols:
+        conn.execute(
+            "ALTER TABLE news_sources ADD COLUMN ai_subscores TEXT "
+            "NOT NULL DEFAULT '{}'"
+        )
+        logger.info("Migration 19: added news_sources.ai_subscores")
+
+    # 2) 迁移 4 条内置来源
+    cur = conn.execute(
+        "SELECT COUNT(*) AS n FROM news_sources "
+        "WHERE domain IN ('zhihu.com','weibo.com','www.toutiao.com','top.baidu.com')"
+    )
+    builtin_count = cur.fetchone()["n"]
+    if builtin_count > 0:
+        conn.execute(
+            "UPDATE news_sources "
+            "SET scoring_mode='builtin_whitelist', "
+            "    ai_score=NULL, "
+            "    ai_reason='产品内置白名单', "
+            "    ai_subscores='{}', "
+            "    tier=CASE domain "
+            "        WHEN 'top.baidu.com' THEN 'aggregator' "
+            "        ELSE 'mainstream' END, "
+            "    updated_at=strftime('%Y-%m-%dT%H:%M:%f+00:00','now') "
+            "WHERE domain IN ('zhihu.com','weibo.com','www.toutiao.com','top.baidu.com')"
+        )
+        logger.info(
+            "Migration 19: upgraded %d built-in sources to scoring_mode=builtin_whitelist",
+            builtin_count,
+        )
+
+    # 3) 清理占位审计行
+    cur = conn.execute(
+        "SELECT COUNT(*) AS n FROM news_source_audits WHERE reason='初始化内置来源'"
+    )
+    placeholder_audits = cur.fetchone()["n"]
+    if placeholder_audits > 0:
+        conn.execute("DELETE FROM news_source_audits WHERE reason='初始化内置来源'")
+        logger.info(
+            "Migration 19: deleted %d placeholder audit rows with reason='初始化内置来源'",
+            placeholder_audits,
+        )
+
+    # 4) 新建 news_source_inits 表
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS news_source_inits (
+            id           TEXT PRIMARY KEY,
+            source_id    TEXT NOT NULL,
+            tier         TEXT NOT NULL,
+            scoring_mode TEXT NOT NULL,
+            init_at      TEXT NOT NULL,
+            init_reason  TEXT NOT NULL DEFAULT '',
+            FOREIGN KEY (source_id) REFERENCES news_sources(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_news_source_inits_source "
+        "ON news_source_inits(source_id)"
+    )
+    conn.commit()
+    logger.info("Migration 19: ensured news_source_inits table + news_sources scoring_mode columns")
+
+
+def _downgrade_19(conn: Any) -> None:
+    """回滚迁移 19 — 仅删除 ``news_source_inits`` 表。
+
+    注意：``news_sources`` 上新增的 ``scoring_mode`` / ``ai_subscores`` 列
+    无法在 SQLite <3.35 中 DROP。回滚后这两列会保留为无业务语义的状态。
+    业务上不应回滚；占位审计行已删除也无法恢复。
+    """
+    conn.execute("DROP TABLE IF EXISTS news_source_inits")
+    conn.commit()
+    logger.warning(
+        "Migration 19 downgrade: dropped news_source_inits. "
+        "scoring_mode/ai_subscores columns remain on news_sources."
+    )
+
+
+def _upgrade_20(conn: Any) -> None:
+    """新闻来源治理：清理 migration 19 漏掉的脏数据。
+
+    业务背景：migration 19 把 ``domain IN
+    ('zhihu.com','weibo.com','www.toutiao.com','top.baidu.com')`` 的
+    4 条内置来源升级为 ``scoring_mode=builtin_whitelist``，但遗漏了：
+
+    1. ``www.zhihu.com``：旧版种子用 ``www.`` 前缀创建的脏行（功能上与
+       ``zhihu.com`` 重复），仍保留着 ``ai_score=0.9``、
+       ``ai_reason='内置默认热搜来源'``、``tier=unknown`` 等旧占位值。
+    2. 任何 ``ai_reason='内置默认热搜来源'`` 且 ``ai_score IS NOT NULL``
+       的行：这种组合只能是旧版占位数据，因为内置白名单现在固定是
+       ``ai_reason='产品内置白名单'`` + ``ai_score=NULL``。这一条是兜底，
+       任何未来出现的同类脏行都会被扫到。
+
+    行为：直接 DELETE 这两类行；不动真实 AI 候选（``ai_reason`` 不匹配）
+    和真实内置白名单（``ai_reason='产品内置白名单'``）。删除前记录日志
+    便于运维追溯。
+    """
+    # 1) 精准清理 www.zhihu.com（zhihu.com 的 www. 重复行）
+    www_rows = conn.execute(
+        "SELECT id, domain, ai_score, ai_reason FROM news_sources "
+        "WHERE domain = 'www.zhihu.com'"
+    ).fetchall()
+    for row in www_rows:
+        logger.warning(
+            "Migration 20: deleting duplicate www.zhihu.com source row "
+            "id=%s ai_score=%s ai_reason=%r",
+            row["id"],
+            row["ai_score"],
+            row["ai_reason"],
+        )
+    if www_rows:
+        conn.execute("DELETE FROM news_sources WHERE domain = 'www.zhihu.com'")
+
+    # 2) 防御性清理：旧版占位文案 + 非 NULL ai_score 的组合
+    legacy_rows = conn.execute(
+        "SELECT id, domain, ai_score, ai_reason FROM news_sources "
+        "WHERE ai_reason = '内置默认热搜来源' AND ai_score IS NOT NULL "
+        "AND domain != 'www.zhihu.com'"  # 第一步已删
+    ).fetchall()
+    for row in legacy_rows:
+        logger.warning(
+            "Migration 20: deleting legacy placeholder source row "
+            "id=%s domain=%s ai_score=%s",
+            row["id"],
+            row["domain"],
+            row["ai_score"],
+        )
+    if legacy_rows:
+        conn.execute(
+            "DELETE FROM news_sources "
+            "WHERE ai_reason = '内置默认热搜来源' AND ai_score IS NOT NULL"
+        )
+
+    conn.commit()
+    logger.info(
+        "Migration 20: cleaned %d www.zhihu.com rows and %d legacy placeholder rows",
+        len(www_rows),
+        len(legacy_rows),
+    )
+
+
+def _downgrade_20(conn: Any) -> None:
+    """回滚迁移 20 — 数据删除单向不可逆。
+
+    业务上不应回滚；如需恢复，只能从备份还原 ``news_sources`` 表。
+    """
+    logger.warning(
+        "Migration 20 downgrade: no-op. Deleted dirty source rows cannot be "
+        "recovered without a database backup."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
@@ -969,6 +1147,18 @@ _MIGRATIONS: list[dict[str, Any]] = [
         "description": "Fix custom_agents FK to reference users(user_id)",
         "upgrade": _upgrade_18,
         "downgrade": _downgrade_18,
+    },
+    {
+        "version": 19,
+        "description": "News source governance: separate builtin_whitelist vs ai_candidate; cleanup placeholder audits",
+        "upgrade": _upgrade_19,
+        "downgrade": _downgrade_19,
+    },
+    {
+        "version": 20,
+        "description": "News source governance: cleanup www.zhihu.com + legacy placeholder rows missed by migration 19",
+        "upgrade": _upgrade_20,
+        "downgrade": _downgrade_20,
     },
 ]
 

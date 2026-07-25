@@ -196,7 +196,7 @@ SQLite 已启用 WAL 和外键，这是正向基础；也有版本迁移表。�
 
 ### 5.4 异常体系有基础但没有边界纪律
 
-自定义 `ClawException` 和明确 HTTP 状态码是正确基础。但业务层和基础设施层约有 93 处 `except Exception`；部分路由把原始异常文字包装到 `InternalException` 或 SSE 事件中。错误 handler 期待 `request.state.trace_id`，但没有全局请求 trace middleware，因此多数普通请求的 trace ID 为 `None`。
+自定义 `YunheException` 和明确 HTTP 状态码是正确基础。但业务层和基础设施层约有 93 处 `except Exception`；部分路由把原始异常文字包装到 `InternalException` 或 SSE 事件中。错误 handler 期待 `request.state.trace_id`，但没有全局请求 trace middleware，因此多数普通请求的 trace ID 为 `None`。
 
 目标应是：边界层只负责映射异常；应用服务定义业务错误；适配器捕获已知外部错误并保留 cause；未知错误统一记录、安全响应、关联 trace ID。
 

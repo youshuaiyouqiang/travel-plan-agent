@@ -12,6 +12,8 @@
  *   （``delegated=false`` 且 ``agent_id=null`` 即等价于旧 ``control_returned``）
  */
 
+import type { EvidenceCard } from '../news/api'
+
 /** 流式回复中的文本增量；前端按顺序拼接即可。 */
 export interface StreamChunkEvent {
   type: 'chunk'
@@ -92,6 +94,22 @@ export interface StreamStatusEvent {
   data: string
 }
 
+/**
+ * 结构化 evidence 卡片事件。
+ *
+ * 由后端 ``/api/v1/chat/stream`` 在 ``news_analysis_locked`` 会话且
+ * :class:`NewsAnalysisService` 已注入时主动推送；data 为
+ * :interface:`EvidenceCard` 数组（含 ``source_id``，可跳转到来源人工审核页）。
+ *
+ * 业务红线：
+ * - 卡片为空数组也表示"无证据"而非事件丢失；前端组件应据此统一渲染占位。
+ * - 仅在新闻研判会话推送，其他模式不会触发该事件。
+ */
+export interface StreamEvidenceEvent {
+  type: 'evidence'
+  data: EvidenceCard[]
+}
+
 /** SSE 事件判别联合 — 涵盖后端当前所有事件类型，data 字段均为强类型。 */
 export type StreamEvent =
   | StreamChunkEvent
@@ -103,3 +121,4 @@ export type StreamEvent =
   | StreamActionsEvent
   | StreamControlReturnedEvent
   | StreamStatusEvent
+  | StreamEvidenceEvent

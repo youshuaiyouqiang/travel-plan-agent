@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 
-class ValidationException(ClawException):
+class ValidationException(YunheException):
     """参数校验失败异常"""
 
     def __init__(self, message: str, details: dict | None = None):

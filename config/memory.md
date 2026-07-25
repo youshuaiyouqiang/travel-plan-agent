@@ -4,7 +4,7 @@
 配置层：应用配置定义与环境变量模板，全局 `Settings` 的唯一来源。
 
 ## 关键文件
-- `settings.py`：基于 pydantic-settings 的 `Settings`——统一读取 `CLAW_` 前缀环境变量；覆盖 LLM、数据目录、日志、审计、Agent 运行参数、安全策略（allow_shell/shell_timeout）、Redis/限流、监控端口、管理员账号、运行环境；派生路径 `builtin_agents_dir`/`skills_dir`/`mcp_servers_dir`；末尾实例化全局 `settings`。
+- `settings.py`：基于 pydantic-settings 的 `Settings`——统一读取 `YUNHE_` 前缀环境变量；覆盖 LLM、数据目录、日志、审计、Agent 运行参数、安全策略（allow_shell/shell_timeout）、Redis/限流、监控端口、管理员账号、运行环境；派生路径 `builtin_agents_dir`/`skills_dir`/`mcp_servers_dir`；末尾实例化全局 `settings`。
 - `.env.example`：开发环境变量模板。
 - `__init__.py`：包占位。
 

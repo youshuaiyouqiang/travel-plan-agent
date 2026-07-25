@@ -5,7 +5,7 @@ HTTP 级横切安全控制：认证（Bearer/Cookie 双模式）、CSRF 双重�
 
 ## 关键文件
 - `auth.py`：`auth_middleware`（公共路径白名单、Bearer token 优先、Cookie + CSRF double-submit 校验）与 `rate_limit_middleware`（基于用户/IP/路径的 RPM 限流，Redis 或内存计数）。
-- `error_handler.py`：`claw_exception_handler`（`ClawException` → 结构化错误体）与 `unhandled_exception_handler`（兜底 500，含 `trace_id`，不向客户端暴露堆栈）。
+- `error_handler.py`：`yunhe_exception_handler`（`YunheException` → 结构化错误体）与 `unhandled_exception_handler`（兜底 500，含 `trace_id`，不向客户端暴露堆栈）。
 - `__init__.py`：包占位。
 
 ## 业务边界要点

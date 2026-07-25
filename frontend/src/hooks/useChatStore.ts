@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SessionInfo } from '../features/chat/api'
+import type { EvidenceCard } from '../features/news/api'
 
 export interface ThinkingStep {
   id: string
@@ -14,6 +15,15 @@ export interface Message {
   status?: string
   timestamp: number
   isStreaming?: boolean
+  /**
+   * 仅新闻研判会话（``news_analysis_locked``）下由后端 SSE ``evidence`` 事件
+   * 注入；非研判会话与未收到事件时为 ``undefined``。空数组表示"无证据"占位，
+   * 与"事件丢失"语义不同。
+   *
+   * 用于在 assistant 消息气泡下方独立渲染结构化 :class:`EvidenceCards` 组件，
+   * 不混入 LLM 文本结论。
+   */
+  evidenceCards?: EvidenceCard[]
 }
 
 interface ChatState {
@@ -28,6 +38,12 @@ interface ChatState {
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void
   appendToLastMessage: (chunk: string) => void
   finishLastMessage: () => void
+  /**
+   * 把 evidence 卡片挂到最近一条 assistant 消息（优先选正在 streaming 的，
+   * 否则取最后一条 assistant 消息）。没有可挂载消息时**新增**一条 assistant
+   * 元消息承载 evidence，避免事件丢失。
+   */
+  attachEvidenceCards: (cards: EvidenceCard[]) => void
   setLoading: (loading: boolean) => void
   setSessionId: (id: string) => void
   setUserId: (id: string) => void
@@ -78,6 +94,34 @@ export const useChatStore = create<ChatState>((set) => ({
           ...last,
           isStreaming: false,
         }
+      }
+      return { messages }
+    }),
+  attachEvidenceCards: (cards: EvidenceCard[]) =>
+    set((state) => {
+      const messages = [...state.messages]
+      // 优先复用最近一条 streaming 的 assistant；否则取最后一条 assistant
+      let targetIdx = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant') {
+          targetIdx = i
+          if (messages[i].isStreaming) break
+        }
+      }
+      if (targetIdx >= 0) {
+        messages[targetIdx] = {
+          ...messages[targetIdx],
+          evidenceCards: cards,
+        }
+      } else {
+        // 无可挂载消息：插入一条 assistant 元消息承载 evidence
+        messages.push({
+          id: generateId(),
+          role: 'assistant',
+          content: '',
+          evidenceCards: cards,
+          timestamp: Date.now(),
+        })
       }
       return { messages }
     }),

@@ -56,7 +56,7 @@
 
 ### P1-2: 生产环境管理员配置不具备 fail-fast 行为
 
-**证据：** `api/server.py:141-153` 在 `CLAW_ADMIN_USERNAME` 缺失或找不到用户时仅记录 warning，仍继续启动并让 `admin_user_id=None`。
+**证据：** `api/server.py:141-153` 在 `YUNHE_ADMIN_USERNAME` 缺失或找不到用户时仅记录 warning，仍继续启动并让 `admin_user_id=None`。
 
 **影响：** 生产环境可没有唯一管理员，新闻来源审核不可用，违背来源治理要求。
 

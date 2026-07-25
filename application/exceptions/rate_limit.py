@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from application.exceptions.base import ClawException
+from application.exceptions.base import YunheException
 
 
-class RateLimitException(ClawException):
+class RateLimitException(YunheException):
     """请求频率限制异常"""
 
     def __init__(self, message: str = "请求过于频繁"):
