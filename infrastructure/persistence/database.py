@@ -98,9 +98,21 @@ def init_db(db_path: str | Path | None = None) -> None:
 
     Args:
         db_path: 数据库文件路径；为 None 时取 ``settings.database_path``。
+
+    Note:
+        P2.1：初始化后自动注册默认 ``SessionRepositoryPort`` 实现，供
+        ``SessionManager`` / ``TaskStateStore`` / ``SessionService`` 在
+        未显式注入 repository 时回退使用。组合根亦可显式注入替代。
     """
     conn = get_connection(db_path)
     conn.executescript(_SCHEMA)
     conn.commit()
     run_upgrade(conn)
+
+    # P2.1：注册默认会话仓储（过渡方案，P3 收敛组合根后可移除全局默认）
+    from domain.user.session.ports import configure_default_session_repository
+    from infrastructure.persistence.repositories.session import SqliteSessionRepository
+
+    configure_default_session_repository(SqliteSessionRepository())
+
     logger.info("Database initialized: %s", db_path or settings.database_path)

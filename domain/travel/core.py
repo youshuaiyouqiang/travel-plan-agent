@@ -383,19 +383,13 @@ class Agent:
     # ===== 会话管理 =====
 
     def list_user_sessions(self, user_id: str) -> list[dict]:
-        from infrastructure.persistence.session_repository import SessionRepository
-
-        return SessionRepository.list_by_user(user_id)
+        return self._session_store.list_user_sessions(user_id)
 
     def delete_session(self, session_id: str, *, user_id: str) -> None:
         task = self._task_store.get(session_id, user_id=user_id)
         if task.user_id != user_id:
             return
-        from infrastructure.persistence.session_repository import SessionRepository
-
-        SessionRepository.delete(session_id)
-        self._session_store._sessions.pop(session_id, None)
-        self._task_store._tasks.pop(session_id, None)
+        self._session_store.delete_session(session_id)
 
     # ===== 向后兼容委托（原私有方法已移至 service 类） =====
 

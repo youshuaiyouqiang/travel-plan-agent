@@ -7,6 +7,10 @@
   抛出 :class:`NotFoundException`，由全局异常处理器转 404，避免泄漏存在性。
 - ``agent_locked`` 必须指定一个 ``locked_agent_id``，且该 Agent 必须在初始化时
   传入的 ``available_agent_ids`` 白名单中。云合自身（``yunhe``）是调度员，不可锁定。
+
+P2.1：原直连 ``get_connection()`` 的 SQL 已下沉到
+``infrastructure.persistence.repositories.session.SqliteSessionRepository``，
+本服务通过 ``SessionRepositoryPort`` 端口访问持久化层。
 """
 
 from __future__ import annotations
@@ -16,15 +20,23 @@ from datetime import datetime
 
 from application.exceptions import NotFoundException, ValidationException
 from application.session.schema import SessionMode, SessionRecord
-from infrastructure.persistence.database import get_connection
+from domain.user.session.ports import (
+    SessionRepositoryPort,
+    get_default_session_repository,
+)
 
 
 class SessionService:
     """会话模式应用服务。"""
 
-    def __init__(self, available_agent_ids: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        available_agent_ids: set[str] | None = None,
+        repository: SessionRepositoryPort | None = None,
+    ) -> None:
         # 默认仅 travel/academic 可被用户锁定；yunhe 是调度员，news 是内部锚点 Agent。
         self._available_agent_ids: set[str] = set(available_agent_ids or {"travel", "academic"})
+        self._repository = repository or get_default_session_repository()
 
     # ------------------------------------------------------------------
     # 创建
@@ -45,20 +57,13 @@ class SessionService:
         """
         self._validate_mode_and_lock(mode, locked_agent_id, news_id)
         session_id = os.urandom(8).hex()
-        now = datetime.utcnow().isoformat()
-        conn = get_connection()
-        conn.execute(
-            "INSERT INTO sessions (session_id, user_id, summary, created_at, updated_at, "
-            "mode, locked_agent_id, news_id) VALUES (?, ?, '', ?, ?, ?, ?, ?)",
-            (session_id, user_id, now, now, mode, locked_agent_id, news_id),
+        self._repository.create_session_row(
+            session_id=session_id,
+            user_id=user_id,
+            mode=mode,
+            locked_agent_id=locked_agent_id,
+            news_id=news_id,
         )
-        # tasks 行是 list_user_sessions 按 user_id 过滤的依据，需同步插入。
-        conn.execute(
-            "INSERT INTO tasks (session_id, user_id, status, goal, created_at, updated_at) "
-            "VALUES (?, ?, 'idle', '', ?, ?)",
-            (session_id, user_id, now, now),
-        )
-        conn.commit()
         return SessionRecord(
             session_id=session_id,
             user_id=user_id,
@@ -99,14 +104,12 @@ class SessionService:
             raise ValidationException("不允许通过用户 API 设置新闻研判锁定")
         self._validate_mode_and_lock(mode, locked_agent_id, None)
         existing = self.require_owned(user_id=user_id, session_id=session_id)
-        now = datetime.utcnow().isoformat()
-        conn = get_connection()
-        conn.execute(
-            "UPDATE sessions SET mode = ?, locked_agent_id = ?, news_id = NULL, updated_at = ? "
-            "WHERE session_id = ?",
-            (mode, locked_agent_id, now, session_id),
+        self._repository.update_session_mode(
+            session_id=session_id,
+            mode=mode,
+            locked_agent_id=locked_agent_id,
+            news_id=None,
         )
-        conn.commit()
         return SessionRecord(
             session_id=existing.session_id,
             user_id=existing.user_id,
@@ -144,13 +147,8 @@ class SessionService:
             raise ValidationException(f"未知的会话模式: {mode}")
 
     def _get(self, session_id: str) -> SessionRecord | None:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT session_id, user_id, mode, locked_agent_id, news_id "
-            "FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if not row:
+        row = self._repository.get_session_record(session_id)
+        if row is None:
             return None
         return SessionRecord(
             session_id=row["session_id"],

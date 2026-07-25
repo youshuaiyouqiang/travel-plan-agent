@@ -108,12 +108,6 @@
     "layer_rule": "application_no_infrastructure"
   },
   {
-    "file": "application/session/service.py",
-    "line": 19,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
     "file": "application/travel/service.py",
     "line": 24,
     "module": "infrastructure.persistence.travel_repository",
@@ -294,18 +288,6 @@
     "layer_rule": "domain_no_infrastructure"
   },
   {
-    "file": "domain/travel/core.py",
-    "line": 386,
-    "module": "infrastructure.persistence.session_repository",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/core.py",
-    "line": 394,
-    "module": "infrastructure.persistence.session_repository",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/travel/intent/travel_classifier.py",
     "line": 14,
     "module": "infrastructure.llm.openai",
@@ -403,18 +385,6 @@
   },
   {
     "file": "domain/user/profile/manager.py",
-    "line": 8,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/session/manager.py",
-    "line": 7,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/session/task_state.py",
     "line": 8,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"

@@ -1,24 +1,14 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
-from infrastructure.persistence.database import get_connection
+from domain.user.session.ports import (
+    SessionRepositoryPort,
+    get_default_session_repository,
+)
 from domain.user.session.task_state import TaskStateStore
-
-
-def json_dumps(obj) -> str:
-    return json.dumps(obj, ensure_ascii=False)
-
-
-def _json_loads_list(text: str | None) -> list:
-    if not text:
-        return []
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return []
 
 
 @dataclass
@@ -57,14 +47,25 @@ class Session:
 
 
 class SessionManager:
+    """会话管理器；通过 ``SessionRepositoryPort`` 访问持久化层。
+
+    P2.1：原直连 ``get_connection()`` 的 SQL 已下沉到
+    ``infrastructure.persistence.repositories.session.SqliteSessionRepository``。
+    本类只负责会话的内存缓存、Redis 同步和业务逻辑编排。
+    """
+
     def __init__(
         self,
         task_store: TaskStateStore | None = None,
         redis_store=None,
+        repository: SessionRepositoryPort | None = None,
     ) -> None:
+        self._repository = repository or get_default_session_repository()
         self._redis_store = redis_store
         self._sessions: dict[str, Session] = {}
-        self._task_store = task_store or TaskStateStore()
+        # 若未显式注入 task_store，则复用同一 repository 构造默认 TaskStateStore，
+        # 保证 session 与 task 共享同一持久化后端。
+        self._task_store = task_store or TaskStateStore(repository=self._repository)
 
     def get(self, session_id: str) -> Session:
         if session_id not in self._sessions:
@@ -77,64 +78,10 @@ class SessionManager:
         return self._sessions[session_id]
 
     def save(self, session: Session, user_id: str = "") -> None:
-        conn = get_connection()
-        now = datetime.utcnow().isoformat()
-        session.updated_at = now
         # 若显式传入 user_id 则覆盖 session.user_id（便于调用方在创建会话时即指定归属）
         if user_id:
             session.user_id = user_id
-        conn.execute(
-            "INSERT INTO sessions (session_id, user_id, summary, created_at, updated_at, "
-            "disclosed_tools, delegation_agent_id, delegation_started_at, "
-            "delegation_last_interaction, mode, locked_agent_id, news_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(session_id) DO UPDATE SET "
-            "user_id=excluded.user_id, "
-            "summary=excluded.summary, updated_at=excluded.updated_at, "
-            "disclosed_tools=excluded.disclosed_tools, "
-            "delegation_agent_id=excluded.delegation_agent_id, "
-            "delegation_started_at=excluded.delegation_started_at, "
-            "delegation_last_interaction=excluded.delegation_last_interaction, "
-            "mode=excluded.mode, "
-            "locked_agent_id=excluded.locked_agent_id, "
-            "news_id=excluded.news_id",
-            (
-                session.session_id,
-                session.user_id,
-                session.summary,
-                session.created_at,
-                session.updated_at,
-                json_dumps(session.disclosed_tools),
-                session.delegation_agent_id,
-                session.delegation_started_at,
-                session.delegation_last_interaction,
-                session.mode,
-                session.locked_agent_id,
-                session.news_id,
-            ),
-        )
-
-        # P1-5：增量插入新 turns（替代全量 DELETE + INSERT）
-        # _last_persisted_turn 由 _load() 在加载时设置，新会话默认 0
-        last_persisted = getattr(session, "_last_persisted_turn", 0)
-        # 安全检查：若内存中 turns 比已持久化的少（被截断），回退到全量重写
-        if last_persisted > len(session.turns):
-            conn.execute("DELETE FROM session_turns WHERE session_id = ?", (session.session_id,))
-            for turn in session.turns:
-                conn.execute(
-                    "INSERT INTO session_turns (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                    (session.session_id, turn.role, turn.content, turn.created_at),
-                )
-        else:
-            # 仅插入尚未持久化的 turns
-            for turn in session.turns[last_persisted:]:
-                conn.execute(
-                    "INSERT INTO session_turns (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                    (session.session_id, turn.role, turn.content, turn.created_at),
-                )
-        session._last_persisted_turn = len(session.turns)
-
-        conn.commit()
+        self._repository.save_session(session)
         if self._redis_store:
             self._redis_store.save(session)
 
@@ -204,88 +151,22 @@ class SessionManager:
         session.delegation_last_interaction = None
         self.save(session)
 
+    # ===== 列表与删除（供 Agent 委派，P2.1 收敛 infra 导入）=====
+
+    def list_user_sessions(self, user_id: str) -> list[dict[str, Any]]:
+        """列出用户的所有会话（按 updated_at 倒序）。"""
+        return self._repository.list_sessions_by_user(user_id)
+
+    def delete_session(self, session_id: str) -> None:
+        """级联删除会话并清理内存缓存。"""
+        self._repository.delete_session(session_id)
+        self._sessions.pop(session_id, None)
+        self._task_store._tasks.pop(session_id, None)
+
+    # ===== 内部辅助 =====
+
     def _load(self, session_id: str) -> Session | None:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT session_id, user_id, summary, created_at, updated_at, "
-            "disclosed_tools, delegation_agent_id, delegation_started_at, "
-            "delegation_last_interaction, mode, locked_agent_id, news_id "
-            "FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if not row:
-            return None
-        turns = []
-        turn_rows = conn.execute(
-            "SELECT role, content, created_at FROM session_turns WHERE session_id = ? ORDER BY id",
-            (session_id,),
-        ).fetchall()
-        for tr in turn_rows:
-            turns.append(Turn(role=tr["role"], content=tr["content"], created_at=tr["created_at"]))
-
-        # 读取 optional 列（try/except 兼容旧数据库无这些列）
-        user_id: str = ""
-        disclosed_tools: list[str] = []
-        delegation_agent_id: str | None = None
-        delegation_started_at: float | None = None
-        delegation_last_interaction: float | None = None
-        mode: str = "yunhe_default"
-        locked_agent_id: str | None = None
-        news_id: str | None = None
-        try:
-            user_id = row["user_id"] if "user_id" in row.keys() else ""
-        except (KeyError, IndexError):
-            pass
-        try:
-            dt_val = row["disclosed_tools"] if "disclosed_tools" in row.keys() else None
-            disclosed_tools = _json_loads_list(dt_val)
-        except (KeyError, IndexError):
-            pass
-        try:
-            delegation_agent_id = row["delegation_agent_id"] if "delegation_agent_id" in row.keys() else None
-        except (KeyError, IndexError):
-            pass
-        try:
-            delegation_started_at = row["delegation_started_at"] if "delegation_started_at" in row.keys() else None
-        except (KeyError, IndexError):
-            pass
-        try:
-            delegation_last_interaction = (
-                row["delegation_last_interaction"] if "delegation_last_interaction" in row.keys() else None
-            )
-        except (KeyError, IndexError):
-            pass
-        try:
-            mode = row["mode"] if "mode" in row.keys() and row["mode"] else "yunhe_default"
-        except (KeyError, IndexError):
-            pass
-        try:
-            locked_agent_id = row["locked_agent_id"] if "locked_agent_id" in row.keys() else None
-        except (KeyError, IndexError):
-            pass
-        try:
-            news_id = row["news_id"] if "news_id" in row.keys() else None
-        except (KeyError, IndexError):
-            pass
-
-        session = Session(
-            session_id=row["session_id"],
-            turns=turns,
-            summary=row["summary"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            disclosed_tools=disclosed_tools,
-            delegation_agent_id=delegation_agent_id,
-            delegation_started_at=delegation_started_at,
-            delegation_last_interaction=delegation_last_interaction,
-            user_id=user_id,
-            mode=mode,
-            locked_agent_id=locked_agent_id,
-            news_id=news_id,
-        )
-        # P1-5：标记已持久化的 turn 数，避免 save() 时重复插入
-        session._last_persisted_turn = len(turns)
-        return session
+        return self._repository.load_session(session_id)
 
 
 SessionStore = SessionManager

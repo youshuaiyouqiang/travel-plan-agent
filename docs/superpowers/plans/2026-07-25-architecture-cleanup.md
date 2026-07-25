@@ -307,3 +307,53 @@ CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降�
 - ✅ 既有迁移测试（`test_news_favorites_migration`、`test_news_migration_19`、`test_news_migration_20` 等）全部通过。
 - ✅ SQL 文本、版本号、`schema_migrations` 数据未变。
 - ✅ 架构基线无新增违规（P1 不触碰 domain/application 层）。
+
+## 10. P2.1 实施记录（2026-07-25）：session + task state 持久化反转
+
+### 10.1 交付物
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `domain/user/session/ports.py` | 新增 | `SessionRepositoryPort` Protocol + 默认仓储装配函数 |
+| `infrastructure/persistence/repositories/__init__.py` | 新增 | 仓储子包 |
+| `infrastructure/persistence/repositories/session.py` | 新增 | `SqliteSessionRepository`：整合 sessions/session_turns/tasks 三表全部 SQL |
+| `domain/user/session/manager.py` | 重写 | 移除 `get_connection` 导入；通过端口委托 save/load；新增 `list_user_sessions`/`delete_session` |
+| `domain/user/session/task_state.py` | 重写 | 移除 infrastructure 导入；通过端口委托 save/load |
+| `application/session/service.py` | 重写 | 移除 `get_connection` 导入；通过端口委托 create/update/get |
+| `domain/travel/core.py` | 修改 | 移除内联 `SessionRepository` 导入；委托 `self._session_store` |
+| `infrastructure/persistence/session_repository.py` | 重写 | 兼容 re-export 层，委托到 `SqliteSessionRepository` |
+| `infrastructure/persistence/database.py` | 修改 | `init_db()` 注册默认 `SessionRepositoryPort` 实现（过渡方案） |
+| `docs/architecture/legacy-import-baseline.json` | 修改 | 删除 5 项 session 相关违规（70 → 65） |
+| `tests/unit/test_session_repository_port.py` | 新增 | 20 个 fake 端口单元测试 |
+
+### 10.2 消除的基线条目（5 项）
+
+| file | line | module | layer_rule |
+|---|---|---|---|
+| `domain/user/session/manager.py` | 7 | `infrastructure.persistence.database` | domain_no_infrastructure |
+| `domain/user/session/task_state.py` | 8 | `infrastructure.persistence.database` | domain_no_infrastructure |
+| `application/session/service.py` | 19 | `infrastructure.persistence.database` | application_no_infrastructure |
+| `domain/travel/core.py` | 386 | `infrastructure.persistence.session_repository` | domain_no_infrastructure |
+| `domain/travel/core.py` | 394 | `infrastructure.persistence.session_repository` | domain_no_infrastructure |
+
+### 10.3 过渡方案
+
+`init_db()` 在初始化数据库后调用 `configure_default_session_repository(SqliteSessionRepository())` 注册全局默认仓储。`SessionManager`/`TaskStateStore`/`SessionService` 在未显式注入时回退到此默认值，保持既有测试的 `SessionManager()`/`SessionService()` 无参构造兼容。P3 收敛组合根后可移除全局默认。
+
+### 10.4 门禁结果
+
+| 门禁 | 结果 |
+|---|---|
+| 架构检查 | ✅ 65 项基线一致（减少 5 项） |
+| ruff | ✅ All checks passed |
+| mypy | ✅ no issues found in 188 source files（+3 新文件） |
+| bandit | ✅ No issues identified（17685 lines） |
+| pytest | ✅ **875 passed, 2 skipped**，覆盖率 **73.75%**（+20 新测试） |
+| 前端 | ✅ lint/check/test/build 全绿 |
+
+### 10.5 P2.1 验收
+
+- ✅ domain 和 application 的 session/task_state 持久化直接导入归零（5 项基线删除）。
+- ✅ domain 单元测试可用 fake 端口运行且不创建 SQLite 文件（20 个新测试）。
+- ✅ 既有集成测试仍覆盖真实 SQLite 行为（test_session/test_task_state/test_session_modes 全绿）。
+- ✅ SQL 文本、参数化方式、增量 turn 逻辑、404 语义完全保留。

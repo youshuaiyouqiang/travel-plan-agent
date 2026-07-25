@@ -5,7 +5,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from infrastructure.persistence.database import get_connection, _json_dumps, _json_loads
+from domain.user.session.ports import (
+    SessionRepositoryPort,
+    get_default_session_repository,
+)
 
 
 class TaskStatus(str, Enum):
@@ -94,7 +97,14 @@ class TaskRecord:
 
 
 class TaskStateStore:
-    def __init__(self) -> None:
+    """任务状态存储；通过 ``SessionRepositoryPort`` 访问持久化层。
+
+    P2.1：原直连 ``get_connection()`` 的 SQL 已下沉到
+    ``infrastructure.persistence.repositories.session.SqliteSessionRepository``。
+    """
+
+    def __init__(self, repository: SessionRepositoryPort | None = None) -> None:
+        self._repository = repository or get_default_session_repository()
         self._tasks: dict[str, TaskRecord] = {}
 
     def get(self, session_id: str, *, user_id: str) -> TaskRecord:
@@ -110,31 +120,7 @@ class TaskStateStore:
         return task
 
     def save(self, task: TaskRecord) -> None:
-        conn = get_connection()
-        task.updated_at = datetime.utcnow().isoformat()
-        conn.execute(
-            "INSERT INTO tasks (session_id, user_id, status, goal, latest_user_message, latest_reply, "
-            "pending_prompt, trace_summary, metadata, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id, status=excluded.status, "
-            "goal=excluded.goal, latest_user_message=excluded.latest_user_message, "
-            "latest_reply=excluded.latest_reply, pending_prompt=excluded.pending_prompt, "
-            "trace_summary=excluded.trace_summary, metadata=excluded.metadata, updated_at=excluded.updated_at",
-            (
-                task.session_id,
-                task.user_id,
-                task.status.value,
-                task.goal,
-                task.latest_user_message,
-                task.latest_reply,
-                task.pending_prompt,
-                task.trace_summary,
-                _json_dumps(task.metadata),
-                task.created_at,
-                task.updated_at,
-            ),
-        )
-        conn.commit()
+        self._repository.save_task(task)
 
     def snapshot(self, session_id: str, *, user_id: str) -> dict[str, Any]:
         from dataclasses import asdict
@@ -143,28 +129,4 @@ class TaskStateStore:
         return asdict(task)
 
     def _load(self, session_id: str) -> TaskRecord | None:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT session_id, user_id, status, goal, latest_user_message, latest_reply, "
-            "pending_prompt, trace_summary, metadata, created_at, updated_at FROM tasks WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if not row:
-            return None
-        try:
-            status = TaskStatus(row["status"])
-        except ValueError:
-            status = TaskStatus.IDLE
-        return TaskRecord(
-            session_id=row["session_id"],
-            user_id=row["user_id"],
-            status=status,
-            goal=row["goal"],
-            latest_user_message=row["latest_user_message"],
-            latest_reply=row["latest_reply"],
-            pending_prompt=row["pending_prompt"],
-            trace_summary=row["trace_summary"],
-            metadata=_json_loads(row["metadata"], {}),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+        return self._repository.load_task(session_id)
