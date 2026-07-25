@@ -240,3 +240,70 @@ CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降�
 - ✅ CI 阻断新增项（`--baseline` diff 模式：新增/过期均失败）。
 - ✅ 全量测试全绿（819 passed, 2 skipped，覆盖率 72.52%）。
 - ✅ 架构检查幂等（再次运行 exit 0）。
+
+## 9. P1 实施记录（2026-07-25）
+
+### 9.1 拆分交付物
+
+将原 1271 行的 `infrastructure/persistence/database.py` 按职责拆分：
+
+| 新模块 | 行数 | 职责 |
+|---|---|---|
+| `connection.py` | 60 | 连接生命周期（`get_connection`、`reset_connection`） |
+| `schema.py` | 178 | 初始 schema 常量 `_SCHEMA` |
+| `serialization.py` | 22 | JSON 辅助 `_json_dumps` / `_json_loads` |
+| `migrations/types.py` | 23 | `Migration` frozen dataclass |
+| `migrations/v001_005.py` | 122 | 迁移 1–5 的 upgrade/downgrade |
+| `migrations/v006_010.py` | 156 | 迁移 6–10 |
+| `migrations/v011_015.py` | 297 | 迁移 11–15 |
+| `migrations/v016_020.py` | 422 | 迁移 16–20 |
+| `migrations/registry.py` | 21 | 不可变注册表 + 启动期自检 |
+| `migrations/runner.py` | 97 | applied-version/upgrade/downgrade/状态查询 |
+| `migrations/__init__.py` | 8 | 子包说明 |
+| `database.py`（兼容层） | 93 | re-export + `init_db()` |
+
+每个迁移文件均少于 800 行（验收标准）；版本号、SQL 文本、`schema_migrations` 数据未变；迁移版本仍固定为 20。
+
+### 9.2 兼容承诺
+
+`database.py` 保留以下导出，既有调用方与测试无需改动：
+- `get_connection`、`reset_connection`、`init_db`、`run_upgrade`、`downgrade`、`get_migration_status`、`_json_dumps`、`_json_loads`
+- 全部 `_upgrade_N` / `_downgrade_N`（N = 1..20）
+
+新代码应从拆分后的模块直接导入。
+
+### 9.3 新增测试
+
+`tests/unit/test_migration_registry.py`（11 个测试）覆盖：
+- 注册表恰好 20 个版本、连续 1..20、不重复、不可变 tuple
+- 每个迁移有 upgrade/downgrade 可调用对象和非空 description
+- 每个迁移文件少于 800 行（参数化）
+- 空库 `init_db` 升级到版本 20
+- 重复 `init_db` 幂等
+- `schema_migrations` 记录全部 20 个版本
+- 从 20 降级到 15 再升级恢复 20
+- 从 20 全部降级到 0 再全量升级恢复 20
+- `get_migration_status` 在部分降级时正确报告 pending
+
+### 9.4 门禁结果
+
+| 门禁 | 工具版本 | 结果 |
+|---|---|---|
+| `python scripts/check_architecture.py --baseline ...` | — | ✅ 70 项基线一致，无新增违规 |
+| `python -m ruff check .` | ruff 0.15.22 | ✅ All checks passed |
+| `python -m mypy api application domain infrastructure` | mypy 2.3.0 | ✅ no issues found in 185 source files（+11 新文件） |
+| `python -m bandit -r api application domain infrastructure -lll` | bandit 1.9.4 | ✅ No issues identified（17498 lines） |
+| `python -m pytest --cov=... --cov-fail-under=70` | pytest 9.1.1 | ✅ **855 passed, 2 skipped**，覆盖率 **73.55%**（346.54s） |
+| `python -m pip_audit -r requirements.lock` | pip_audit 2.10.1 | ⚠️ 网络超时（pypi.org 不可达）；`requirements.lock` 未变更，沿用 P0 基线"无已知漏洞" |
+| `npm --prefix frontend run lint/check/test/build` | eslint/tsc/vitest/vite | ✅ 全部通过（2087 modules，19.53s build） |
+
+### 9.5 P1 验收
+
+- ✅ 每个迁移文件少于 800 行（最大 422 行）。
+- ✅ 迁移状态报告 20 个版本（`get_migration_status()["current_version"] == 20`）。
+- ✅ 空库升级测试通过（`test_empty_db_upgrades_to_version_20`）。
+- ✅ 重复初始化幂等测试通过（`test_repeated_init_db_is_idempotent`）。
+- ✅ 降级再升级测试通过（`test_downgrade_from_20_to_15_then_upgrade_restores_20`、`test_downgrade_to_0_then_full_upgrade_restores_20`）。
+- ✅ 既有迁移测试（`test_news_favorites_migration`、`test_news_migration_19`、`test_news_migration_20` 等）全部通过。
+- ✅ SQL 文本、版本号、`schema_migrations` 数据未变。
+- ✅ 架构基线无新增违规（P1 不触碰 domain/application 层）。

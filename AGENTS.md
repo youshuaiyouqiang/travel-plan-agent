@@ -103,6 +103,6 @@ npm --prefix frontend run build
 - 分层依赖基线 `docs/architecture/legacy-import-baseline.json` 由 `scripts/check_architecture.py` 用 AST 生成，是显式债务豁免清单，不是数量阈值。
 - CI 阻断新增违规；基线条目只能逐项删除，不得新增；已从代码删除的条目必须同步从基线移除，否则 CI 失败。
 - 现有违规清单不得模仿或复制到新代码；新代码零豁免。
-- `frontend/src/utils/api.ts`、`infrastructure/persistence/database.py`、`domain/reasoning/engine.py` 在所属阶段（P5/P1/P6）拆分前不得新增功能，只允许维护性修复。
+- `frontend/src/utils/api.ts`、`domain/reasoning/engine.py` 在所属阶段（P5/P6）拆分前不得新增功能，只允许维护性修复；`infrastructure/persistence/database.py` 已于 P1 拆分为 `connection.py`/`schema.py`/`serialization.py`/`migrations/` 子包，新代码应从拆分后的模块直接导入。
 - `app.py` 是唯一组合根；`api/server.py` 只创建 FastAPI 应用并接收容器（P3 收敛前不得新增模块级服务构造）。
-- 迁移版本号固定为 20；P1 拆分迁移模块时不改变 SQL 文本、版本号或 `schema_migrations` 数据。
+- 迁移版本号固定为 20；P1 已按版本组（`v001_005`/`v006_010`/`v011_015`/`v016_020`）拆分迁移模块，未改变 SQL 文本、版本号或 `schema_migrations` 数据；后续阶段不得修改历史迁移。
