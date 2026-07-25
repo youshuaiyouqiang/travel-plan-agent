@@ -72,6 +72,7 @@ docs/             产品设计、计划、验收报告
 ```powershell
 # Python
 python -m pip install -r requirements.lock
+python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json
 python -m ruff check .
 python -m mypy api application domain infrastructure
 python -m bandit -r api application domain infrastructure -lll
@@ -94,3 +95,14 @@ npm --prefix frontend run build
 - 先阅读目标模块、相邻测试和相关计划，再编辑；优先使用 `rg` 搜索和 `apply_patch` 修改。
 - 先报告架构冲突、迁移风险和安全影响；未经明确同意，不执行破坏性数据清理或对外操作。
 - 完成一个任务后先自审：业务边界、授权、敏感数据、迁移、测试、前端类型与可访问性。
+
+## 8. 架构清理过渡条款（P0–P7，临时）
+
+> 本节为 `docs/superpowers/plans/2026-07-25-architecture-cleanup.md` 的执行约束，P7 完成后整体改写为"架构守卫"并升级版本号。在此之前不得把架构状态写成"已完全解耦"。
+
+- 分层依赖基线 `docs/architecture/legacy-import-baseline.json` 由 `scripts/check_architecture.py` 用 AST 生成，是显式债务豁免清单，不是数量阈值。
+- CI 阻断新增违规；基线条目只能逐项删除，不得新增；已从代码删除的条目必须同步从基线移除，否则 CI 失败。
+- 现有违规清单不得模仿或复制到新代码；新代码零豁免。
+- `frontend/src/utils/api.ts`、`infrastructure/persistence/database.py`、`domain/reasoning/engine.py` 在所属阶段（P5/P1/P6）拆分前不得新增功能，只允许维护性修复。
+- `app.py` 是唯一组合根；`api/server.py` 只创建 FastAPI 应用并接收容器（P3 收敛前不得新增模块级服务构造）。
+- 迁移版本号固定为 20；P1 拆分迁移模块时不改变 SQL 文本、版本号或 `schema_migrations` 数据。

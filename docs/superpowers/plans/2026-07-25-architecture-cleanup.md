@@ -1,237 +1,242 @@
 # 架构清理与依赖反转实施计划
 
-> **版本：** v1.0，2026-07-25
+> **版本：** v1.1，2026-07-25
 >
-> **状态：** 待评审 / 未开工
+> **状态：** 已评审、待实施
 >
 > **优先级：** 用户指令 > AGENTS.md > 产品设计 > 本计划 > 既有代码约定
->
-> **目标：** 一次性清除分层债务，让代码与 AGENTS.md 描述完全一致，并把规则固化为 CI 阻断，防止债务再生。
 
----
+## 1. 目标与边界
 
-## 1. 背景与动机
+本计划清理已经确认的分层债务，不改变产品业务、对外 API 契约或既有数据库语义。完成后，依赖方向、组合根、质量门禁和 AGENTS.md 必须一致，且由 CI 自动验证。
 
-2026-07-17 重构后，业务、安全、测试门禁已落地，但分层架构存在**执行欠账**：
+完成定义：
 
-- AGENTS.md 第 2 节宣称"领域代码不得直接依赖具体数据库、HTTP 客户端或 LLM SDK"，但 `domain/` 层实测存在 **24 处** 对 `infrastructure/` 的直接 import（见 §2.1）。
-- 两个巨型模块（`database.py` 49KB、`engine.py` 56KB）持续吸积代码，是屎山的标准起点。
-- 静态检查工具配置与 AGENTS.md 文字规则不一致（ruff 关闭了 B904/F401，mypy 非 strict，Makefile 无覆盖率门槛），规则缺乏工具兜底。
-- 前端 `src/utils/api.ts`（319 行 legacy 聚合层）与 AGENTS.md"新 API 仅入 features/<domain>/api.ts"并存，AI 易误用。
+1. `domain/` 不再导入 `infrastructure/`、FastAPI、SQLAlchemy/SQLite 驱动、HTTP/LLM SDK；`application/` 同样不导入具体基础设施实现。
+2. SQL、文件、网络、LLM SDK、MCP 进程和密码算法只在 `infrastructure/`；领域和应用层只消费面向用例的端口。
+3. 运行时装配集中在一个明确的组合根；路由不再临时构造服务或把生产依赖散写入 `app.state`。
+4. 迁移和推理模块拆成职责单一的文件；正常业务源文件上限为 800 行，历史迁移按版本组拆分，每个文件也不超过 800 行。
+5. CI 阻断式检查依赖边界、Ruff、mypy、Bandit、覆盖率、依赖审计、前端质量和密钥泄露。
 
-**不处理的后果：** AI 辅助开发面对"规则与代码矛盾"时会选择模仿周围代码，债务指数放大。
+不做：微服务拆分、替换 SQLite、改变新闻/学术/行程业务边界、重写前端状态管理或引入新的运行时框架。此次工作是模块化单体的边界治理，不是重写项目。
 
-**本次目标（完成定义）：**
+## 2. 2026-07-25 事实基线
 
-1. `domain/` 层对 `infrastructure/` 的 import **清零**（含类型注解位置），依赖方向全部反转。
-2. 无超过约 800 行的单文件；`database.py`、`engine.py` 完成拆分。
-3. 依赖方向由 CI 工具**阻断式**校验，不再依赖人审。
-4. ruff/mypy/Makefile 与 AGENTS.md 文字规则一致。
-5. AGENTS.md 更新为描述**真实达成**的架构。
+实施者必须在 P0 重新生成基线，不得复制旧文档数字。当前工作区的快速审计结果如下：
 
----
-
-## 2. 现状审计（证据清单）
-
-### 2.1 domain → infrastructure 反向依赖（24 处，15 个文件）
-
-| 类别 | 文件 | 依赖点 |
+| 项目 | 当前事实 | 处理方式 |
 |---|---|---|
-| 持久化 | `domain/user/session/manager.py`、`domain/user/session/task_state.py` | `infrastructure.persistence.database.get_connection` 等 |
-| 持久化 | `domain/memory/manager.py`、`memory_extractor.py`、`memory_distiller.py` | `get_connection`、`_json_dumps/_json_loads` |
-| 持久化 | `domain/user/profile/manager.py` | `get_connection` 等 |
-| 持久化 | `domain/feedback/repository.py`、`domain/agent/repository.py`、`domain/travel/itinerary/repository.py` | `get_connection` |
-| 持久化+安全 | `domain/user/auth/auth.py`、`token.py` | `get_connection`、`infrastructure.security.password` |
-| LLM | `domain/agent/orchestrator.py`、`factory.py`、`dynamic_agent.py` | `infrastructure.llm.openai.OpenAILLM` |
-| LLM | `domain/reasoning/engine.py`、`domain/memory/memory_extractor.py`、`memory_distiller.py`、`domain/travel/intent/travel_classifier.py`、`itinerary/parser.py`、`services/early_action_handler.py`、`services/context_preparer.py` | `OpenAILLM`（含类型注解） |
-| 工具/MCP 框架 | `domain/agent/factory.py`、`dynamic_agent.py`、`domain/travel/core.py`、`domain/reasoning/engine.py`、`domain/reasoning/tool_selector.py`、`domain/travel/tools/travel_tools.py`、`services/context_preparer.py` | `infrastructure.tools.{base,registry,executor}`、`infrastructure.mcp.{runtime,catalog}` |
+| `domain -> infrastructure` | `rg` 命中 49 行、22 个 Python 文件，包含顶层、函数内和类型注解导入 | P0 生成 AST 清单；后续逐项消除 |
+| `application -> infrastructure` | 已存在 scheduler、news、travel、session、authz 等直接导入 | 纳入 P2 的独立清单，不能在 P0 假装已禁止 |
+| `database.py` | 1271 行，迁移已到版本 20，不是旧文档写的 18 | P1 按版本组拆分，不改变 SQL 或迁移版本 |
+| `engine.py` | 1198 行 | P6 在行为测试完善后拆分 |
+| 组合与服务定位 | `app.py` 组装 Agent；`api/server.py` 又直接组装多个服务并写入 `app.state` | P3 收敛为一个组合根 |
+| 前端 legacy API | `frontend/src/utils/api.ts` 仍被多个组件、页面和认证测试使用 | P7 按调用方逐步迁移，不作假删除 |
 
-### 2.2 巨型模块
+`pyproject.toml` 当前忽略 `F401`、`B904`，mypy 使用 `ignore_missing_imports=true`，`Makefile test` 缺失覆盖率阈值；这些均为真实不一致项。mypy 全量 strict 不属于本计划，但不得把它误写为本轮达成目标。
 
-| 文件 | 规模 | 构成 |
-|---|---|---|
-| `infrastructure/persistence/database.py` | ~1260 行 | 连接管理（~60 行）+ 18 版迁移 `_upgrade_N/_downgrade_N`（~900 行）+ 迁移注册/执行/回滚 + `_json_dumps/_json_loads` |
-| `domain/reasoning/engine.py` | ~1330 行 | JSON 提取工具函数 + `ReasoningEngine`（`run` 322 行、`run_stream` 230 行）+ 决策解析族（`_parse_decision` 等 8 个）+ 文本清洗族 |
-
-### 2.3 工具链与规则不一致
-
-- `pyproject.toml` ruff ignore 含 `F401`（未使用导入）、`B904`（异常链）——与 AGENTS.md 第 5 节矛盾。
-- mypy 未开 strict，`ignore_missing_imports=true`。
-- `Makefile` 的 `test` 目标无 `--cov-fail-under=70`，本地可绕过 CI 门槛。
-- `requirements.txt` 为 0 字节空文件，易误导。
-- `tests/e2e/` 为空目录，与 AGENTS.md 三层测试声明不符。
-
-### 2.4 基线状态（2026-07-25 实测）
-
-- `ruff check .`：通过（170 文件）。
-- `mypy api application domain infrastructure`：通过。
-- pytest 全量：**开工前必须先补跑确认全绿**（作为重构安全网）。
-
----
-
-## 3. 目标架构与依赖规则
-
-### 3.1 依赖方向（唯一合法方向）
+## 3. 目标架构
 
 ```text
-api ──────────→ application ──────────→ domain
-  │                                        ↑
-  └────────────→ infrastructure ───────────┘
-                 （实现 domain 定义的端口）
+api routes -> application use cases -> domain models / ports
+                                      ^
+                                      | implements ports
+                              infrastructure adapters
 
-app.py（组合根）：唯一允许同时 import 全部四层的模块，
-                 负责把 infrastructure 实现注入 application/domain。
+composition root -> constructs adapters and application services -> create_api(container)
 ```
 
-- `domain/`：只允许 import 标准库与 `domain/` 内部模块。所有外部能力（DB、LLM、MCP、HTTP 工具）以 **Protocol 端口**声明于 domain。
-- `infrastructure/`：实现 domain 端口；不得被 domain import。
-- `application/`：编排用例，依赖 domain 端口与模型；不直接 import infrastructure（由组合根注入实现）。
-- `api/`：只做协议适配，依赖 application 服务/DTO。
+### 3.1 唯一组合根
 
-### 3.2 端口设计总表
+以 `app.py` 中的 `build_container()` 为唯一依赖装配入口。它可以同时导入四层并负责构造 SQLite、LLM、MCP、工具、仓储和应用服务。`api/server.py` 只提供 `create_api(container)`：注册路由、生命周期和中间件，并将不可变的 `AppContainer` 放入 `app.state.container`。路由通过 FastAPI dependency 从容器取得应用服务，禁止在路由、依赖函数或生命周期中按需 `new` 服务、仓储或基础设施实现。
 
-| 端口（domain 定义） | 实现（infrastructure） | 注入点 |
+### 3.2 端口规则
+
+端口放在消费方所属领域包中，按业务聚合命名，禁止设计通用 `ConnectionProvider` 让 domain 继续写 SQL。
+
+| 端口位置 | 最小职责 | SQLite 实现位置 |
 |---|---|---|
-| `domain/shared/persistence/ports.py`：`ConnectionProvider`（或按聚合细分的各 Repository Protocol） | `infrastructure/persistence/connection.py` + `repositories/` | `app.py` |
-| `domain/shared/llm/ports.py`：`LLMPort`（方法面 = 现 `OpenAILLM` 公共方法集） | `infrastructure/llm/openai.py`、`fallback.py`（结构性满足 Protocol） | `app.py` |
-| `domain/shared/tools/*`：工具框架本体（`ToolSpec`/`ToolRegistry`/`ToolExecutor`/`ToolCatalog`/`ToolPolicy`） | **迁移至 domain**（框架无外部 I/O）；I/O 留在 `infrastructure/tools/adapters/` | `app.py` |
-| `domain/shared/mcp/ports.py`：`MCPRuntimePort`（`build_specs`/`build_handlers`）、`MCPCatalogPort` | `infrastructure/mcp/runtime.py`、`catalog.py` | `app.py` |
-| `domain/user/auth/ports.py`：`PasswordHasherPort` | `infrastructure/security/password.py` | `app.py` / application auth 服务 |
+| `domain/user/session/ports.py` | 会话、任务状态的读取和原子更新 | `infrastructure/persistence/repositories/session.py` |
+| `domain/user/profile/ports.py` | 用户画像读写 | `infrastructure/persistence/repositories/profile.py` |
+| `domain/memory/ports.py` | 记忆存取和蒸馏结果保存 | `infrastructure/persistence/repositories/memory.py` |
+| `domain/user/auth/ports.py` | 用户、令牌、密码哈希/校验 | `infrastructure/persistence/repositories/auth.py`、`infrastructure/security/password.py` |
+| `domain/agent/ports.py`、`domain/feedback/ports.py`、`domain/travel/itinerary/ports.py` | 各自聚合的仓储操作 | `infrastructure/persistence/repositories/` 下对应实现 |
+| `domain/shared/llm/ports.py` | 供应商无关的生成、流式生成、工具调用 | `infrastructure/llm/openai.py`、`fallback.py` |
+| `domain/shared/tools/` | 纯内存的规格、注册、策略、执行编排 | 具体 HTTP/旅行适配器仍在 `infrastructure/tools/adapters/` |
+| `domain/shared/mcp/ports.py` | 已注册工具的发现与执行能力 | `infrastructure/mcp/` |
 
-### 3.3 落地策略：结构性 Protocol（非 ABC）
+LLM 端口的输入输出由 domain 定义，例如 `LLMRequest`、`LLMResponse`、`ToolCall`；不得复制 `OpenAILLM` 的全部公共方法，也不得泄漏 OpenAI SDK 类型。MCP 端口不得暴露 `build_specs()` 或 `build_handlers()` 等装配细节；组合根注册工具，domain 只消费 `ToolCatalogPort` 和 `ToolExecutorPort`。
 
-全部采用 `typing.Protocol` 结构化子类型：现有 `OpenAILLM`、`FallbackLLM`、`MCPProxyRuntime` 等**实现类零改动或极少改动**，只改 domain 侧的 import 与类型注解，把改动面控制在最小。
+## 4. 实施顺序
 
----
+每个阶段是独立 PR。开始下一阶段前，必须运行该阶段列出的针对性测试以及第 5 节全部阻断门禁。任意 PR 不得混入业务功能、API 改动或未关联的格式化。
 
-## 4. 分阶段实施计划
+### P0：审计基线与止血
 
-> 每个阶段独立成 PR/提交；每阶段结束必须四门禁全绿（ruff / mypy / bandit / pytest --cov-fail-under=70）+ 依赖方向检查通过，方可进入下一阶段。
+1. 运行完整 Python 和前端门禁，保存实际版本、测试数、覆盖率和跳过项到本计划的实施记录或 PR 描述。
+2. 创建 `scripts/check_architecture.py`，使用 `ast.parse()` 检查全部 `*.py`：覆盖 `import`、`from ... import`、函数内导入、别名和 `TYPE_CHECKING` 块。禁止规则为：
+   - `domain` 不得导入 `infrastructure`、`api`、`application`、`fastapi`，或具体外部 I/O SDK；
+   - `application` 不得导入 `infrastructure`、`api`、`fastapi`；
+   - `api` 不得导入 `infrastructure` 或 `domain` 仓储实现；
+   - `infrastructure` 可以导入 domain 端口和模型，不得导入 api。
+3. 首次运行输出稳定排序的 `docs/architecture/legacy-import-baseline.json`，每项含 `file`、`line`、`module`、`layer_rule`。该文件是显式债务豁免，不是数量阈值：CI 失败条件是新增项，已有项只能逐项删除。
+4. CI 执行 `python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json`；新增违规或基线中已删除项仍被保留时均失败。基线必须最终归零后删除参数。
+5. AGENTS.md 加入临时条款：现有清单不得模仿；新代码零豁免；`utils/api.ts`、`database.py`、`engine.py` 不得新增功能。删除空 `requirements.txt`，并修正所有仍引用它的文档或部署脚本。
 
-### P0：门禁止血（半天，零业务风险）
+验收：基线由脚本生成且包含 application 违规；CI 阻断新增项；全量测试全绿。
 
-**目标：** 先冻结债务，再还债。
+### P1：迁移模块安全拆分
 
-1. 补跑 pytest 全量，确认基线全绿。
-2. 新增 `scripts/check_dependencies.py`（或引入 import-linter）：扫描 `domain/`、`application/` 下 `import infrastructure` / `from infrastructure` 及 `import fastapi` 等违规项，输出清单并以非零码退出。违规数先以现状为基线快照（24 处），**只允许减少、不允许增加**。
-3. CI 新增该检查（阻断式）。
-4. AGENTS.md 增补"过渡条款"：声明 §2.1 清单为历史遗留、禁止模仿、新增代码禁止新增 domain→infrastructure import；声明 `frontend/src/utils/api.ts` 为 legacy 禁止新增函数；声明两个巨型模块禁止继续塞入新功能。
-5. 删除空的 `requirements.txt`（或写入一行注释指向 `requirements.lock`）。
+1. 新建 `infrastructure/persistence/migrations/` 包，按连续版本组建立 `v001_005.py`、`v006_010.py`、`v011_015.py`、`v016_020.py`；每个文件只拥有其版本的 upgrade/downgrade 函数和 SQL。
+2. 新建 `migrations/registry.py`，按固定顺序导入版本组并构造不可变迁移注册表；`runner.py` 只负责 applied-version、upgrade、downgrade 与状态查询。
+3. 将连接生命周期放入 `connection.py`；`database.py` 临时只保留兼容 re-export 和 `init_db()`，所有新代码从新路径导入。P1 不修改迁移版本号、SQL 文本或 `schema_migrations` 数据。
+4. 新增测试：注册版本必须恰为 1..20、不得重复；空库升级与已升级库重复初始化均幂等；从版本 20 降级再升级保持现有迁移测试断言。
 
-**验收：** CI 新增检查生效；pytest 基线全绿记录在案。
+验收：每个迁移文件少于 800 行；迁移状态报告 20 个版本；已部署数据库升级测试和回滚测试通过。
 
-### P1：拆分 `database.py`（1 天，低风险）
+### P2：持久化与认证按聚合反转
 
-纯物理拆分，不改任何行为：
+按以下顺序逐个 PR 实施，禁止以全局 `ConnectionProvider` 代替仓储端口：
 
-1. 新建 `infrastructure/persistence/migrations.py`：迁入全部 `_upgrade_1..18`、`_downgrade_1..18`、`_MIGRATIONS`、`_run_migrations`、`run_upgrade`、`downgrade`、`get_migration_status`。
-2. `database.py` 保留：`get_connection`、`reset_connection`、`init_db`、`_json_dumps/_json_loads`，并从 `migrations.py` 导入执行入口。
-3. 为兼容存量 import（tests、其他模块），在 `database.py` 顶层 re-export 迁移公共 API（`downgrade`、`get_migration_status`、`run_upgrade`），标注"兼容导出，新代码请从 `migrations.py` 导入"。
+1. session + task state；
+2. profile；
+3. auth + token + password hasher；
+4. memory；
+5. custom agent、feedback、itinerary；
+6. 将 application 中 news、travel、scheduler、session、authz 的基础设施导入改为注入端口或应用服务。
 
-**测试：** 现有迁移相关集成测试（`test_news_favorites_migration.py` 等）必须原样通过；新增一个"迁移函数全部注册且版本连续"的单元测试。
+每个 PR 的固定步骤：先为 domain/application 消费者写 fake repository 的单元测试；定义最小 Protocol 和 DTO；将全部 SQL 与 JSON 序列化移至对应 SQLite repository；在 `build_container()` 组装实现；删除该聚合的基线项；运行既有集成测试。仓储必须在应用服务层检查资源所有权，保持未授权返回 404 的语义。
 
-**验收：** `database.py` ≤ 200 行；迁移测试全绿。
+验收：domain 和 application 的持久化/安全直接导入归零；domain 单元测试可用 fake 端口运行且不创建 SQLite 文件；集成测试仍覆盖真实 SQLite 行为。
 
-### P2：持久化层依赖反转（2~3 天，核心阶段）
+### P3：收敛组合根与 API 依赖
 
-1. `infrastructure/persistence/connection.py`：连接管理从 `database.py` 进一步独立（`database.py` 转为兼容壳或整体迁入，最终删除）。
-2. domain 侧定义端口（Protocol）：
-   - 对已是仓储形态的模块（`domain/agent/repository.py`、`domain/travel/itinerary/repository.py`、`domain/feedback/repository.py`）：**接口留 domain，实现迁 infrastructure** —— domain 保留 Protocol（如 `CustomAgentRepositoryPort`），SQLite 实现移至 `infrastructure/persistence/repositories/`。
-   - 对 Manager 形态模块（`SessionManager`、`ProfileManager`、`MemoryManager/Extractor/Distiller`、`task_state`、`auth.py/token.py`）：抽出 `ConnectionProvider` Protocol（或聚合级 Repository Protocol）注入构造函数；SQL 语句下沉至 infrastructure 实现类。
-3. `app.py` 组合根统一构造连接提供器与各仓储实现，注入所有消费方（orchestrator、factory、application 服务、api 依赖）。
-4. `domain/user/auth`：`PasswordHasherPort` 注入，移除 `infrastructure.security.password` 直接 import。
+1. 将 `AppContainer` 扩展为只读依赖集合，包含各应用服务及 Agent 编排入口；禁止容器字段暴露具体 SQLite、OpenAI 或 MCP 实现给路由。
+2. `app.py` 只提供 `build_container(settings) -> AppContainer`；不得在 import 时初始化数据库、启动指标服务或读取外部状态。
+3. `api/server.py` 改为 `create_api(container) -> FastAPI`，由明确的启动入口组装。生命周期使用容器中的服务，不再自行 `UserStore()`、`SessionService()`、`TravelService()` 或写入零散 `app.state.*`。
+4. 每个路由新增或改造 FastAPI dependency，从 `request.app.state.container` 获取应用服务；测试通过覆盖容器替身，而非 monkeypatch 私有全局。
 
-**测试（先行）：** 为每个被反转的仓储/Manager 先写"使用 fake 端口实现"的单元测试（这正是反转的红利——domain 首次可以脱离 SQLite 单测）；现有 session/memory/auth/itinerary 集成测试原样通过。
+验收：`app.py` 是唯一跨层装配位置；`api/v1/` 不直接导入基础设施或领域仓储实现；服务构造路径在测试中可替换。
 
-**验收：** `rg "from infrastructure|import infrastructure" domain/` 中持久化相关条目清零；新增 domain 纯单测 ≥ 10 个；覆盖率不下降。
+### P4：LLM、工具与 MCP 边界
 
-### P3：LLM 依赖反转（1 天，中低风险）
+1. 在 `domain/shared/llm/ports.py` 定义供应商无关的消息、响应、工具调用和 `LLMPort`。`OpenAILLM` 与 `FallbackLLM` 显式满足该端口；删除 app.py 中为 Fallback 保留的 `type: ignore[arg-type]`。
+2. 将纯内存工具模型、registry、policy 与 executor 迁至 `domain/shared/tools/`；将日志审计抽成端口或由应用层包裹，避免 domain 工具执行器直接依赖日志实现。
+3. 保留 HTTP、地图、天气、飞猪和其他外部工具适配器于 `infrastructure/tools/adapters/`。组合根注册适配器；domain 不导入适配器。
+4. 定义 `ToolCatalogPort`、`ToolExecutorPort`、`MCPServerCatalogPort`；MCP runtime 实现它们。domain 只根据端口选择与执行工具，不调用 MCP 发现/构建函数。
 
-1. 新建 `domain/shared/llm/ports.py`：`LLMPort` Protocol + `LLMResponse`、`ToolCallResult` 等类型**从 `infrastructure/llm/openai.py` 上移**到 domain（infrastructure 改为从 domain import 这些类型，方向反转）。
-2. 全量替换 domain 层类型注解：`OpenAILLM` → `LLMPort`（约 11 个文件）；`app.py` 中 `# type: ignore[arg-type]` 的 FallbackLLM 契约问题随之消解（二者结构性满足同一 Protocol）。
-3. `FallbackLLM` 保持 infrastructure 不变，验证其结构满足 `LLMPort`。
+验收：domain 无 `infrastructure.llm`、`infrastructure.tools`、`infrastructure.mcp` 导入；fake LLM、fake ToolExecutor 可覆盖编排和旅行主分支；真实适配器集成测试通过。
 
-**测试：** 现有 `test_fallback_llm.py`、编排器/分类器单测原样通过；mypy 必须无新增 ignore。
+### P5：质量规则与前端 API 迁移
 
-**验收：** domain 层 `OpenAILLM` import 清零；`app.py` 不再出现 `# type: ignore[arg-type]`。
+1. 恢复 Ruff 的 `B904`，修复所有异常链；恢复 `F401`，仅对确实用于包公开导出的 `__init__.py` 使用精确 `per-file-ignores`。不得全局关闭规则。
+2. `Makefile test` 使用与 CI 完全相同的 coverage 命令。mypy 保持当前范围；`warn_return_any` 与 strict 模式另开专项，不得伪称已完成。
+3. 将 `frontend/src/utils/api.ts` 的调用方按 auth、agent、news、memory、skill、mcp 逐域迁入 `features/<domain>/api.ts`。迁移一个领域后删除该领域旧导出与调用；最后删除 legacy 文件。所有新 API 均使用 `features/auth/client.ts`。
+4. 将 `features/travel/api.ts` 按 itinerary、geocode、draft/archive 三个文件拆分，保留统一的领域导出入口。
+5. 不创建伪 E2E。`TestClient` 测试放入 `tests/integration/`；若要保留 `tests/e2e/`，必须增加真实浏览器访问前端和 API 的认证后冒烟链路，并在 CI 运行。
 
-### P4：工具框架归属迁移 + MCP 端口化（1~2 天）
+验收：Ruff 无全局 B904/F401 豁免；Makefile 与 CI 质量命令一致；legacy API 无调用方后删除；前端 lint/check/test/build 通过。
 
-1. 迁移（纯移动 + import 更新）：`infrastructure/tools/{base,registry,executor,catalog,policy}.py` → `domain/shared/tools/`。这些是框架本体，无直接外部 I/O，本属领域能力。
-2. `infrastructure/tools/adapters/`（http/amap/fliggy/qweather/drive_cost/shared/interaction）留在 infrastructure，反向 import domain 框架并注册。
-3. MCP：domain 定义 `MCPRuntimePort`、`MCPCatalogPort`（Protocol），`infrastructure/mcp/{runtime,catalog}.py` 结构性实现；`domain/travel/core.py`、`factory.py`、`dynamic_agent.py`、`context_preparer.py` 改为依赖端口注解。
-4. `domain/travel/tools/travel_tools.py`、`domain/reasoning/tool_selector.py` 改为从 `domain.shared.tools` import。
+### P6：拆分 ReasoningEngine
 
-**验收：** domain 层 `infrastructure.tools` / `infrastructure.mcp` import 清零；工具相关单测原样通过。
+前置条件：P4 已提供 fake LLM/tool 端口，且先补齐 `run` 与 `run_stream` 的成功、工具调用、工具失败、无效决策和流式取消测试。
 
-### P5：拆分 `engine.py`（1~2 天，中风险，必须最后做）
+1. 提取纯 JSON 处理到 `domain/reasoning/json_extract.py`；提取决策修复和解析到 `decision_parser.py`；提取文本规范化到 `text_cleaning.py`。
+2. 保持 `engine.py` 只负责编排状态机、端口调用和结果组装；不得在拆分中改变 prompt、输出格式、工具调用次数或异常语义。
+3. 每次只移动一组纯函数，目标测试通过后再进行下一组；最后再缩短 `run` 和 `run_stream`，目标 `engine.py` 少于 600 行。
 
-前置：P2~P4 完成后 `ReasoningEngine` 依赖面已清晰；先补 `run`/`run_stream` 的行为级单测（fake LLMPort 脚本化响应），再拆分：
+验收：新纯函数单测覆盖有效与畸形输入；行为测试覆盖主分支；engine.py 少于 600 行；无公开导入路径回归。
 
-1. `domain/reasoning/json_extract.py`：`_strip_code_fences`、`_extract_json_by_brackets`、`_extract_json_object`（纯函数）。
-2. `domain/reasoning/decision_parser.py`：`_parse_decision` 族 8 个方法 → 独立 `DecisionParser` 类或纯函数集（`_try_fix_json`、regex/XML 解析等）。
-3. `domain/reasoning/text_cleaning.py`：`_clean_final_answer`、`_strip_reasoning_prefix`、`_strip_tool_calls_from_text`、`_looks_grounded`、`_make_signature`、`_tool_status_text`。
-4. `engine.py` 仅保留 `ReasoningEngine` 主流程（`run`、`run_stream`、工具执行编排），目标 ≤ 500 行。
-5. 兼容导出：`domain/reasoning/__init__.py` 保持现有公共 import 路径不变。
+### P7：去除豁免与更新 AGENTS.md
 
-**验收：** 新增行为级单测覆盖 run/run_stream 主分支；engine.py ≤ 500 行；全门禁绿。
+1. 当 architecture baseline 已无条目时，删除 JSON 和 `--baseline` 参数，依赖检查改为零容忍。
+2. 删除 AGENTS.md 的过渡条款，新增“架构守卫”：端口先于实现、组合根唯一、禁止的依赖方向、执行命令和违规处理方式。
+3. 只记录实际执行过的门禁版本、通过数与遗留风险；升级至 v3.1。不得把未执行的 strict、浏览器 E2E 或生产部署验证写成已完成。
 
-### P6：工具链收紧 + 前端对齐（半天~1 天）
+## 5. 质量门禁
 
-1. `pyproject.toml`：ruff 移除 `B904`、`F401` 豁免并修复全部现存违规；mypy 评估开启 `warn_return_any`、逐步收紧（如改动面过大，单独立项，不在本计划阻塞）。
-2. `Makefile`：`test` 目标补齐 `--cov-fail-under=70`，与 CI 一致。
-3. `tests/e2e/`：新增最小 e2e 冒烟（TestClient 打 `/api/v1/health` + 一条未认证 401/404 路径），使三层测试名副其实。
-4. 前端（小步、不阻塞后端阶段）：
-   - `src/utils/api.ts` 头部标注 legacy  deprecation 注释；其中尚有消费方的函数逐步迁入对应 `features/<domain>/api.ts`，清空后删除文件。
-   - `features/travel/api.ts`（542 行）按 行程/地理编码/草稿存档 拆为三个模块，`features/travel/` 内聚。
+每个 PR 和 CI 必须阻断式执行：
 
-**验收：** CI 全绿；前端 lint/check/test/build 四连绿。
+```powershell
+python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json
+python -m ruff check .
+python -m mypy api application domain infrastructure
+python -m bandit -r api application domain infrastructure -lll
+python -m pytest --cov=api --cov=application --cov=domain --cov=infrastructure --cov-fail-under=70
+python -m pip_audit -r requirements.lock
+npm --prefix frontend run lint
+npm --prefix frontend run check
+npm --prefix frontend run test
+npm --prefix frontend run build
+```
 
-### P7：AGENTS.md 定稿（半天）
+CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降低覆盖率绕过失败。架构检查从 P0 起执行；基线仅容纳 P0 已记录的精确遗留项，并在每次 PR 减少。
 
-1. 移除 P0 过渡条款，第 2 节分层规则恢复为**陈述事实**（此时代码已满足）。
-2. 新增"架构守卫"小节：依赖方向检查命令、违规处理方式、端口新增流程（先 domain 定义端口 → infra 实现 → app.py 注入）。
-3. 保留并强化业务红线、安全条款（这些是本轮验证过的高价值条款，不动）。
-4. 版本号升 v3.1，日期更新，文末记录本轮清理的完成证据（门禁输出摘要）。
+## 6. 风险与排期
 
----
+| 风险 | 控制措施 |
+|---|---|
+| SQL 下沉改变事务或 404 语义 | 每聚合先写 fake 单测和既有 SQLite 集成测试；一次一个聚合、一个 PR |
+| 迁移物理移动破坏已部署库 | SQL 与版本号不变；覆盖升级、重复初始化和降级/再升级 |
+| LLM/MCP 端口泄漏供应商细节 | 先用 fake 验证领域消费者；端口评审不允许 SDK 类型和装配方法 |
+| 组合根迁移改变启动时序 | 保留启动、fail-fast 管理员和后台任务的集成测试；禁止 import-time 副作用 |
+| 引擎拆分改变流式行为 | 先锁定行为测试；每次只移动纯函数 |
 
-## 5. 风险登记与缓解
+建议排期为 10--15 个工作日，不承诺旧版本的 7--10 天：P0/P1 约 2 天，P2/P3 约 5--7 天，P4/P5/P6/P7 约 3--6 天。P2 的聚合 PR 可按团队容量并行，但 P3 必须在其端口已稳定后实施。
 
-| 风险 | 等级 | 缓解 |
+## 7. 文档关系
+
+本计划只修复结构债务，不改变 `docs/superpowers/specs/2026-07-16-product-and-news-agent-design.md` 的业务基线。它是 `docs/superpowers/plans/2026-07-17-refactor-roadmap.md` 的后续专项。P7 完成且门禁有证据后，才允许更新 AGENTS.md 为最终状态。
+
+## 8. P0 实施记录（2026-07-25）
+
+### 8.1 门禁基线（P0 步骤 1）
+
+执行环境：Windows 11，Python 3.11.0rc1（`.venv311`），Node v24.14.0，npm 11.9.0。
+
+| 门禁 | 工具版本 | 结果 |
 |---|---|---|
-| P2 持久化反转改动面大，SQL 下沉时行为漂移 | 高 | 每聚合先写 fake 端口单测 + 现有集成测试双保险；一次只反转一个聚合，逐个提交 |
-| `engine.py` 拆分破坏流式行为 | 中 | P5 前必须先补 run_stream 行为测试；拆分只移动纯函数，主流程最后动 |
-| 迁移文件物理移动影响已部署库的 `schema_migrations` 记录 | 低 | 只移动 Python 函数，版本号/SQL 内容一字不改；P1 后跑 `get_migration_status` 核对 18 版 |
-| Protocol 结构不匹配导致 mypy 大面积报错 | 中 | P3 先在 1 个文件试点验证 Protocol 方法面，再全量推广 |
-| 期间业务需求插入 | 中 | 每阶段独立可交付；P0 止血后任何插入需求按新规则开发，不加重债务 |
+| `python -m ruff check .` | ruff 0.15.22 | ✅ All checks passed |
+| `python -m mypy api application domain infrastructure` | mypy 2.3.0 | ✅ no issues found in 174 source files |
+| `python -m bandit -r api application domain infrastructure -lll` | bandit 1.9.4 | ✅ No issues identified（17289 lines） |
+| `python -m pytest --cov=api --cov=application --cov=domain --cov=infrastructure --cov-fail-under=70` | pytest 9.1.1, pytest-cov 7.1.0 | ✅ **819 passed, 2 skipped**, 覆盖率 **72.52%**（474.18s） |
+| `python -m pip_audit -r requirements.lock` | pip_audit 2.10.1 | ✅ No known vulnerabilities found |
+| `npm --prefix frontend run lint` | eslint | ✅ |
+| `npm --prefix frontend run check` | tsc -b --noEmit | ✅ |
+| `npm --prefix frontend run test` | vitest 2.1.9 | ✅ 43 passed（8 files，23.46s） |
+| `npm --prefix frontend run build` | vite 6.4.2 | ✅ 2087 modules，43.08s |
 
-## 6. 明确不做的事
+既有跳过项（P0 不修复，仅记录）：
+- `tests/integration/test_api.py`：1 处 skip
+- `tests/unit/test_mcp_catalog.py`：1 处 skip
 
-- 不做任何目录改名/大规模文件迁移（除 P1/P4 列明的模块级移动）。
-- 不改动业务行为、API 契约、数据库 schema（本轮零新迁移）。
-- 不重写前端状态管理/路由；不引入新框架、新依赖（import-linter 为可选项，可用自研脚本替代）。
-- mypy 全量 strict 不在本轮范围（单独立项）。
-- ErrorBoundary、toast 等前端体验增强不在本轮范围。
+已知不一致项（P5 处理，P0 不修）：`pyproject.toml` 全局忽略 `F401`、`B904`；`ignore_missing_imports=true`；`Makefile test` 缺 `--cov-fail-under=70`。
 
-## 7. 工期与顺序总览
+### 8.2 架构违规基线（P0 步骤 2–3）
 
-| 阶段 | 内容 | 预估 | 依赖 |
-|---|---|---|---|
-| P0 | 门禁止血 + AGENTS.md 过渡条款 | 0.5 天 | pytest 基线绿 |
-| P1 | database.py 拆分 | 1 天 | P0 |
-| P2 | 持久化依赖反转 | 2~3 天 | P1 |
-| P3 | LLM 依赖反转 | 1 天 | 可与 P2 并行 |
-| P4 | 工具框架迁移 + MCP 端口 | 1~2 天 | P3 |
-| P5 | engine.py 拆分 | 1~2 天 | P2~P4 |
-| P6 | 工具链 + 前端对齐 | 0.5~1 天 | 任意，建议收尾前 |
-| P7 | AGENTS.md 定稿 | 0.5 天 | 全部 |
+`scripts/check_architecture.py` 用 `ast.parse` 扫描全部 `*.py`，覆盖顶层导入、函数内导入、`TYPE_CHECKING` 块、别名导入和 `try/except ImportError` 块。基线文件：`docs/architecture/legacy-import-baseline.json`。
 
-**合计约 7~10 个工作日。** 顺序上 P0→P1→P2 为关键路径；P3 可提前并行。
+| layer_rule | 数量 |
+|---|---|
+| `domain_no_infrastructure` | 49 |
+| `domain_no_application` | 1 |
+| `application_no_infrastructure` | 7 |
+| `api_no_infrastructure` | 10 |
+| `api_no_domain_repository_impl` | 3 |
+| **合计** | **70** |
 
----
+### 8.3 P0 交付物
 
-## 8. 与既有文档的关系
+- 新增 `scripts/check_architecture.py`（AST 检查器，纯 stdlib）。
+- 新增 `docs/architecture/legacy-import-baseline.json`（70 项显式债务）。
+- 新增 `tests/unit/test_check_architecture.py`（21 个单元测试）。
+- `.github/workflows/ci.yml` 在 `python-quality` job 加入 `python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json`，阻断式执行。
+- `AGENTS.md` 新增第 8 节"架构清理过渡：P0–P7（详见 [2026-07-25-architecture-cleanup.md](file:///c:/Users/29105/Desktop/yunhe/docs/superpowers/plans/2026-07-25-architecture-cleanup.md)）"，并在门禁命令块加入架构检查。
+- 删除空 `requirements.txt`；历史评估文档（`docs/BASELINE_ASSESSMENT_*`、`docs/api/*`）按 §1 作风险参考，不修改。
 
-- 本计划是 `2026-07-17-refactor-roadmap.md` 的后续专项，不改动业务基线 `2026-07-16-product-and-news-agent-design.md` 的任何业务范围。
-- 完成后由 P7 更新 AGENTS.md 至 v3.1；本文件归档为执行记录。
+### 8.4 P0 验收
+
+- ✅ 基线由脚本生成且包含 application 违规（7 项）。
+- ✅ CI 阻断新增项（`--baseline` diff 模式：新增/过期均失败）。
+- ✅ 全量测试全绿（819 passed, 2 skipped，覆盖率 72.52%）。
+- ✅ 架构检查幂等（再次运行 exit 0）。

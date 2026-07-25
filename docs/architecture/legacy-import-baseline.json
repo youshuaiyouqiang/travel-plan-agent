@@ -1,0 +1,422 @@
+[
+  {
+    "file": "api/middleware/auth.py",
+    "line": 11,
+    "module": "infrastructure.cache.rate_limit",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/feedback.py",
+    "line": 18,
+    "module": "domain.feedback.repository",
+    "layer_rule": "api_no_domain_repository_impl"
+  },
+  {
+    "file": "api/v1/health.py",
+    "line": 14,
+    "module": "infrastructure.persistence.health",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/itinerary.py",
+    "line": 17,
+    "module": "domain.travel.itinerary.repository",
+    "layer_rule": "api_no_domain_repository_impl"
+  },
+  {
+    "file": "api/v1/itinerary.py",
+    "line": 100,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/memory.py",
+    "line": 62,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/news.py",
+    "line": 101,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/news.py",
+    "line": 131,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/news.py",
+    "line": 157,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/session.py",
+    "line": 180,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/session.py",
+    "line": 243,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/session.py",
+    "line": 283,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "api_no_infrastructure"
+  },
+  {
+    "file": "api/v1/share.py",
+    "line": 12,
+    "module": "domain.travel.itinerary.repository",
+    "layer_rule": "api_no_domain_repository_impl"
+  },
+  {
+    "file": "application/authz/service.py",
+    "line": 66,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/news/hotspot_service.py",
+    "line": 218,
+    "module": "infrastructure.news.fetchers",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/news/source_service.py",
+    "line": 39,
+    "module": "infrastructure.persistence.news_repository",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/scheduler.py",
+    "line": 29,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/scheduler.py",
+    "line": 30,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/session/service.py",
+    "line": 19,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "application/travel/service.py",
+    "line": 24,
+    "module": "infrastructure.persistence.travel_repository",
+    "layer_rule": "application_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/dynamic_agent.py",
+    "line": 9,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/dynamic_agent.py",
+    "line": 10,
+    "module": "infrastructure.skills.provider",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/dynamic_agent.py",
+    "line": 11,
+    "module": "infrastructure.tools.executor",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/dynamic_agent.py",
+    "line": 12,
+    "module": "infrastructure.tools.registry",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/dynamic_agent.py",
+    "line": 13,
+    "module": "infrastructure.mcp.runtime",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/factory.py",
+    "line": 6,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/factory.py",
+    "line": 7,
+    "module": "infrastructure.skills.provider",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/factory.py",
+    "line": 8,
+    "module": "infrastructure.tools.registry",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/factory.py",
+    "line": 9,
+    "module": "infrastructure.tools.executor",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/factory.py",
+    "line": 10,
+    "module": "infrastructure.mcp.runtime",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/orchestrator.py",
+    "line": 9,
+    "module": "application.session.schema",
+    "layer_rule": "domain_no_application"
+  },
+  {
+    "file": "domain/agent/orchestrator.py",
+    "line": 11,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/agent/repository.py",
+    "line": 7,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/feedback/repository.py",
+    "line": 11,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/manager.py",
+    "line": 9,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/manager.py",
+    "line": 51,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/memory_distiller.py",
+    "line": 9,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/memory_distiller.py",
+    "line": 10,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/memory_extractor.py",
+    "line": 8,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/memory/memory_extractor.py",
+    "line": 9,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/reasoning/engine.py",
+    "line": 11,
+    "module": "infrastructure.tools.executor",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/reasoning/engine.py",
+    "line": 12,
+    "module": "infrastructure.tools.registry",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/reasoning/engine.py",
+    "line": 13,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/reasoning/tool_selector.py",
+    "line": 3,
+    "module": "infrastructure.tools.base",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 10,
+    "module": "infrastructure.mcp.runtime",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 11,
+    "module": "infrastructure.tools.executor",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 12,
+    "module": "infrastructure.tools.registry",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 14,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 15,
+    "module": "infrastructure.mcp.catalog",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 386,
+    "module": "infrastructure.persistence.session_repository",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/core.py",
+    "line": 394,
+    "module": "infrastructure.persistence.session_repository",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/intent/travel_classifier.py",
+    "line": 14,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/itinerary/parser.py",
+    "line": 8,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/itinerary/repository.py",
+    "line": 7,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/context_preparer.py",
+    "line": 7,
+    "module": "infrastructure.mcp.runtime",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/context_preparer.py",
+    "line": 8,
+    "module": "infrastructure.tools.registry",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/context_preparer.py",
+    "line": 10,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/context_preparer.py",
+    "line": 11,
+    "module": "infrastructure.mcp.catalog",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/context_preparer.py",
+    "line": 114,
+    "module": "infrastructure.tools.executor",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/services/early_action_handler.py",
+    "line": 7,
+    "module": "infrastructure.llm.openai",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/tools/travel_tools.py",
+    "line": 6,
+    "module": "infrastructure.tools.base",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/tools/travel_tools.py",
+    "line": 36,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/tools/travel_tools.py",
+    "line": 48,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/travel/tools/travel_tools.py",
+    "line": 115,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/auth/auth.py",
+    "line": 8,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/auth/auth.py",
+    "line": 9,
+    "module": "infrastructure.security.password",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/auth/token.py",
+    "line": 8,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/profile/manager.py",
+    "line": 8,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/session/manager.py",
+    "line": 7,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  },
+  {
+    "file": "domain/user/session/task_state.py",
+    "line": 8,
+    "module": "infrastructure.persistence.database",
+    "layer_rule": "domain_no_infrastructure"
+  }
+]
