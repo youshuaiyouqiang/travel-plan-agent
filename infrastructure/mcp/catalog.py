@@ -1,65 +1,45 @@
+"""MCP 服务器目录扫描与查询（P4.3 重构）.
+
+纯内存数据类（``MCPToolInfo`` / ``MCPServerInfo`` / ``MCPToolRef``）与辅助
+函数（``_slug`` / ``_proxy_name`` / ``_tokenize`` / ``_SERVER_HINTS``）已
+迁移至 ``domain/shared/mcp/types.py``。本模块仅保留需要磁盘 I/O 的
+``MCPCatalog`` 实现，并从 domain 重新导出数据类以维持 ``app.py``、
+``infrastructure/mcp/runtime.py`` 与历史测试的兼容写法。
+
+``MCPCatalog`` 实现 ``domain.shared.mcp.ports.MCPCatalogPort``，但不在
+本模块显式声明继承——Protocol 为结构化协议，实现方只需方法签名匹配。
+"""
+
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass, field
 from pathlib import Path
 
-
-@dataclass
-class MCPToolInfo:
-    name: str
-    description: str
-    input_schema: dict = field(default_factory=dict)
-    proxy_name: str = ""
-
-
-@dataclass
-class MCPServerInfo:
-    identifier: str
-    name: str
-    description: str
-    instructions: str = ""
-    tools: list[MCPToolInfo] = field(default_factory=list)
-
-
-@dataclass
-class MCPToolRef:
-    server_identifier: str
-    server_name: str
-    tool_name: str
-    proxy_name: str
-    description: str
-    input_schema: dict = field(default_factory=dict)
-    instructions: str = ""
-
-
-_SERVER_HINTS: dict[str, tuple[str, ...]] = {
-    "chrome-devtools": ("browser", "page", "screenshot", "click", "form", "网页", "页面", "截图", "点击", "表单"),
-    "web-search": ("search", "news", "lookup", "搜索", "查一下", "新闻", "资料"),
-    "wecom-doc": ("wecom", "doc", "todo", "message", "文档", "待办", "消息", "表格"),
-    "tencent-docs": ("tencent docs", "docs", "文档", "腾讯文档"),
-}
-
-
-def _slug(value: str) -> str:
-    return re.sub(r"[^a-z0-9_]+", "_", value.strip().lower()).strip("_")
-
-
-def _proxy_name(server_identifier: str, tool_name: str) -> str:
-    return f"mcp__{_slug(server_identifier)}__{_slug(tool_name)}"
-
-
-def _tokenize(text: str) -> list[str]:
-    return [token for token in re.findall(r"[a-z0-9_]{3,}", text.lower()) if token]
+from domain.shared.mcp.types import (  # noqa: F401  re-export for backward compatibility
+    MCPToolInfo,
+    MCPServerInfo,
+    MCPToolRef,
+    _SERVER_HINTS,
+    _proxy_name,
+    _slug,
+    _tokenize,
+)
 
 
 class MCPCatalog:
+    """MCP 服务器目录扫描器与查询器。
+
+    ``scan()`` 从 ``root_dir`` 读取 ``SERVER_METADATA.json`` / ``INSTRUCTIONS.md``
+    / ``tools/*.json``，填充内存状态后即可被 domain 通过
+    ``MCPCatalogPort`` 接口消费。构造时不会自动扫描，调用方需显式触发。
+    """
+
     def __init__(self, root_dir: Path) -> None:
         self._root_dir = Path(root_dir)
         self._servers: list[MCPServerInfo] = []
 
     def scan(self) -> list[MCPServerInfo]:
+        """扫描 root_dir 下所有 MCP 服务器目录，返回服务器信息列表。"""
         self._servers = []
         if not self._root_dir.exists():
             return []
@@ -112,11 +92,13 @@ class MCPCatalog:
         return list(self._servers)
 
     def list_servers(self) -> list[MCPServerInfo]:
+        """返回所有已发现的服务器；首次调用时自动触发扫描。"""
         if not self._servers:
             self.scan()
         return list(self._servers)
 
     def list_tool_refs(self) -> list[MCPToolRef]:
+        """将所有服务器的工具展平为 MCPToolRef 列表。"""
         refs: list[MCPToolRef] = []
         for server in self.list_servers():
             for tool in server.tools:
@@ -134,12 +116,14 @@ class MCPCatalog:
         return refs
 
     def get_tool_ref(self, proxy_name: str) -> MCPToolRef | None:
+        """按 proxy_name 查找工具引用；未找到返回 None。"""
         for ref in self.list_tool_refs():
             if ref.proxy_name == proxy_name:
                 return ref
         return None
 
     def select_tool_refs(self, query: str, limit: int = 4) -> list[MCPToolRef]:
+        """根据查询文本打分选择 top-N 工具引用。"""
         text = query.strip().lower()
         if not text:
             return []
@@ -161,6 +145,7 @@ class MCPCatalog:
         limit: int = 4,
         tool_refs: list[MCPToolRef] | None = None,
     ) -> str:
+        """构建注入 system prompt 的 MCP 工具说明块。"""
         refs = (
             list(tool_refs)
             if tool_refs is not None
@@ -183,6 +168,7 @@ class MCPCatalog:
         return "\n".join(lines).strip()
 
     def _score_tool_ref(self, ref: MCPToolRef, text: str, query_tokens: list[str]) -> int:
+        """对单个工具引用与查询文本的匹配度打分。"""
         score = 0
         server_key = ref.server_identifier.lower()
         tool_key = ref.tool_name.lower()

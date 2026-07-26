@@ -7,7 +7,7 @@ from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
 from domain.shared.tools.registry import ToolRegistry
 from domain.shared.tools.executor import ToolExecutor
-from infrastructure.mcp.runtime import MCPProxyRuntime
+from domain.shared.mcp.ports import MCPCatalogPort
 from domain.user.session.manager import SessionManager
 from domain.shared.audit.logger import AuditLogger
 from domain.agent.schema import AgentConfig
@@ -36,7 +36,7 @@ class AgentFactory:
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
         session_store: SessionManager,
-        mcp_runtime: MCPProxyRuntime,
+        mcp_catalog: MCPCatalogPort,
         audit_logger: AuditLogger,
         # 内置智能体的特殊构造器（如 TravelAgent 需要完整 Agent 主循环）
         builtin_builders: dict[str, Callable[[AgentConfig], BaseAgent]] | None = None,
@@ -46,7 +46,9 @@ class AgentFactory:
         self._tool_registry = tool_registry
         self._tool_executor = tool_executor
         self._session_store = session_store
-        self._mcp_runtime = mcp_runtime
+        # P4.3：factory 持有 MCPCatalogPort 引用并传给 DynamicAgent；
+        # 不再依赖 MCPProxyRuntimePort（DynamicAgent 只需 catalog 查询能力）。
+        self._mcp_catalog = mcp_catalog
         self._audit_logger = audit_logger
         self._builtin_builders = builtin_builders or {}
 
@@ -70,6 +72,6 @@ class AgentFactory:
             tool_registry=self._tool_registry,
             tool_executor=self._tool_executor,
             session_store=self._session_store,
-            mcp_runtime=self._mcp_runtime,
+            mcp_catalog=self._mcp_catalog,
             audit_logger=self._audit_logger,
         )

@@ -11,7 +11,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from infrastructure.mcp.catalog import MCPCatalog
-from infrastructure.tools.base import ToolHandler, ToolSpec, bind_tool
+from domain.shared.tools.base import ToolHandler, ToolSpec, bind_tool
 
 MCPAdapter = Callable[[dict], Awaitable[dict]]
 _SEARCH_HEADERS = {
@@ -575,6 +575,13 @@ def build_default_adapters() -> dict[tuple[str, str], MCPAdapter]:
 
 
 class MCPProxyRuntime:
+    """MCP 代理运行时 — 持有具体适配器并执行工具调用。
+
+    P4.3：结构化实现 ``domain.shared.mcp.ports.MCPProxyRuntimePort``。
+    domain 层只通过端口消费 ``adapter_available``；具体 ``build_specs`` /
+    ``build_handlers`` / ``call_tool`` 属于装配细节，由组合根调用。
+    """
+
     def __init__(
         self,
         *,

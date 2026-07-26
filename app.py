@@ -272,7 +272,7 @@ def build_orchestrator() -> AppContainer:
         tool_registry=tool_registry,
         tool_executor=tool_executor,
         session_store=session_store,
-        mcp_runtime=mcp_runtime,
+        mcp_catalog=mcp_catalog,
         audit_logger=audit_logger,
         builtin_builders={"travel": travel_builder},
     )

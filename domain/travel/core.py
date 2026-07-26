@@ -6,13 +6,11 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from config import settings
-from infrastructure.mcp.runtime import MCPProxyRuntime
+from domain.shared.mcp.ports import MCPCatalogPort, MCPProxyRuntimePort, NullMCPCatalog
 from domain.shared.tools.executor import ToolExecutor
 from domain.shared.tools.registry import ToolRegistry
 from domain.travel.context_manager import ContextManager
 from domain.shared.llm.ports import LLMPort
-from infrastructure.mcp.catalog import MCPCatalog
 from domain.memory.manager import SessionMemory, DualLayerMemoryManager
 from domain.memory.memory_extractor import MemoryExtractor
 from domain.memory.memory_distiller import MemoryDistiller
@@ -52,8 +50,8 @@ class Agent:
         session_store: SessionManager,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
-        mcp_catalog: MCPCatalog | None = None,
-        mcp_runtime: MCPProxyRuntime | None = None,
+        mcp_catalog: MCPCatalogPort | None = None,
+        mcp_runtime: MCPProxyRuntimePort | None = None,
         ops_classifier: TravelIntentClassifier | None = None,
         profile_manager: ProfileManager | None = None,
         audit_logger: AuditLogger | None = None,
@@ -70,7 +68,7 @@ class Agent:
         self._context_manager = ContextManager()
         self._trace_store = TraceStore()
         self._task_store = TaskStateStore()
-        self._mcp_catalog = mcp_catalog or MCPCatalog(settings.mcp_servers_dir)
+        self._mcp_catalog = mcp_catalog or NullMCPCatalog()
         self._mcp_runtime = mcp_runtime
         self._reasoning = ReasoningEngine(
             llm=llm,

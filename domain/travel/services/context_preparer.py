@@ -4,11 +4,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from infrastructure.mcp.runtime import MCPProxyRuntime
+from domain.shared.mcp.ports import MCPCatalogPort, MCPProxyRuntimePort
 from domain.shared.tools.registry import ToolRegistry
 from domain.travel.context_manager import ContextManager
 from domain.shared.llm.ports import LLMPort
-from infrastructure.mcp.catalog import MCPCatalog
 from domain.memory.manager import DualLayerMemoryManager
 from domain.travel.prompt_context import PromptContext
 from domain.travel.prompting import PromptBuilder
@@ -66,8 +65,8 @@ class ContextPreparer:
         prompt_builder: PromptBuilder,
         context_manager: ContextManager,
         dual_memory: DualLayerMemoryManager,
-        mcp_catalog: MCPCatalog,
-        mcp_runtime: MCPProxyRuntime | None,
+        mcp_catalog: MCPCatalogPort,
+        mcp_runtime: MCPProxyRuntimePort | None,
         tool_registry: ToolRegistry,
         profile_manager: ProfileManager | None,
         audit_logger: AuditLogger | None,

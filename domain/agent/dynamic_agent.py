@@ -10,7 +10,7 @@ from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
 from domain.shared.tools.executor import ToolExecutor
 from domain.shared.tools.registry import ToolRegistry
-from infrastructure.mcp.runtime import MCPProxyRuntime
+from domain.shared.mcp.ports import MCPCatalogPort, NullMCPCatalog
 from domain.user.session.manager import SessionManager
 from domain.shared.audit.logger import AuditLogger
 from domain.reasoning.engine import ReasoningEngine, AskUserNeeded, ConfirmationNeeded
@@ -38,7 +38,7 @@ class DynamicAgent(BaseAgent):
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
         session_store: SessionManager,
-        mcp_runtime: MCPProxyRuntime,
+        mcp_catalog: MCPCatalogPort | None,
         audit_logger: AuditLogger,
     ) -> None:
         self._config = config
@@ -46,10 +46,12 @@ class DynamicAgent(BaseAgent):
         self._skill_provider = skill_provider
         self._session_store = session_store
         self._audit_logger = audit_logger
-        self._mcp_runtime = mcp_runtime
+        # P4.3：domain 只消费 MCPCatalogPort 查询能力；未注入时用 NullMCPCatalog
+        # 作为安全默认值，避免在 domain 层实例化 infrastructure.mcp.catalog.MCPCatalog。
+        self._mcp_catalog = mcp_catalog or NullMCPCatalog()
 
         # 解析工具名列表（含 Agent 白名单过滤 — 学术 Agent 仅保留 arxiv 工具）
-        resolved = self._resolve_tools(config, skill_provider, mcp_runtime)
+        resolved = self._resolve_tools(config, skill_provider, self._mcp_catalog)
         self._tool_names = tool_executor.policy.filter_allowed_tools(config.id, resolved)
 
         # 从全局 registry 中筛选工具子集，构建专属 ToolRegistry
@@ -94,12 +96,12 @@ class DynamicAgent(BaseAgent):
         self,
         config: AgentConfig,
         skill_provider: SkillProvider,
-        mcp_runtime: MCPProxyRuntime,
+        mcp_catalog: MCPCatalogPort,
     ) -> list[str]:
         """根据 config.skills 和 config.mcp_servers 解析需要的工具名。
 
         1. 从 skill 中提取绑定的工具（openai.yaml 中 interface.tools）
-        2. 从 MCP server 中提取工具（通过 catalog.list_tool_refs()）
+        2. 从 MCP server 中提取工具（通过 mcp_catalog.list_tool_refs()）
         返回去重后的工具名列表。
         """
         tool_names: list[str] = []
@@ -113,7 +115,7 @@ class DynamicAgent(BaseAgent):
 
         # 2. 从 MCP server 中提取工具
         for server_id in config.mcp_servers:
-            for ref in mcp_runtime.catalog.list_tool_refs():
+            for ref in mcp_catalog.list_tool_refs():
                 if ref.server_identifier == server_id:
                     tool_names.append(ref.proxy_name)
                     logger.debug("MCP [%s] provides tool: %s", server_id, ref.proxy_name)
