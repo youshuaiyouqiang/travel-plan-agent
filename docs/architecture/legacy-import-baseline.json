@@ -78,39 +78,15 @@
     "layer_rule": "api_no_domain_repository_impl"
   },
   {
-    "file": "application/authz/service.py",
-    "line": 66,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
     "file": "application/news/hotspot_service.py",
     "line": 218,
     "module": "infrastructure.news.fetchers",
     "layer_rule": "application_no_infrastructure"
   },
   {
-    "file": "application/news/source_service.py",
-    "line": 39,
-    "module": "infrastructure.persistence.news_repository",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
-    "file": "application/scheduler.py",
-    "line": 29,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
     "file": "application/scheduler.py",
     "line": 30,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
-    "file": "application/travel/service.py",
-    "line": 24,
-    "module": "infrastructure.persistence.travel_repository",
+    "module": "infrastructure.llm.openai",
     "layer_rule": "application_no_infrastructure"
   },
   {

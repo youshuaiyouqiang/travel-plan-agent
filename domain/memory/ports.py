@@ -77,6 +77,14 @@ class MemoryRepositoryPort(Protocol):
         """加载 STM 的衰减判定字段（id/extraction_count/last_accessed_at）。"""
         ...
 
+    def list_user_ids_with_short_term_memories(self) -> list[str]:
+        """列出所有有短期记忆的去重 user_id（排除空字符串）。
+
+        P2.6 引入：供 ``scheduler.run_memory_maintenance`` 枚举需蒸馏的用户，
+        避免 application 层直接查询 ``short_term_memories`` 表。
+        """
+        ...
+
     def find_short_term_duplicate(self, user_id: str, category: str, content: str) -> dict[str, Any] | None:
         """查找同 user/category/content 的 STM 行；不存在返回 None。"""
         ...

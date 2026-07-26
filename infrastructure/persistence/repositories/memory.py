@@ -138,6 +138,14 @@ class SqliteMemoryRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_user_ids_with_short_term_memories(self) -> list[str]:
+        """列出所有有短期记忆的去重 user_id（排除空字符串）。"""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT user_id FROM short_term_memories WHERE user_id != ''"
+        ).fetchall()
+        return [row["user_id"] for row in rows]
+
     def find_short_term_duplicate(self, user_id: str, category: str, content: str) -> dict[str, Any] | None:
         """查找同 user/category/content 的 STM 行；不存在返回 None。"""
         conn = get_connection()

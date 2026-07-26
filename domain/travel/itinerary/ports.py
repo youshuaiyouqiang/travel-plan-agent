@@ -90,6 +90,14 @@ class ItineraryRepositoryPort(Protocol):
         """按 ID 查询活动；不存在返回 None。"""
         ...
 
+    def get_day_itinerary_id(self, day_id: int) -> str | None:
+        """按 day_id 反查所属 itinerary_id；找不到返回 None。
+
+        P2.6 引入：供 ``AuthorizationService.require_activity`` 做对象级
+        授权校验，避免 application 层直接查询 ``itinerary_days`` 表。
+        """
+        ...
+
     def save_full_itinerary(self, itinerary: Itinerary) -> Itinerary:
         """创建完整行程（行程 + 天数 + 活动），返回加载后的聚合根。"""
         ...

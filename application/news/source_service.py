@@ -36,7 +36,10 @@ from application.news.source_rubric_scorer import (
     LlmJsonClient,
     SourceRubricScorer,
 )
-from infrastructure.persistence.news_repository import NewsSourceRepository
+from application.news.ports import (
+    NewsSourceRepositoryPort,
+    get_default_news_source_repository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +76,12 @@ class SourceService:
 
     def __init__(
         self,
-        repository: NewsSourceRepository | None = None,
+        repository: NewsSourceRepositoryPort | None = None,
         scorer: SourceCandidateScorer | None = None,
         rubric_scorer: SourceRubricScorer | None = None,
         llm: LlmJsonClient | None = None,
     ) -> None:
-        self._repo = repository or NewsSourceRepository()
+        self._repo = repository or get_default_news_source_repository()
         # 启发式评分器保留为回退路径；rubric 评分器在 llm=None 时直接走启发式。
         self._scorer = scorer or SourceCandidateScorer()
         if rubric_scorer is None:

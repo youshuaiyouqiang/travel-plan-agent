@@ -102,6 +102,9 @@ class ItineraryRepository:
     def get_activity(self, activity_id: int) -> Activity | None:
         return self._repository.get_activity(activity_id)
 
+    def get_day_itinerary_id(self, day_id: int) -> str | None:
+        return self._repository.get_day_itinerary_id(day_id)
+
     def save_full_itinerary(self, itinerary: Itinerary) -> Itinerary:
         return self._repository.save_full_itinerary(itinerary)
 

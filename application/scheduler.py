@@ -26,8 +26,8 @@ import logging
 
 from config import settings
 from domain.memory.memory_distiller import MemoryDistiller
+from domain.memory.ports import get_default_memory_repository
 from infrastructure.llm.openai import OpenAILLM
-from infrastructure.persistence.database import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +59,12 @@ async def run_memory_maintenance() -> None:
             distiller = MemoryDistiller(llm=llm)
 
             # 1. 枚举所有有短期记忆的用户，逐个蒸馏（确保隔离）
-            conn = get_connection()
-            user_rows = conn.execute("SELECT DISTINCT user_id FROM short_term_memories WHERE user_id != ''").fetchall()
-            conn.close()
+            # P2.6：通过 MemoryRepositoryPort 枚举用户，不再直接查询数据库
+            memory_repo = get_default_memory_repository()
+            user_ids = memory_repo.list_user_ids_with_short_term_memories()
 
             total_distilled = 0
-            for row in user_rows:
-                uid = row["user_id"]
+            for uid in user_ids:
                 try:
                     # 在独立线程中调用 sync run_distillation，
                     # 让 _compress_content 内的 asyncio.run() 正常工作
@@ -86,7 +85,7 @@ async def run_memory_maintenance() -> None:
 
             logger.info(
                 "Memory maintenance cycle done: users=%d distilled=%d",
-                len(user_rows),
+                len(user_ids),
                 total_distilled,
             )
         except Exception:

@@ -127,13 +127,11 @@ class TestRunMemoryMaintenance:
         # mock OpenAILLM
         monkeypatch.setattr(scheduler.OpenAILLM, "__init__", lambda self, **kw: None)
 
-        # mock get_connection 返回 2 个 user_rows
-        mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchall.return_value = [
-            {"user_id": "u1"},
-            {"user_id": "u2"},
-        ]
-        monkeypatch.setattr(scheduler, "get_connection", lambda: mock_conn)
+        # P2.6：mock get_default_memory_repository 返回 2 个 user_id
+        # 原 get_connection 直接查询被 MemoryRepositoryPort.list_user_ids_with_short_term_memories 替代
+        mock_memory_repo = MagicMock()
+        mock_memory_repo.list_user_ids_with_short_term_memories.return_value = ["u1", "u2"]
+        monkeypatch.setattr(scheduler, "get_default_memory_repository", lambda: mock_memory_repo)
 
         # mock MemoryDistiller
         mock_distiller = MagicMock()

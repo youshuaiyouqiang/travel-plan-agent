@@ -188,6 +188,17 @@ class SqliteItineraryRepository:
             return None
         return Activity.from_row(dict(row))
 
+    def get_day_itinerary_id(self, day_id: int) -> str | None:
+        """按 day_id 反查所属 itinerary_id。"""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT itinerary_id FROM itinerary_days WHERE id = ?",
+            (day_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return row["itinerary_id"]
+
     def save_full_itinerary(self, itinerary: Itinerary) -> Itinerary:
         created = self.create_itinerary(
             user_id=itinerary.user_id,

@@ -62,17 +62,13 @@ class AuthorizationService:
         return activity
 
     def _itinerary_id_of_day(self, day_id: int) -> str | None:
-        """通过 day_id 反查所属 itinerary_id；找不到返回 None。"""
-        from infrastructure.persistence.database import get_connection
+        """通过 day_id 反查所属 itinerary_id；找不到返回 None。
 
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT itinerary_id FROM itinerary_days WHERE id = ?",
-            (day_id,),
-        ).fetchone()
-        if not row:
-            return None
-        return row["itinerary_id"]
+        P2.6：原直接查询 ``itinerary_days`` 表的 SQL 已委托到
+        ``ItineraryRepositoryPort.get_day_itinerary_id``，消除 application
+        层对 infrastructure 的直接依赖。
+        """
+        return self._itineraries.get_day_itinerary_id(day_id)
 
     # ------------------------------------------------------------------
     # 会话

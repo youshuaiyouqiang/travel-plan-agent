@@ -21,14 +21,17 @@ from application.travel.models import (
     TravelArchive,
     TravelDraft,
 )
-from infrastructure.persistence.travel_repository import TravelRepository
+from application.travel.ports import (
+    TravelRepositoryPort,
+    get_default_travel_repository,
+)
 
 
 class TravelService:
     """旅行草稿与存档应用服务。"""
 
-    def __init__(self, repository: TravelRepository | None = None) -> None:
-        self._repo = repository or TravelRepository()
+    def __init__(self, repository: TravelRepositoryPort | None = None) -> None:
+        self._repo = repository or get_default_travel_repository()
 
     # ------------------------------------------------------------------
     # 草稿
