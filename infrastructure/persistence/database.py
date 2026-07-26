@@ -115,4 +115,10 @@ def init_db(db_path: str | Path | None = None) -> None:
 
     configure_default_session_repository(SqliteSessionRepository())
 
+    # P2.2：注册默认画像仓储
+    from domain.user.profile.ports import configure_default_profile_repository
+    from infrastructure.persistence.repositories.profile import SqliteProfileRepository
+
+    configure_default_profile_repository(SqliteProfileRepository())
+
     logger.info("Database initialized: %s", db_path or settings.database_path)

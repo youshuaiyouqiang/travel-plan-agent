@@ -5,17 +5,28 @@ import time
 from datetime import datetime
 from typing import Any
 
-from infrastructure.persistence.database import get_connection, _json_dumps, _json_loads
+from domain.user.profile.ports import (
+    ProfileRepositoryPort,
+    get_default_profile_repository,
+)
 from domain.user.profile.schema import UserProfile
 
 logger = logging.getLogger(__name__)
 
 
 class ProfileManager:
+    """用户画像管理器；通过 ``ProfileRepositoryPort`` 访问持久化层。
+
+    P2.2：原直连 ``get_connection()`` 的 SQL 已下沉到
+    ``infrastructure.persistence.repositories.profile.SqliteProfileRepository``。
+    本类只负责内存缓存与业务逻辑编排。
+    """
+
     # P2-1：缓存 TTL（秒），过期后下次 get 重新从 DB 加载
     _CACHE_TTL = 300
 
-    def __init__(self) -> None:
+    def __init__(self, repository: ProfileRepositoryPort | None = None) -> None:
+        self._repository = repository or get_default_profile_repository()
         self._cache: dict[str, UserProfile] = {}
         self._cache_time: dict[str, float] = {}
 
@@ -75,44 +86,7 @@ class ProfileManager:
         return "\n".join(lines)
 
     def _load(self, user_id: str) -> UserProfile | None:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT user_id, tags, interaction_count, last_intent, preferred_categories, "
-            "custom_attributes, created_at, updated_at "
-            "FROM profiles WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-        if not row:
-            return None
-        return UserProfile(
-            user_id=row["user_id"],
-            tags=_json_loads(row["tags"], []),
-            interaction_count=int(row["interaction_count"]),
-            last_intent=row["last_intent"],
-            preferred_categories=_json_loads(row["preferred_categories"], []),
-            custom_attributes=_json_loads(row["custom_attributes"], {}),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+        return self._repository.load_profile(user_id)
 
     def _save(self, profile: UserProfile) -> None:
-        conn = get_connection()
-        conn.execute(
-            "INSERT INTO profiles (user_id, tags, interaction_count, last_intent, preferred_categories, "
-            "custom_attributes, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET tags=excluded.tags, interaction_count=excluded.interaction_count, "
-            "last_intent=excluded.last_intent, preferred_categories=excluded.preferred_categories, "
-            "custom_attributes=excluded.custom_attributes, updated_at=excluded.updated_at",
-            (
-                profile.user_id,
-                _json_dumps(profile.tags),
-                profile.interaction_count,
-                profile.last_intent,
-                _json_dumps(profile.preferred_categories),
-                _json_dumps(profile.custom_attributes),
-                profile.created_at,
-                profile.updated_at,
-            ),
-        )
-        conn.commit()
+        self._repository.save_profile(profile)

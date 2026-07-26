@@ -382,11 +382,5 @@
     "line": 8,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/profile/manager.py",
-    "line": 8,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
   }
 ]
