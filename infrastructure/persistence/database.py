@@ -137,4 +137,10 @@ def init_db(db_path: str | Path | None = None) -> None:
     configure_default_token_repository(SqliteTokenRepository())
     configure_default_password_hasher(BcryptPasswordHasher())
 
+    # P2.4：注册默认记忆仓储
+    from domain.memory.ports import configure_default_memory_repository
+    from infrastructure.persistence.repositories.memory import SqliteMemoryRepository
+
+    configure_default_memory_repository(SqliteMemoryRepository())
+
     logger.info("Database initialized: %s", db_path or settings.database_path)

@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from config import settings
+from domain.memory.ports import MemoryRepositoryPort, get_default_memory_repository
 from infrastructure.llm.openai import OpenAILLM
-from infrastructure.persistence.database import get_connection, _json_dumps, _json_loads
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,13 @@ _DISTILL_SYSTEM_PROMPT = """\
 
 
 class MemoryDistiller:
-    def __init__(self, llm: OpenAILLM | None = None) -> None:
+    def __init__(
+        self,
+        llm: OpenAILLM | None = None,
+        repository: MemoryRepositoryPort | None = None,
+    ) -> None:
         self._llm = llm
+        self._repository = repository or get_default_memory_repository()
 
     def run_distillation(self, user_id: str) -> int:
         candidates = self._find_candidates(user_id)
@@ -36,30 +41,21 @@ class MemoryDistiller:
             return 0
 
         distilled_count = 0
-        conn = get_connection()
         now = datetime.utcnow().isoformat()
 
         for stm in candidates:
-            existing_ltm = conn.execute(
-                "SELECT id FROM long_term_memories "
-                "WHERE user_id = ? AND category = ? AND content = ? AND status = 'active' LIMIT 1",
-                (user_id, stm["category"], stm["content"]),
-            ).fetchone()
+            existing_ltm_id = self._repository.find_existing_ltm_id(
+                user_id, stm["category"], stm["content"]
+            )
 
-            if existing_ltm:
-                conn.execute(
-                    "UPDATE long_term_memories SET extraction_count = extraction_count + 1, "
-                    "last_accessed_at = ?, updated_at = ? WHERE id = ?",
-                    (now, now, existing_ltm["id"]),
-                )
-                conn.execute(
-                    "DELETE FROM short_term_memories WHERE id = ?",
-                    (stm["id"],),
-                )
+            if existing_ltm_id is not None:
+                # 路径 A：同内容 LTM 已存在，递增 extraction_count 并删除源 STM（原子事务）
+                self._repository.merge_stm_into_existing_ltm(stm["id"], existing_ltm_id, now)
                 distilled_count += 1
                 continue
 
-            source_ids = _json_loads(stm.get("source_ids", "[]"), default=[])
+            # 路径 B：新建 LTM 并删除源 STM（原子事务）
+            source_ids = _parse_source_ids(stm.get("source_ids", "[]"))
             if not source_ids:
                 source_ids = [stm["id"]]
 
@@ -67,26 +63,16 @@ class MemoryDistiller:
             if self._llm and len(content) > 30:
                 content = self._compress_content(content, stm["category"])
 
-            conn.execute(
-                "INSERT INTO long_term_memories "
-                "(user_id, category, content, source_ids, experience_tag, extraction_count, "
-                "last_accessed_at, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)",
-                (
-                    user_id,
-                    stm["category"],
-                    content,
-                    _json_dumps(source_ids),
-                    stm.get("experience_tag", ""),
-                    stm["extraction_count"],
-                    stm["last_accessed_at"] or now,
-                    now,
-                    now,
-                ),
-            )
-            conn.execute(
-                "DELETE FROM short_term_memories WHERE id = ?",
-                (stm["id"],),
+            self._repository.promote_stm_to_ltm(
+                user_id=user_id,
+                category=stm["category"],
+                content=content,
+                source_ids=source_ids,
+                experience_tag=stm.get("experience_tag", ""),
+                extraction_count=stm["extraction_count"],
+                last_accessed_at=stm["last_accessed_at"] or now,
+                stm_id=stm["id"],
+                now=now,
             )
             distilled_count += 1
             logger.info(
@@ -96,11 +82,9 @@ class MemoryDistiller:
                 content[:30],
             )
 
-        conn.commit()
         return distilled_count
 
     def run_decay(self, user_id: str | None = None) -> int:
-        conn = get_connection()
         now = datetime.utcnow()
         decayed = 0
 
@@ -108,19 +92,8 @@ class MemoryDistiller:
         deprecated_days = stale_days + 30
         stm_expire_days = getattr(settings, "memory_stm_expire_days", 30)
 
-        if user_id:
-            user_filter = "WHERE user_id = ?"
-            params: list[Any] = [user_id]
-        else:
-            user_filter = ""
-            params = []
-
-        rows = conn.execute(
-            f"SELECT id, last_accessed_at, status FROM long_term_memories {user_filter}",
-            params,
-        ).fetchall()
-
-        for row in rows:
+        # ── LTM 衰减：active → stale → deprecated ──
+        for row in self._repository.get_ltm_for_decay(user_id):
             if not row["last_accessed_at"]:
                 continue
             try:
@@ -131,24 +104,14 @@ class MemoryDistiller:
             days_idle = (now - last).days
 
             if row["status"] == "active" and days_idle > stale_days:
-                conn.execute(
-                    "UPDATE long_term_memories SET status = 'stale', updated_at = ? WHERE id = ?",
-                    (now.isoformat(), row["id"]),
-                )
+                self._repository.update_ltm_status(row["id"], "stale", now.isoformat())
                 decayed += 1
             elif row["status"] == "stale" and days_idle > deprecated_days:
-                conn.execute(
-                    "UPDATE long_term_memories SET status = 'deprecated', updated_at = ? WHERE id = ?",
-                    (now.isoformat(), row["id"]),
-                )
+                self._repository.update_ltm_status(row["id"], "deprecated", now.isoformat())
                 decayed += 1
 
-        stm_rows = conn.execute(
-            f"SELECT id, extraction_count, last_accessed_at FROM short_term_memories {user_filter}",
-            params,
-        ).fetchall()
-
-        for row in stm_rows:
+        # ── STM 衰减：过期且低引用删除 ──
+        for row in self._repository.get_stm_for_decay(user_id):
             if not row["last_accessed_at"]:
                 continue
             try:
@@ -158,47 +121,33 @@ class MemoryDistiller:
 
             days_idle = (now - last).days
             if days_idle > stm_expire_days and row["extraction_count"] < 2:
-                conn.execute("DELETE FROM short_term_memories WHERE id = ?", (row["id"],))
+                self._repository.delete_short_term(row["id"])
                 decayed += 1
 
-        conn.commit()
         if decayed > 0:
             logger.info("Memory decay: user=%s decayed=%d", user_id or "all", decayed)
         return decayed
 
-    def _find_candidates(self, user_id: str) -> list[dict]:
-        conn = get_connection()
+    def _find_candidates(self, user_id: str) -> list[dict[str, Any]]:
         min_extractions = getattr(settings, "memory_distill_threshold", 3)
         min_conversations = getattr(settings, "memory_distill_min_convs", 2)
 
-        rows = conn.execute(
-            "SELECT stm.id, stm.user_id, stm.category, stm.content, "
-            "stm.experience_tag, stm.extraction_count, stm.last_accessed_at "
-            "FROM short_term_memories stm "
-            "WHERE stm.user_id = ? AND stm.extraction_count >= ?",
-            (user_id, min_extractions),
-        ).fetchall()
-
-        candidates = []
-        for row in rows:
-            conv_rows = conn.execute(
-                "SELECT DISTINCT c.id FROM memory_extractions me "
-                "JOIN conversations c ON me.conversation_id = c.id "
-                "WHERE me.memory_type = 'short_term' AND me.memory_id = ?",
-                (row["id"],),
-            ).fetchall()
-            distinct_conv_ids = set(r["id"] for r in conv_rows)
+        candidates: list[dict[str, Any]] = []
+        for row in self._repository.get_stm_candidates(user_id, min_extractions):
+            distinct_conv_ids = self._repository.get_distinct_conversation_ids_for_memory(row["id"])
 
             if len(distinct_conv_ids) >= min_conversations:
                 days_since_access = 9999
                 if row["last_accessed_at"]:
                     try:
-                        days_since_access = (datetime.utcnow() - datetime.fromisoformat(row["last_accessed_at"])).days
+                        days_since_access = (
+                            datetime.utcnow() - datetime.fromisoformat(row["last_accessed_at"])
+                        ).days
                     except (ValueError, TypeError):
                         pass
 
                 if days_since_access <= 30:
-                    candidates.append(dict(row))
+                    candidates.append(row)
 
         return candidates
 
@@ -235,3 +184,19 @@ class MemoryDistiller:
             logger.warning("Memory compression failed", exc_info=True)
 
         return content[:30]
+
+
+def _parse_source_ids(raw: str) -> list[int]:
+    """解析 source_ids JSON 字符串为 int 列表；失败返回空列表。
+
+    替代原 ``infrastructure.persistence.database._json_loads``，保持相同容错语义。
+    """
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [int(x) for x in parsed]
+    except (ValueError, TypeError):
+        pass
+    return []

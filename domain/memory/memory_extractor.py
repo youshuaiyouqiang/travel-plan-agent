@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 
+from domain.memory.ports import MemoryRepositoryPort, get_default_memory_repository
 from infrastructure.llm.openai import OpenAILLM
-from infrastructure.persistence.database import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +49,13 @@ class ExtractedMemory:
 
 
 class MemoryExtractor:
-    def __init__(self, llm: OpenAILLM) -> None:
+    def __init__(
+        self,
+        llm: OpenAILLM,
+        repository: MemoryRepositoryPort | None = None,
+    ) -> None:
         self._llm = llm
+        self._repository = repository or get_default_memory_repository()
 
     async def extract(
         self,
@@ -123,35 +127,27 @@ class MemoryExtractor:
         if not memories:
             return []
 
-        conn = get_connection()
         saved_ids: list[int] = []
         now = datetime.utcnow().isoformat()
 
         for mem in memories:
-            existing = conn.execute(
-                "SELECT id, extraction_count FROM short_term_memories "
-                "WHERE user_id = ? AND category = ? AND content = ? LIMIT 1",
-                (user_id, mem.category, mem.content),
-            ).fetchone()
+            existing = self._repository.find_short_term_duplicate(user_id, mem.category, mem.content)
 
             if existing:
-                conn.execute(
-                    "UPDATE short_term_memories SET source_conv_id = ?, last_accessed_at = ? WHERE id = ?",
-                    (conversation_id, now, existing["id"]),
-                )
+                self._repository.update_stm_source_conv(existing["id"], conversation_id, now)
                 saved_ids.append(existing["id"])
                 logger.debug("Memory skip duplicate: %s", mem.content[:40])
             else:
-                cursor = conn.execute(
-                    "INSERT INTO short_term_memories "
-                    "(user_id, category, content, source_conv_id, experience_tag, "
-                    "extraction_count, last_accessed_at, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    (user_id, mem.category, mem.content, conversation_id, mem.experience_tag, now, now),
+                new_id = self._repository.insert_short_term(
+                    user_id=user_id,
+                    category=mem.category,
+                    content=mem.content,
+                    conversation_id=conversation_id,
+                    experience_tag=mem.experience_tag,
+                    now=now,
                 )
-                saved_ids.append(cursor.lastrowid or 0)
+                saved_ids.append(new_id)
 
-        conn.commit()
         return saved_ids
 
     def _format_turns(self, turns: list[dict[str, str]]) -> str:

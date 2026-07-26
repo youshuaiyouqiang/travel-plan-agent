@@ -4,9 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from config import settings
+from domain.memory.ports import MemoryRepositoryPort, get_default_memory_repository
 from domain.user.session.manager import Session
-from infrastructure.persistence.database import get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -39,33 +38,18 @@ class LongTermMemory:
 
 
 class DualLayerMemoryManager:
-    def get_long_term_memories(self, user_id: str) -> list[LongTermMemory]:
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT id, user_id, category, content, source_ids, experience_tag, extraction_count, "
-            "last_accessed_at, status, created_at, updated_at "
-            "FROM long_term_memories WHERE user_id = ? AND status = 'active' "
-            "ORDER BY last_accessed_at DESC, updated_at DESC",
-            (user_id,),
-        ).fetchall()
-        from infrastructure.persistence.database import _json_loads
+    """双层记忆管理器；通过 ``MemoryRepositoryPort`` 访问持久化层。
 
-        return [
-            LongTermMemory(
-                id=row["id"],
-                user_id=row["user_id"],
-                category=row["category"],
-                content=row["content"],
-                source_ids=_json_loads(row["source_ids"], default=[]),
-                experience_tag=row["experience_tag"] if "experience_tag" in row.keys() else "",
-                extraction_count=row["extraction_count"],
-                last_accessed_at=row["last_accessed_at"],
-                status=row["status"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-            )
-            for row in rows
-        ]
+    P2.4：原直连 ``get_connection()`` 的 SQL 与 ``_json_loads`` 已下沉到
+    ``infrastructure.persistence.repositories.memory.SqliteMemoryRepository``。
+    本类只负责内存中的查询评分、分组渲染与业务逻辑编排。
+    """
+
+    def __init__(self, repository: MemoryRepositoryPort | None = None) -> None:
+        self._repository = repository or get_default_memory_repository()
+
+    def get_long_term_memories(self, user_id: str) -> list[LongTermMemory]:
+        return self._repository.get_long_term_memories(user_id)
 
     def get_short_term_memories(
         self,
@@ -75,47 +59,22 @@ class DualLayerMemoryManager:
         limit: int | None = None,
     ) -> list[ShortTermMemory]:
         max_items = limit or 20
-        conn = get_connection()
 
         if query.strip():
             terms = [t for t in query.strip().lower().split() if t]
-            rows = conn.execute(
-                "SELECT id, user_id, category, content, experience_tag, "
-                "extraction_count, last_accessed_at, created_at "
-                "FROM short_term_memories WHERE user_id = ?",
-                (user_id,),
-            ).fetchall()
-            scored: list[tuple[int, dict]] = []
-            for row in rows:
-                hay = row["content"].lower()
+            all_stms = self._repository.get_all_short_term_memories(user_id)
+            scored: list[tuple[int, ShortTermMemory]] = []
+            for stm in all_stms:
+                hay = stm.content.lower()
                 score = sum(1 for term in terms if term in hay)
                 if score > 0:
-                    scored.append((score, dict(row)))
-            scored.sort(key=lambda r: (r[0], r[1].get("created_at", "")), reverse=True)
-            top = [item for _, item in scored[:max_items]]
-        else:
-            rows = conn.execute(
-                "SELECT id, user_id, category, content, experience_tag, "
-                "extraction_count, last_accessed_at, created_at "
-                "FROM short_term_memories WHERE user_id = ? "
-                "ORDER BY id DESC LIMIT ?",
-                (user_id, max_items),
-            ).fetchall()
-            top = [dict(row) for row in reversed(rows)]
+                    scored.append((score, stm))
+            scored.sort(key=lambda r: (r[0], r[1].created_at), reverse=True)
+            return [stm for _, stm in scored[:max_items]]
 
-        return [
-            ShortTermMemory(
-                id=r["id"],
-                user_id=r["user_id"],
-                category=r["category"],
-                content=r["content"],
-                experience_tag=r["experience_tag"],
-                extraction_count=r["extraction_count"],
-                last_accessed_at=r["last_accessed_at"],
-                created_at=r["created_at"],
-            )
-            for r in top
-        ]
+        recent = self._repository.get_recent_short_term_memories(user_id, max_items)
+        # 仓储按 id DESC 返回；reversed() 还原为窗口内时间正序，保持原有行为
+        return list(reversed(recent))
 
     def build_full_context(self, user_id: str, *, query: str = "") -> str:
         parts: list[str] = []
@@ -123,13 +82,7 @@ class DualLayerMemoryManager:
 
         ltm_list = self.get_long_term_memories(user_id)
         if ltm_list:
-            conn = get_connection()
-            ltm_ids = [m.id for m in ltm_list]
-            conn.execute(
-                f"UPDATE long_term_memories SET last_accessed_at = ? WHERE id IN ({','.join('?' * len(ltm_ids))})",
-                (now, *ltm_ids),
-            )
-            conn.commit()
+            self._repository.touch_long_term_memories([m.id for m in ltm_list], now)
 
             category_labels = {"preference": "偏好", "fact": "事实", "experience": "经验"}
             grouped: dict[str, list[str]] = {}
@@ -151,13 +104,7 @@ class DualLayerMemoryManager:
 
         stm_list = self.get_short_term_memories(user_id, query=query, limit=10)
         if stm_list:
-            conn = get_connection()
-            stm_ids = [m.id for m in stm_list]
-            conn.execute(
-                f"UPDATE short_term_memories SET last_accessed_at = ? WHERE id IN ({','.join('?' * len(stm_ids))})",
-                (now, *stm_ids),
-            )
-            conn.commit()
+            self._repository.touch_short_term_memories([m.id for m in stm_list], now)
 
             category_labels = {"preference": "偏好", "fact": "事实", "experience": "经验"}
             stm_lines: list[str] = []
@@ -182,20 +129,14 @@ class DualLayerMemoryManager:
         *,
         relevance: float = 1.0,
     ) -> None:
-        conn = get_connection()
         now = datetime.utcnow().isoformat()
-        conn.execute(
-            "INSERT INTO memory_extractions (conversation_id, memory_type, memory_id, relevance, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (conversation_id, memory_type, memory_id, relevance, now),
+        self._repository.record_extraction(
+            conversation_id=conversation_id,
+            memory_type=memory_type,
+            memory_id=memory_id,
+            relevance=relevance,
+            now=now,
         )
-
-        table = "short_term_memories" if memory_type == "short_term" else "long_term_memories"
-        conn.execute(
-            f"UPDATE {table} SET extraction_count = extraction_count + 1, last_accessed_at = ? WHERE id = ?",
-            (now, memory_id),
-        )
-        conn.commit()
 
     def save_conversation(
         self,
@@ -203,14 +144,8 @@ class DualLayerMemoryManager:
         user_id: str,
         summary: str = "",
     ) -> int:
-        conn = get_connection()
         now = datetime.utcnow().isoformat()
-        cursor = conn.execute(
-            "INSERT INTO conversations (session_id, user_id, summary, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, user_id, summary[:200], now),
-        )
-        conn.commit()
-        return cursor.lastrowid or 0
+        return self._repository.save_conversation(session_id, user_id, summary, now)
 
 
 class SessionMemory:

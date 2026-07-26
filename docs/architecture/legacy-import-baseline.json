@@ -198,39 +198,15 @@
     "layer_rule": "domain_no_infrastructure"
   },
   {
-    "file": "domain/memory/manager.py",
-    "line": 9,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/memory/manager.py",
-    "line": 51,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/memory/memory_distiller.py",
-    "line": 9,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/memory/memory_distiller.py",
     "line": 10,
-    "module": "infrastructure.persistence.database",
+    "module": "infrastructure.llm.openai",
     "layer_rule": "domain_no_infrastructure"
   },
   {
     "file": "domain/memory/memory_extractor.py",
     "line": 8,
     "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/memory/memory_extractor.py",
-    "line": 9,
-    "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
   },
   {
