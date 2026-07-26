@@ -15,9 +15,8 @@ async def submit_feedback(req: FeedbackRequest, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    from domain.feedback.repository import FeedbackRepository
-
-    repo = FeedbackRepository()
+    # P3.3a：从组合根容器获取 feedback 仓储，不再导入 domain.feedback.repository
+    repo = request.app.state.container.feedback_repo
     feedback_id = repo.record(
         session_id=req.session_id,
         user_id=user_id,

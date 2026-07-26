@@ -14,31 +14,38 @@ from application.exceptions import (
     NotFoundException,
     UnauthorizedException,
 )
-from domain.travel.itinerary.repository import ItineraryRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# P2.5：ItineraryRepository 通过 ItineraryRepositoryPort 访问持久化层，
-# 端口在 init_db() 中配置。模块级实例化会在导入时（端口未配置）失败，
-# 故改为延迟获取；首次调用时端口已由组合根装配完毕。
-_itinerary_repo: ItineraryRepository | None = None
 
+def _get_itinerary_repo(request: Request):
+    """从组合根容器获取行程仓储。
 
-def _get_itinerary_repo() -> ItineraryRepository:
-    """获取行程仓储单例；延迟到首次调用以避免导入时端口未配置。"""
-    global _itinerary_repo
-    if _itinerary_repo is None:
-        _itinerary_repo = ItineraryRepository()
-    return _itinerary_repo
+    P3.3a：原模块级延迟实例化已移除；仓储由 ``build_orchestrator()`` 构造并
+    绑定到 ``app.state.container``，路由通过 request 取用，不再导入
+    ``domain.travel.itinerary.repository``。兼容未设置 container 的测试
+    （回退到 ``app.state.itinerary_repo``）。
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.itinerary_repo is not None:
+        return container.itinerary_repo
+    return request.app.state.itinerary_repo
 
 
 def _get_authz_service(request: Request) -> AuthorizationService:
-    """获取应用层 AuthorizationService；若未注入则按默认依赖构造一个。"""
+    """获取应用层 AuthorizationService；若未注入则从 container 获取或按默认依赖构造。"""
     service = getattr(request.app.state, "authz_service", None)
     if service is None:
-        service = AuthorizationService(itinerary_repo=_get_itinerary_repo())
+        container = getattr(request.app.state, "container", None)
+        if container is not None and container.authz_service is not None:
+            service = container.authz_service
+        else:
+            # 回退：未设置 container 时从 session_service 构造；
+            # AuthorizationService 内部会回退到 ItineraryRepository()。
+            session_service = getattr(request.app.state, "session_service", None)
+            service = AuthorizationService(session_service=session_service)
         request.app.state.authz_service = service
     return service
 
@@ -84,9 +91,9 @@ async def create_itinerary(req: CreateItineraryRequest, request: Request) -> dic
                 )
                 day.activities.append(act)
             itin.days.append(day)
-        result = _get_itinerary_repo().save_full_itinerary(itin)
+        result = _get_itinerary_repo(request).save_full_itinerary(itin)
     else:
-        result = _get_itinerary_repo().create_itinerary(
+        result = _get_itinerary_repo(request).create_itinerary(
             user_id=user_id,
             title=req.title,
             destination=req.destination,
@@ -106,7 +113,7 @@ async def list_itineraries(request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    items = _get_itinerary_repo().list_itineraries(user_id)
+    items = _get_itinerary_repo(request).list_itineraries(user_id)
     seen_ids = {i.id for i in items}
     from infrastructure.persistence.database import get_connection
 
@@ -157,8 +164,8 @@ async def update_itinerary(
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _get_itinerary_repo().update_itinerary(itinerary_id, **req.model_dump())
-    updated = _get_itinerary_repo().get_itinerary(itinerary_id)
+    _get_itinerary_repo(request).update_itinerary(itinerary_id, **req.model_dump())
+    updated = _get_itinerary_repo(request).get_itinerary(itinerary_id)
     if updated is None:
         # update_itinerary 成功后 get_itinerary 仅在数据库异常时返回 None；
         # 此处以 404 兜底，避免向客户端暴露内部状态。
@@ -175,7 +182,7 @@ async def delete_itinerary(itinerary_id: str, request: Request) -> dict:
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _get_itinerary_repo().delete_itinerary(itinerary_id)
+    _get_itinerary_repo(request).delete_itinerary(itinerary_id)
     return {"detail": "已删除"}
 
 
@@ -190,7 +197,7 @@ async def delete_activity(itinerary_id: str, activity_id: int, request: Request)
         user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
     )
 
-    _get_itinerary_repo().delete_activity(activity_id)
+    _get_itinerary_repo(request).delete_activity(activity_id)
     return {"detail": "已删除"}
 
 
@@ -207,7 +214,7 @@ async def create_share_link(
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    token = _get_itinerary_repo().create_share_link(itinerary_id, user_id, req.expires_at)
+    token = _get_itinerary_repo(request).create_share_link(itinerary_id, user_id, req.expires_at)
     return {"token": token, "itinerary_id": itinerary_id}
 
 
@@ -220,7 +227,7 @@ async def list_share_links(itinerary_id: str, request: Request) -> dict:
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    links = _get_itinerary_repo().list_share_links(itinerary_id)
+    links = _get_itinerary_repo(request).list_share_links(itinerary_id)
     return {"shares": links}
 
 
@@ -233,5 +240,5 @@ async def delete_share_link(itinerary_id: str, token: str, request: Request) -> 
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _get_itinerary_repo().delete_share_link(token)
+    _get_itinerary_repo(request).delete_share_link(token)
     return {"detail": "已删除"}

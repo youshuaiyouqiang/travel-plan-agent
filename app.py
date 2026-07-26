@@ -46,6 +46,9 @@ from application.news.hotspot_service import HotspotService, get_default_service
 from application.news.source_service import SourceService
 from application.session.service import SessionService
 from domain.user.auth.auth import UserStore
+# P3.3a：api 层 domain repository 导入清除 — container 持有仓储实例供路由取用
+from domain.feedback.repository import FeedbackRepository
+from domain.travel.itinerary.repository import ItineraryRepository
 
 
 @dataclass
@@ -64,6 +67,9 @@ class AppContainer:
     news_analysis_service: NewsAnalysisService | None = None
     hotspot_service: HotspotService | None = None
     admin_user_id: str | None = None
+    # P3.3a：api 层 domain repository 导入清除 — 路由通过 container 取用
+    feedback_repo: FeedbackRepository | None = None
+    itinerary_repo: ItineraryRepository | None = None
 
 
 def _build_tool_infrastructure(
@@ -294,6 +300,9 @@ def build_orchestrator() -> AppContainer:
     # 启动期解析 YUNHE_ADMIN_USERNAME → admin_user_id。
     # 生产环境缺失或找不到对应用户时 fail-fast，禁止静默降级。
     admin_user_id = resolve_admin_user_id()
+    # P3.3a：构造 domain 仓储委托实例供 api 路由取用（端口已在 init_db 配置）
+    feedback_repo = FeedbackRepository()
+    itinerary_repo = ItineraryRepository()
 
     return AppContainer(
         orchestrator=orchestrator,
@@ -307,4 +316,6 @@ def build_orchestrator() -> AppContainer:
         news_analysis_service=news_analysis_service,
         hotspot_service=hotspot_service,
         admin_user_id=admin_user_id,
+        feedback_repo=feedback_repo,
+        itinerary_repo=itinerary_repo,
     )

@@ -23,6 +23,7 @@ from api.v1.debug import router as debug_router
 from api.v1.itinerary import router as itinerary_router
 from api.v1.session import confirm_router as session_confirm_router
 from api.v1.session import router as session_router
+from application.authz import AuthorizationService
 from application.exceptions.base import YunheException
 from application.session.service import SessionService
 from domain.travel.itinerary.repository import ItineraryRepository
@@ -51,6 +52,13 @@ async def app(db):
     """挂载 itinerary / session / confirm / debug 路由的最小 FastAPI 应用。"""
     test_app = FastAPI()
     test_app.state.session_service = SessionService(available_agent_ids={"travel", "academic"})
+    # P3.3a：itinerary 路由从 container 或 app.state.itinerary_repo 获取仓储；
+    # 测试未设置 container，回退到 app.state.itinerary_repo。
+    _itin_repo = ItineraryRepository()
+    test_app.state.itinerary_repo = _itin_repo
+    test_app.state.authz_service = AuthorizationService(
+        itinerary_repo=_itin_repo, session_service=test_app.state.session_service
+    )
     # debug 路由依赖 app.state.agent；本测试用 None 占位，断言在到达 agent 之前就被授权层拦截。
     test_app.state.agent = None
     test_app.middleware("http")(auth_middleware)
