@@ -12,14 +12,13 @@ from api.middleware.auth import auth_middleware, rate_limit_middleware
 from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
 from application.exceptions.base import YunheException
 from application.trending.manager import refresh_pool
-from app import build_orchestrator, resolve_admin_user_id
+from app import AppContainer, build_orchestrator, resolve_admin_user_id
 from config import settings
-from domain.shared.runtime.logging import init_from_settings
 
 """Yunhe API 服务器入口。
 
 本文件仅负责：
-1. 创建 FastAPI 应用实例
+1. 创建 FastAPI 应用实例（``create_api`` 工厂，接收容器）
 2. 注册生命周期钩子
 3. 挂载中间件和全局异常处理器
 4. 挂载 API v1 路由
@@ -27,7 +26,8 @@ from domain.shared.runtime.logging import init_from_settings
 所有路由逻辑已拆分至 ``api/v1/`` 目录。
 """
 
-init_from_settings()
+# P3.2：``init_from_settings`` 已在 ``build_orchestrator()`` 内部调用，
+# 不再在模块级重复初始化，消除 import-time 副作用。
 logger = logging.getLogger(__name__)
 
 _BACKGROUND_TASK: asyncio.Task | None = None
@@ -38,7 +38,7 @@ _POOL_REFRESH_INTERVAL = 1800
 
 # P3.1：``resolve_admin_user_id`` 已迁移到 ``app.py`` 组合根，此处保留
 # re-export 供 ``tests/integration/test_admin_failfast.py`` 等历史导入兼容。
-__all__ = ["resolve_admin_user_id", "app"]
+__all__ = ["resolve_admin_user_id", "app", "create_api"]
 
 
 # ── 后台任务 ──────────────────────────────────────────────
@@ -128,52 +128,58 @@ async def lifespan(app: FastAPI):
 # ── 应用创建 ──────────────────────────────────────────────
 
 
-app = FastAPI(title="Yunhe API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
+def create_api(container: AppContainer) -> FastAPI:
+    """创建 FastAPI 应用并把容器字段绑定到 ``app.state`` 供路由读取。
 
-# P3.1：组合根在 ``build_orchestrator()`` 中统一构造全部应用服务；
-# server.py 只负责把容器字段绑定到 ``app.state`` 供路由读取，不再自行构造服务。
-_container = build_orchestrator()
-app.state.container = _container
-app.state.agent = _container.orchestrator
-app.state.skill_provider = _container.skill_provider
-app.state.builtin_configs = _container.builtin_configs
-app.state.custom_repo = _container.custom_repo
-app.state.mcp_runtime = _container.mcp_runtime
-app.state.mcp_catalog = _container.mcp_catalog
-app.state.session_service = _container.session_service
-app.state.authz_service = _container.authz_service
-app.state.hotspot_service = _container.hotspot_service
-app.state.news_analysis_service = _container.news_analysis_service
-app.state.admin_user_id = _container.admin_user_id
+    P3.2：app 创建逻辑工厂化，测试可注入替身容器；模块级 ``app`` 保留
+    供 uvicorn 与历史 ``from api.server import app`` 导入兼容。
+    """
+    app = FastAPI(title="Yunhe API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
-# ── CORS ──────────────────────────────────────────────────
+    # 组合根已在 ``build_orchestrator()`` 中构造全部应用服务；
+    # 此处只做 ``app.state`` 绑定，不构造任何服务。
+    app.state.container = container
+    app.state.agent = container.orchestrator
+    app.state.skill_provider = container.skill_provider
+    app.state.builtin_configs = container.builtin_configs
+    app.state.custom_repo = container.custom_repo
+    app.state.mcp_runtime = container.mcp_runtime
+    app.state.mcp_catalog = container.mcp_catalog
+    app.state.session_service = container.session_service
+    app.state.authz_service = container.authz_service
+    app.state.hotspot_service = container.hotspot_service
+    app.state.news_analysis_service = container.news_analysis_service
+    app.state.admin_user_id = container.admin_user_id
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins if hasattr(settings, "cors_origins") else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    # ── CORS ──────────────────────────────────────────────
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins if hasattr(settings, "cors_origins") else ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-# ── 中间件 ────────────────────────────────────────────────
+    # ── 中间件 ────────────────────────────────────────────
+    app.middleware("http")(auth_middleware)
+    app.middleware("http")(rate_limit_middleware)
 
-app.middleware("http")(auth_middleware)
-app.middleware("http")(rate_limit_middleware)
+    # ── 全局异常处理器 ─────────────────────────────────────
+    # Starlette 期望异常处理器签名为 (Request, Exception)；此处 yunhe_exception_handler
+    # 接受更窄的 YunheException，运行时仅注册到 YunheException 路由上，
+    # 类型不匹配是 Starlette 类型契约的已知限制。
+    app.add_exception_handler(YunheException, yunhe_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(Exception, unhandled_exception_handler)
 
-# ── 全局异常处理器 ─────────────────────────────────────────
+    # ── 路由挂载 ──────────────────────────────────────────
+    # 新版 API（/api/v1/...）
+    app.include_router(v1_router, prefix="/api/v1")
+    # 向后兼容：旧路由前缀 /api/... 直接复用 v1 路由
+    # 前端当前请求 /api/auth/register 等，此挂载保证无缝迁移
+    app.include_router(v1_router, prefix="/api")
 
-# Starlette 期望异常处理器签名为 (Request, Exception)；此处 yunhe_exception_handler
-# 接受更窄的 YunheException，运行时仅注册到 YunheException 路由上，
-# 类型不匹配是 Starlette 类型契约的已知限制。
-app.add_exception_handler(YunheException, yunhe_exception_handler)  # type: ignore[arg-type]
-app.add_exception_handler(Exception, unhandled_exception_handler)
+    return app
 
-# ── 路由挂载 ──────────────────────────────────────────────
 
-# 新版 API（/api/v1/...）
-app.include_router(v1_router, prefix="/api/v1")
-
-# 向后兼容：旧路由前缀 /api/... 直接复用 v1 路由
-# 前端当前请求 /api/auth/register 等，此挂载保证无缝迁移
-app.include_router(v1_router, prefix="/api")
+# 模块级默认实例：组合根组装容器后创建应用，供 uvicorn 与历史导入兼容。
+app = create_api(build_orchestrator())
