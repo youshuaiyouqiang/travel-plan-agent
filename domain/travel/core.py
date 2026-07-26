@@ -8,8 +8,8 @@ from typing import Any
 
 from config import settings
 from infrastructure.mcp.runtime import MCPProxyRuntime
-from infrastructure.tools.executor import ToolExecutor
-from infrastructure.tools.registry import ToolRegistry
+from domain.shared.tools.executor import ToolExecutor
+from domain.shared.tools.registry import ToolRegistry
 from domain.travel.context_manager import ContextManager
 from domain.shared.llm.ports import LLMPort
 from infrastructure.mcp.catalog import MCPCatalog

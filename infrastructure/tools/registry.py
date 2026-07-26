@@ -1,45 +1,14 @@
+"""工具注册表再导出垫片（P4.2）.
+
+``ToolRegistry`` 已迁移至 ``domain/shared/tools/registry.py``。本模块仅作
+向后兼容垫片，保留 ``app.py``、``infrastructure/tools/adapters/`` 与
+测试中既有的 ``from infrastructure.tools.registry import ...`` 写法。
+
+新代码应直接从 ``domain.shared.tools.registry`` 导入。
+"""
+
 from __future__ import annotations
 
-from collections.abc import Iterator
-from infrastructure.tools.base import Tool, ToolSpec
+from domain.shared.tools.registry import ToolRegistry  # noqa: F401  re-export for backward compatibility
 
-
-class ToolRegistry:
-    def __init__(self) -> None:
-        self._tools: dict[str, Tool] = {}
-
-    def register(self, tool: Tool) -> None:
-        self._tools[tool.name] = tool
-
-    def get(self, name: str) -> Tool:
-        return self._tools[name]
-
-    def has(self, name: str) -> bool:
-        return name in self._tools
-
-    def list_names(
-        self,
-        hints: list[str] | None = None,
-        *,
-        exclude_categories: list[str] | None = None,
-    ) -> list[str]:
-        excluded = set(exclude_categories or [])
-        if not hints:
-            return sorted(name for name, tool in self._tools.items() if tool.category not in excluded)
-        allowed = {
-            name
-            for name, tool in self._tools.items()
-            if (tool.category in hints or name in hints) and tool.category not in excluded
-        }
-        fallback = [name for name, tool in self._tools.items() if tool.category not in excluded]
-        return sorted(allowed or fallback)
-
-    # ===== P1-16：公共 API 替代外部对 _tools 的私有访问 =====
-
-    def get_all_specs(self) -> list[ToolSpec]:
-        """返回所有工具的 spec 列表（只读视图）。"""
-        return [tool.spec for tool in self._tools.values()]
-
-    def iter_tools(self) -> Iterator[Tool]:
-        """迭代所有工具。"""
-        return iter(self._tools.values())
+__all__ = ["ToolRegistry"]

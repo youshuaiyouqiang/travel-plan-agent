@@ -5,8 +5,8 @@ from collections.abc import Callable
 from domain.agent.base import BaseAgent
 from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
-from infrastructure.tools.registry import ToolRegistry
-from infrastructure.tools.executor import ToolExecutor
+from domain.shared.tools.registry import ToolRegistry
+from domain.shared.tools.executor import ToolExecutor
 from infrastructure.mcp.runtime import MCPProxyRuntime
 from domain.user.session.manager import SessionManager
 from domain.shared.audit.logger import AuditLogger

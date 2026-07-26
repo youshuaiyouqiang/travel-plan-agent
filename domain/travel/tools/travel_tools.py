@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from infrastructure.tools.base import ToolHandler, ToolSpec, bind_tool
+from domain.shared.tools.base import ToolHandler, ToolSpec, bind_tool
 
 logger = logging.getLogger(__name__)
 

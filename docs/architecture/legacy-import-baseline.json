@@ -25,18 +25,6 @@
   },
   {
     "file": "domain/agent/dynamic_agent.py",
-    "line": 11,
-    "module": "infrastructure.tools.executor",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/dynamic_agent.py",
-    "line": 12,
-    "module": "infrastructure.tools.registry",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/dynamic_agent.py",
     "line": 13,
     "module": "infrastructure.mcp.runtime",
     "layer_rule": "domain_no_infrastructure"
@@ -45,18 +33,6 @@
     "file": "domain/agent/factory.py",
     "line": 7,
     "module": "infrastructure.skills.provider",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/factory.py",
-    "line": 8,
-    "module": "infrastructure.tools.registry",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/factory.py",
-    "line": 9,
-    "module": "infrastructure.tools.executor",
     "layer_rule": "domain_no_infrastructure"
   },
   {
@@ -72,39 +48,9 @@
     "layer_rule": "domain_no_application"
   },
   {
-    "file": "domain/reasoning/engine.py",
-    "line": 11,
-    "module": "infrastructure.tools.executor",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/reasoning/engine.py",
-    "line": 12,
-    "module": "infrastructure.tools.registry",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/reasoning/tool_selector.py",
-    "line": 3,
-    "module": "infrastructure.tools.base",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/travel/core.py",
     "line": 10,
     "module": "infrastructure.mcp.runtime",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/core.py",
-    "line": 11,
-    "module": "infrastructure.tools.executor",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/core.py",
-    "line": 12,
-    "module": "infrastructure.tools.registry",
     "layer_rule": "domain_no_infrastructure"
   },
   {
@@ -121,26 +67,8 @@
   },
   {
     "file": "domain/travel/services/context_preparer.py",
-    "line": 8,
-    "module": "infrastructure.tools.registry",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/services/context_preparer.py",
     "line": 11,
     "module": "infrastructure.mcp.catalog",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/services/context_preparer.py",
-    "line": 114,
-    "module": "infrastructure.tools.executor",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/tools/travel_tools.py",
-    "line": 6,
-    "module": "infrastructure.tools.base",
     "layer_rule": "domain_no_infrastructure"
   },
   {

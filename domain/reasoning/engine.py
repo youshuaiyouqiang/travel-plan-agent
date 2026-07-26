@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from config import settings
 import re
-from infrastructure.tools.executor import ToolExecutor
-from infrastructure.tools.registry import ToolRegistry
+from domain.shared.tools.executor import ToolExecutor
+from domain.shared.tools.registry import ToolRegistry
 from domain.shared.llm.ports import LLMPort, LLMResponse, ToolCallResult as LLMToolCall
 from domain.shared.audit.context import AuditContext
 from domain.shared.types import Decision, DecisionType, ToolCall

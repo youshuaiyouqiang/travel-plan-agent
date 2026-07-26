@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from infrastructure.tools.base import ToolSpec
+from domain.shared.tools.base import ToolSpec
 
 
 class ToolSelector:

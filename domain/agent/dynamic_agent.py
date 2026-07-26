@@ -8,8 +8,8 @@ from domain.agent.base import BaseAgent
 from domain.agent.schema import AgentConfig
 from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
-from infrastructure.tools.executor import ToolExecutor
-from infrastructure.tools.registry import ToolRegistry
+from domain.shared.tools.executor import ToolExecutor
+from domain.shared.tools.registry import ToolRegistry
 from infrastructure.mcp.runtime import MCPProxyRuntime
 from domain.user.session.manager import SessionManager
 from domain.shared.audit.logger import AuditLogger

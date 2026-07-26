@@ -1,14 +1,16 @@
 # infrastructure/tools/ — 模块记忆
 
 ## 职责定位
-工具核心框架：工具定义、注册、安全策略、异步执行，是所有 Agent 工具调用的统一总线。
+工具外部 I/O 适配器集合（`adapters/` 子包）。核心工具框架（`ToolSpec`/`Tool`/
+`ToolRegistry`/`ToolPolicy`/`ToolExecutor`/`ToolCatalog`）于 P4.2 迁移至
+`domain/shared/tools/`，本目录下的同名模块仅作向后兼容再导出垫片。
 
 ## 关键文件
-- `base.py`：`ToolSpec` / `Tool` 定义，含渐进式披露 tier、skill_binding、mcp_source 属性。
-- `registry.py`：名称 → 工具的注册与查询。
-- `catalog.py`：spec 只读视图。
-- `policy.py`：安全策略——硬编码拦截高危 shell 命令、禁写 `/etc/`、高风险操作需确认、频率限制、按 Agent 过滤工具白名单（`filter_allowed_tools`）。
-- `executor.py`：异步执行器，落地 DENY/CONFIRM/UNKNOWN 决策与审计日志。
+- `base.py` / `registry.py` / `catalog.py` / `policy.py` / `executor.py`：
+  P4.2 起为再导出垫片，从 `domain.shared.tools.*` 重新导出同名符号，供
+  `app.py`、`adapters/` 与历史测试继续使用。新代码应直接从 `domain.shared.tools` 导入。
+- `adapters/`：具体外部 I/O 实现（amap、fliggy、qweather、http、drive_cost、
+  interaction、shared），仍属本目录职责。
 - `__init__.py`：包占位。
 
 ## 业务边界要点
