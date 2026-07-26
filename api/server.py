@@ -10,11 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.v1 import router as v1_router
 from api.middleware.auth import auth_middleware, rate_limit_middleware
 from api.middleware.error_handler import yunhe_exception_handler, unhandled_exception_handler
-from application.authz import AuthorizationService
 from application.exceptions.base import YunheException
-from application.session.service import SessionService
 from application.trending.manager import refresh_pool
-from app import build_orchestrator
+from app import build_orchestrator, resolve_admin_user_id
 from config import settings
 from domain.shared.runtime.logging import init_from_settings
 
@@ -38,54 +36,9 @@ _HOTSPOT_REFRESH_TASK: asyncio.Task | None = None
 _HOTSPOT_CLEANUP_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
 
-
-# ── 启动期管理员解析 ────────────────────────────────────────
-
-
-def resolve_admin_user_id() -> str | None:
-    """启动期解析 ``YUNHE_ADMIN_USERNAME`` → ``admin_user_id``。
-
-    P1-2 行为：
-    - 生产环境（``settings.environment == "production"``）下，
-      ``YUNHE_ADMIN_USERNAME`` 为空或对应用户不存在时必须 fail-fast
-      抛 ``RuntimeError``，禁止静默降级到无管理员状态。
-    - 开发环境允许缺失/找不到，仅记录 warning，返回 None。
-
-    Returns:
-        解析成功时返回 ``user_id``；开发环境未配置或找不到时返回 None。
-
-    Raises:
-        RuntimeError: 生产环境下管理员未配置或用户不存在。
-    """
-    from domain.user.auth.auth import UserStore
-
-    username = settings.admin_username
-    is_production = settings.environment == "production"
-
-    if not username:
-        if is_production:
-            raise RuntimeError(
-                "YUNHE_ADMIN_USERNAME is not configured; production deployments "
-                "must define a system administrator before startup."
-            )
-        logger.info("YUNHE_ADMIN_USERNAME not configured; admin API disabled (development mode)")
-        return None
-
-    user = UserStore().get_by_username(username)
-    if user is None:
-        if is_production:
-            raise RuntimeError(
-                f"YUNHE_ADMIN_USERNAME={username!r} does not match any existing user; "
-                "production deployments must reference a valid administrator account."
-            )
-        logger.warning(
-            "YUNHE_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用（开发模式降级）",
-            username,
-        )
-        return None
-
-    logger.info("Admin resolved: username=%s user_id=%s", username, user.user_id)
-    return user.user_id
+# P3.1：``resolve_admin_user_id`` 已迁移到 ``app.py`` 组合根，此处保留
+# re-export 供 ``tests/integration/test_admin_failfast.py`` 等历史导入兼容。
+__all__ = ["resolve_admin_user_id", "app"]
 
 
 # ── 后台任务 ──────────────────────────────────────────────
@@ -177,43 +130,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Yunhe API", version="1.0.0", lifespan=lifespan, redirect_slashes=False)
 
-# 初始化编排器，存储到 app.state 供路由使用
+# P3.1：组合根在 ``build_orchestrator()`` 中统一构造全部应用服务；
+# server.py 只负责把容器字段绑定到 ``app.state`` 供路由读取，不再自行构造服务。
 _container = build_orchestrator()
+app.state.container = _container
 app.state.agent = _container.orchestrator
 app.state.skill_provider = _container.skill_provider
 app.state.builtin_configs = _container.builtin_configs
 app.state.custom_repo = _container.custom_repo
 app.state.mcp_runtime = _container.mcp_runtime
 app.state.mcp_catalog = _container.mcp_catalog
-# Task 1: 会话模式应用服务。可锁定的 Agent 来自内置配置（排除调度员 yunhe）。
-# news Agent 由新闻研判流程内部锁定（news_analysis_locked），不进入用户可选白名单。
-_lockable_agent_ids = {
-    c.id for c in _container.builtin_configs if c.id not in {"yunhe", "news"}
-}
-app.state.session_service = SessionService(available_agent_ids=_lockable_agent_ids)
-# Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
-app.state.authz_service = AuthorizationService(session_service=app.state.session_service)
-# Task 2: 注入生产用 HotspotService；路由通过 request.app.state.hotspot_service 取用。
-# 测试通过覆盖此属性注入替身；未配置时 GET /hotspots 返回空列表。
-from application.news.hotspot_service import get_default_service as _get_default_hotspot_service
-
-app.state.hotspot_service = _get_default_hotspot_service()
-# 新闻研判分析服务：调用 ``analyze`` 把证据按来源状态分类为 verified / conflicted
-# / unverified_leads。当前生产默认使用空证据提供者（未接入真实证据通道），
-# 后续可替换为 LLM 抽取或检索器实现。chat 端点在 news_analysis_locked 会话下
-# 自动调用本服务取证并注入到 user message，让新闻 Agent 基于已注入上下文
-# 直接产出研判（不再要求用户补充证据）。
-from application.news.analysis_service import NewsAnalysisService
-from application.news.empty_evidence_provider import EmptyEvidenceProvider
-from application.news.source_service import SourceService
-
-app.state.news_analysis_service = NewsAnalysisService(
-    sources=SourceService(), evidence_provider=EmptyEvidenceProvider()
-)
-# 新闻来源治理：启动期解析 YUNHE_ADMIN_USERNAME → admin_user_id。
-# P1-2: 生产环境（environment == "production"）下，YUNHE_ADMIN_USERNAME 缺失
-# 或找不到对应用户时必须 fail-fast，禁止静默降级。
-app.state.admin_user_id = resolve_admin_user_id()
+app.state.session_service = _container.session_service
+app.state.authz_service = _container.authz_service
+app.state.hotspot_service = _container.hotspot_service
+app.state.news_analysis_service = _container.news_analysis_service
+app.state.admin_user_id = _container.admin_user_id
 
 # ── CORS ──────────────────────────────────────────────────
 

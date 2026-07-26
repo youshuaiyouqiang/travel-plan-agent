@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 from config import settings
@@ -37,6 +38,14 @@ from domain.agent.factory import AgentFactory
 from domain.agent.orchestrator import OrchestratorAgent
 from domain.travel.agent import TravelAgent
 from infrastructure.skills.provider import FileSkillProvider, SkillProvider
+# P3.1：收敛 server.py 中的应用服务构造到组合根
+from application.authz import AuthorizationService
+from application.news.analysis_service import NewsAnalysisService
+from application.news.empty_evidence_provider import EmptyEvidenceProvider
+from application.news.hotspot_service import HotspotService, get_default_service as get_default_hotspot_service
+from application.news.source_service import SourceService
+from application.session.service import SessionService
+from domain.user.auth.auth import UserStore
 
 
 @dataclass
@@ -49,6 +58,12 @@ class AppContainer:
     custom_repo: CustomAgentRepository = None  # type: ignore[assignment]
     mcp_runtime: MCPProxyRuntime = None  # type: ignore[assignment]
     mcp_catalog: MCPCatalog = None  # type: ignore[assignment]
+    # P3.1：以下服务原在 api/server.py 模块级构造，现收敛到组合根
+    session_service: SessionService | None = None
+    authz_service: AuthorizationService | None = None
+    news_analysis_service: NewsAnalysisService | None = None
+    hotspot_service: HotspotService | None = None
+    admin_user_id: str | None = None
 
 
 def _build_tool_infrastructure(
@@ -128,6 +143,47 @@ def _build_travel_agent_core(
         profile_manager=profile_manager,
         audit_logger=audit_logger,
     )
+
+
+def resolve_admin_user_id() -> str | None:
+    """启动期解析 ``YUNHE_ADMIN_USERNAME`` → ``admin_user_id``。
+
+    P3.1：从 ``api/server.py`` 迁移到组合根，消除 server.py 对
+    ``UserStore`` 的直接依赖。行为保持不变：
+
+    - 生产环境（``settings.environment == "production"``）下，
+      ``YUNHE_ADMIN_USERNAME`` 为空或对应用户不存在时必须 fail-fast
+      抛 ``RuntimeError``，禁止静默降级到无管理员状态。
+    - 开发环境允许缺失/找不到，仅记录 warning，返回 None。
+    """
+    logger = logging.getLogger(__name__)
+    username = settings.admin_username
+    is_production = settings.environment == "production"
+
+    if not username:
+        if is_production:
+            raise RuntimeError(
+                "YUNHE_ADMIN_USERNAME is not configured; production deployments "
+                "must define a system administrator before startup."
+            )
+        logger.info("YUNHE_ADMIN_USERNAME not configured; admin API disabled (development mode)")
+        return None
+
+    user = UserStore().get_by_username(username)
+    if user is None:
+        if is_production:
+            raise RuntimeError(
+                f"YUNHE_ADMIN_USERNAME={username!r} does not match any existing user; "
+                "production deployments must reference a valid administrator account."
+            )
+        logger.warning(
+            "YUNHE_ADMIN_USERNAME=%s 不存在对应用户；管理员 API 将不可用（开发模式降级）",
+            username,
+        )
+        return None
+
+    logger.info("Admin resolved: username=%s user_id=%s", username, user.user_id)
+    return user.user_id
 
 
 def build_orchestrator() -> AppContainer:
@@ -219,6 +275,26 @@ def build_orchestrator() -> AppContainer:
         default_agent="yunhe",
     )
 
+    # P3.1：原在 api/server.py 模块级构造的应用服务，现收敛到组合根。
+    # Task 1: 会话模式应用服务。可锁定的 Agent 来自内置配置（排除调度员 yunhe）。
+    # news Agent 由新闻研判流程内部锁定（news_analysis_locked），不进入用户可选白名单。
+    _lockable_agent_ids = {
+        c.id for c in builtin_configs if c.id not in {"yunhe", "news"}
+    }
+    session_service = SessionService(available_agent_ids=_lockable_agent_ids)
+    # Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
+    authz_service = AuthorizationService(session_service=session_service)
+    # 路由通过 request.app.state.hotspot_service 取用；未配置时 GET /hotspots 返回空列表。
+    hotspot_service = get_default_hotspot_service()
+    # 新闻研判分析服务：调用 analyze 把证据按来源状态分类为 verified / conflicted
+    # / unverified_leads。当前生产默认使用空证据提供者（未接入真实证据通道）。
+    news_analysis_service = NewsAnalysisService(
+        sources=SourceService(), evidence_provider=EmptyEvidenceProvider()
+    )
+    # 启动期解析 YUNHE_ADMIN_USERNAME → admin_user_id。
+    # 生产环境缺失或找不到对应用户时 fail-fast，禁止静默降级。
+    admin_user_id = resolve_admin_user_id()
+
     return AppContainer(
         orchestrator=orchestrator,
         skill_provider=skill_provider,
@@ -226,4 +302,9 @@ def build_orchestrator() -> AppContainer:
         custom_repo=custom_repo,
         mcp_runtime=mcp_runtime,
         mcp_catalog=mcp_catalog,
+        session_service=session_service,
+        authz_service=authz_service,
+        news_analysis_service=news_analysis_service,
+        hotspot_service=hotspot_service,
+        admin_user_id=admin_user_id,
     )
