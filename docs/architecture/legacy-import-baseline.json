@@ -25,7 +25,7 @@
   },
   {
     "file": "api/v1/itinerary.py",
-    "line": 100,
+    "line": 111,
     "module": "infrastructure.persistence.database",
     "layer_rule": "api_no_infrastructure"
   },
@@ -186,18 +186,6 @@
     "layer_rule": "domain_no_infrastructure"
   },
   {
-    "file": "domain/agent/repository.py",
-    "line": 7,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/feedback/repository.py",
-    "line": 11,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/memory/memory_distiller.py",
     "line": 10,
     "module": "infrastructure.llm.openai",
@@ -273,12 +261,6 @@
     "file": "domain/travel/itinerary/parser.py",
     "line": 8,
     "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/itinerary/repository.py",
-    "line": 7,
-    "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
   },
   {

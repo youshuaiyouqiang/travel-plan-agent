@@ -143,4 +143,16 @@ def init_db(db_path: str | Path | None = None) -> None:
 
     configure_default_memory_repository(SqliteMemoryRepository())
 
+    # P2.5：注册默认 agent/feedback/itinerary 仓储
+    from domain.agent.ports import configure_default_custom_agent_repository
+    from domain.feedback.ports import configure_default_feedback_repository
+    from domain.travel.itinerary.ports import configure_default_itinerary_repository
+    from infrastructure.persistence.repositories.agent import SqliteCustomAgentRepository
+    from infrastructure.persistence.repositories.feedback import SqliteFeedbackRepository
+    from infrastructure.persistence.repositories.itinerary import SqliteItineraryRepository
+
+    configure_default_custom_agent_repository(SqliteCustomAgentRepository())
+    configure_default_feedback_repository(SqliteFeedbackRepository())
+    configure_default_itinerary_repository(SqliteItineraryRepository())
+
     logger.info("Database initialized: %s", db_path or settings.database_path)

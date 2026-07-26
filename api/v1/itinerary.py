@@ -20,14 +20,25 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_itinerary_repo = ItineraryRepository()
+# P2.5：ItineraryRepository 通过 ItineraryRepositoryPort 访问持久化层，
+# 端口在 init_db() 中配置。模块级实例化会在导入时（端口未配置）失败，
+# 故改为延迟获取；首次调用时端口已由组合根装配完毕。
+_itinerary_repo: ItineraryRepository | None = None
+
+
+def _get_itinerary_repo() -> ItineraryRepository:
+    """获取行程仓储单例；延迟到首次调用以避免导入时端口未配置。"""
+    global _itinerary_repo
+    if _itinerary_repo is None:
+        _itinerary_repo = ItineraryRepository()
+    return _itinerary_repo
 
 
 def _get_authz_service(request: Request) -> AuthorizationService:
     """获取应用层 AuthorizationService；若未注入则按默认依赖构造一个。"""
     service = getattr(request.app.state, "authz_service", None)
     if service is None:
-        service = AuthorizationService(itinerary_repo=_itinerary_repo)
+        service = AuthorizationService(itinerary_repo=_get_itinerary_repo())
         request.app.state.authz_service = service
     return service
 
@@ -73,9 +84,9 @@ async def create_itinerary(req: CreateItineraryRequest, request: Request) -> dic
                 )
                 day.activities.append(act)
             itin.days.append(day)
-        result = _itinerary_repo.save_full_itinerary(itin)
+        result = _get_itinerary_repo().save_full_itinerary(itin)
     else:
-        result = _itinerary_repo.create_itinerary(
+        result = _get_itinerary_repo().create_itinerary(
             user_id=user_id,
             title=req.title,
             destination=req.destination,
@@ -95,7 +106,7 @@ async def list_itineraries(request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    items = _itinerary_repo.list_itineraries(user_id)
+    items = _get_itinerary_repo().list_itineraries(user_id)
     seen_ids = {i.id for i in items}
     from infrastructure.persistence.database import get_connection
 
@@ -146,8 +157,8 @@ async def update_itinerary(
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _itinerary_repo.update_itinerary(itinerary_id, **req.model_dump())
-    updated = _itinerary_repo.get_itinerary(itinerary_id)
+    _get_itinerary_repo().update_itinerary(itinerary_id, **req.model_dump())
+    updated = _get_itinerary_repo().get_itinerary(itinerary_id)
     if updated is None:
         # update_itinerary 成功后 get_itinerary 仅在数据库异常时返回 None；
         # 此处以 404 兜底，避免向客户端暴露内部状态。
@@ -164,7 +175,7 @@ async def delete_itinerary(itinerary_id: str, request: Request) -> dict:
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _itinerary_repo.delete_itinerary(itinerary_id)
+    _get_itinerary_repo().delete_itinerary(itinerary_id)
     return {"detail": "已删除"}
 
 
@@ -179,7 +190,7 @@ async def delete_activity(itinerary_id: str, activity_id: int, request: Request)
         user_id=user_id, itinerary_id=itinerary_id, activity_id=activity_id
     )
 
-    _itinerary_repo.delete_activity(activity_id)
+    _get_itinerary_repo().delete_activity(activity_id)
     return {"detail": "已删除"}
 
 
@@ -196,7 +207,7 @@ async def create_share_link(
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    token = _itinerary_repo.create_share_link(itinerary_id, user_id, req.expires_at)
+    token = _get_itinerary_repo().create_share_link(itinerary_id, user_id, req.expires_at)
     return {"token": token, "itinerary_id": itinerary_id}
 
 
@@ -209,7 +220,7 @@ async def list_share_links(itinerary_id: str, request: Request) -> dict:
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    links = _itinerary_repo.list_share_links(itinerary_id)
+    links = _get_itinerary_repo().list_share_links(itinerary_id)
     return {"shares": links}
 
 
@@ -222,5 +233,5 @@ async def delete_share_link(itinerary_id: str, token: str, request: Request) -> 
     authz = _get_authz_service(request)
     authz.require_itinerary(user_id=user_id, itinerary_id=itinerary_id)
 
-    _itinerary_repo.delete_share_link(token)
+    _get_itinerary_repo().delete_share_link(token)
     return {"detail": "已删除"}
