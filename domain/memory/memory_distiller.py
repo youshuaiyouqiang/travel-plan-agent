@@ -7,7 +7,7 @@ from typing import Any
 
 from config import settings
 from domain.memory.ports import MemoryRepositoryPort, get_default_memory_repository
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ _DISTILL_SYSTEM_PROMPT = """\
 class MemoryDistiller:
     def __init__(
         self,
-        llm: OpenAILLM | None = None,
+        llm: LLMPort | None = None,
         repository: MemoryRepositoryPort | None = None,
     ) -> None:
         self._llm = llm

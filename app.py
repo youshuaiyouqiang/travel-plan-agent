@@ -7,6 +7,7 @@ from config import settings
 from infrastructure.llm.openai import OpenAILLM
 from infrastructure.llm.fallback import FallbackLLM
 from domain.shared.runtime.logging import init_from_settings
+from domain.shared.llm.ports import LLMPort, configure_default_llm
 from domain.travel.prompting import PromptBuilder
 from infrastructure.tools.adapters.interaction import get_interaction_handlers, get_interaction_specs
 from domain.user.session.manager import SessionManager
@@ -124,7 +125,7 @@ def _build_tool_infrastructure(
 
 
 def _build_travel_agent_core(
-    llm: OpenAILLM,
+    llm: LLMPort,
     audit_logger: AuditLogger,
     tool_registry: ToolRegistry,
     tool_executor: ToolExecutor,
@@ -220,14 +221,17 @@ def build_orchestrator() -> AppContainer:
                 model=settings.fallback_model or None,
             )
         )
-    # llm 在运行时可能是 OpenAILLM 或 FallbackLLM；二者具备相同方法集，
-    # 但静态类型不共享基类。下游消费者按 OpenAILLM 接口编码，
-    # 调用点用 # type: ignore[arg-type] 显式标注此契约。
-    llm: OpenAILLM | FallbackLLM
+    # llm 在运行时可能是 OpenAILLM 或 FallbackLLM；二者均满足 LLMPort。
+    # P4.1：消费者按 LLMPort 接口编码，不再需要 type: ignore[arg-type]。
+    llm: LLMPort
     if fallback_providers:
         llm = FallbackLLM(providers=[primary_llm] + fallback_providers)
     else:
         llm = primary_llm
+
+    # P4.1：注册全局默认 LLM，供 ItineraryParser / TravelIntentClassifier
+    # 等未显式注入的领域组件回退取用（与 P2 仓储端口模式一致）。
+    configure_default_llm(llm)
 
     # ===== Skill 提供者（抽象接口，可替换实现） =====
     skill_provider = FileSkillProvider(skills_dir=settings.skills_dir)
@@ -248,7 +252,7 @@ def build_orchestrator() -> AppContainer:
 
     # ===== 旅行智能体的特殊构造器（需要完整 Agent 主循环） =====
     travel_agent_core = _build_travel_agent_core(
-        llm=llm,  # type: ignore[arg-type]
+        llm=llm,
         audit_logger=audit_logger,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
@@ -263,7 +267,7 @@ def build_orchestrator() -> AppContainer:
 
     # ===== 工厂（注入所有全局依赖） =====
     factory = AgentFactory(
-        llm=llm,  # type: ignore[arg-type]
+        llm=llm,
         skill_provider=skill_provider,
         tool_registry=tool_registry,
         tool_executor=tool_executor,
@@ -282,7 +286,7 @@ def build_orchestrator() -> AppContainer:
     # Tier 0（快路径）→ Tier 1（function calling 委派）→ Tier 2（委派执行）。
     # 如需灰度回退，将 default_agent 改回 "travel" 即可恢复 prompt 路由模式。
     orchestrator = OrchestratorAgent(
-        llm=llm,  # type: ignore[arg-type]
+        llm=llm,
         factory=factory,
         builtin_configs=builtin_configs,
         custom_repo=custom_repo,

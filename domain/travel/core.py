@@ -11,7 +11,7 @@ from infrastructure.mcp.runtime import MCPProxyRuntime
 from infrastructure.tools.executor import ToolExecutor
 from infrastructure.tools.registry import ToolRegistry
 from domain.travel.context_manager import ContextManager
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from infrastructure.mcp.catalog import MCPCatalog
 from domain.memory.manager import SessionMemory, DualLayerMemoryManager
 from domain.memory.memory_extractor import MemoryExtractor
@@ -47,7 +47,7 @@ class Agent:
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         prompt_builder: PromptBuilder,
         session_store: SessionManager,
         tool_registry: ToolRegistry,

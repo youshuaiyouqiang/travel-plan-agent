@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 
 from application.session.schema import SessionMode
 from domain.agent.base import BaseAgent
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from domain.agent.schema import AgentConfig
 from domain.agent.factory import AgentFactory
 from domain.agent.repository import CustomAgentRepository
@@ -135,7 +135,7 @@ class OrchestratorAgent(BaseAgent):
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         factory: AgentFactory,
         builtin_configs: list[AgentConfig],
         custom_repo: CustomAgentRepository,

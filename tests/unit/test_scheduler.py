@@ -103,11 +103,12 @@ class TestRunMemoryMaintenance:
 
         monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
 
-        # 让 OpenAILLM 构造抛错
-        def _raise_init(*args, **kwargs):
+        # P4.1：scheduler 不再直接构造 OpenAILLM，改为 get_default_llm()。
+        # 让 get_default_llm 抛错以测试异常被吞。
+        def _raise_get_default_llm():
             raise RuntimeError("init failed")
 
-        monkeypatch.setattr(scheduler.OpenAILLM, "__init__", _raise_init)
+        monkeypatch.setattr(scheduler, "get_default_llm", _raise_get_default_llm)
 
         # 异常被吞，应正常退出循环（抛 CancelledError 退出）
         with pytest.raises(asyncio.CancelledError):
@@ -124,8 +125,9 @@ class TestRunMemoryMaintenance:
 
         monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
 
-        # mock OpenAILLM
-        monkeypatch.setattr(scheduler.OpenAILLM, "__init__", lambda self, **kw: None)
+        # P4.1：mock get_default_llm 返回一个假 LLM（非 None 即可进入蒸馏路径）
+        mock_llm = MagicMock()
+        monkeypatch.setattr(scheduler, "get_default_llm", lambda: mock_llm)
 
         # P2.6：mock get_default_memory_repository 返回 2 个 user_id
         # 原 get_connection 直接查询被 MemoryRepositoryPort.list_user_ids_with_short_term_memories 替代

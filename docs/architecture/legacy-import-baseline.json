@@ -18,18 +18,6 @@
     "layer_rule": "application_no_infrastructure"
   },
   {
-    "file": "application/scheduler.py",
-    "line": 30,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "application_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/dynamic_agent.py",
-    "line": 9,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/agent/dynamic_agent.py",
     "line": 10,
     "module": "infrastructure.skills.provider",
@@ -51,12 +39,6 @@
     "file": "domain/agent/dynamic_agent.py",
     "line": 13,
     "module": "infrastructure.mcp.runtime",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/agent/factory.py",
-    "line": 6,
-    "module": "infrastructure.llm.openai",
     "layer_rule": "domain_no_infrastructure"
   },
   {
@@ -90,24 +72,6 @@
     "layer_rule": "domain_no_application"
   },
   {
-    "file": "domain/agent/orchestrator.py",
-    "line": 11,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/memory/memory_distiller.py",
-    "line": 10,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/memory/memory_extractor.py",
-    "line": 8,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
     "file": "domain/reasoning/engine.py",
     "line": 11,
     "module": "infrastructure.tools.executor",
@@ -117,12 +81,6 @@
     "file": "domain/reasoning/engine.py",
     "line": 12,
     "module": "infrastructure.tools.registry",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/reasoning/engine.py",
-    "line": 13,
-    "module": "infrastructure.llm.openai",
     "layer_rule": "domain_no_infrastructure"
   },
   {
@@ -151,26 +109,8 @@
   },
   {
     "file": "domain/travel/core.py",
-    "line": 14,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/core.py",
     "line": 15,
     "module": "infrastructure.mcp.catalog",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/intent/travel_classifier.py",
-    "line": 14,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/itinerary/parser.py",
-    "line": 8,
-    "module": "infrastructure.llm.openai",
     "layer_rule": "domain_no_infrastructure"
   },
   {
@@ -187,12 +127,6 @@
   },
   {
     "file": "domain/travel/services/context_preparer.py",
-    "line": 10,
-    "module": "infrastructure.llm.openai",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/services/context_preparer.py",
     "line": 11,
     "module": "infrastructure.mcp.catalog",
     "layer_rule": "domain_no_infrastructure"
@@ -201,12 +135,6 @@
     "file": "domain/travel/services/context_preparer.py",
     "line": 114,
     "module": "infrastructure.tools.executor",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/travel/services/early_action_handler.py",
-    "line": 7,
-    "module": "infrastructure.llm.openai",
     "layer_rule": "domain_no_infrastructure"
   },
   {

@@ -4,7 +4,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from domain.memory.manager import SessionMemory
 from domain.user.session.manager import SessionManager
 from domain.user.session.task_state import TaskStatus, TaskStateStore
@@ -20,7 +20,7 @@ class EarlyActionHandler:
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         memory: SessionMemory,
         session_store: SessionManager,
         task_store: TaskStateStore,

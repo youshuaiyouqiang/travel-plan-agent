@@ -11,7 +11,7 @@ from domain.travel.intent.travel_schema import (
     INTENT_TOOL_HINTS,
     INTENT_RAG_KEYWORDS,
 )
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +275,7 @@ def _extract_json(text: str) -> dict:
 
 
 class TravelIntentClassifier:
-    def __init__(self, llm: OpenAILLM | None = None) -> None:
+    def __init__(self, llm: LLMPort | None = None) -> None:
         self._llm = llm
 
     _FAST_CHAT = {"你好", "hello", "hi", "谢谢", "thanks", "收到", "嗯", "哦", "哈", "嘿"}

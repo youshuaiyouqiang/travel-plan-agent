@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from domain.memory.ports import MemoryRepositoryPort, get_default_memory_repository
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class ExtractedMemory:
 class MemoryExtractor:
     def __init__(
         self,
-        llm: OpenAILLM,
+        llm: LLMPort,
         repository: MemoryRepositoryPort | None = None,
     ) -> None:
         self._llm = llm

@@ -3,7 +3,7 @@ import logging
 from collections.abc import Callable
 
 from domain.agent.base import BaseAgent
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
 from infrastructure.tools.registry import ToolRegistry
 from infrastructure.tools.executor import ToolExecutor
@@ -31,7 +31,7 @@ class AgentFactory:
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         skill_provider: SkillProvider,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,

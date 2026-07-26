@@ -7,7 +7,7 @@ from typing import Any
 from infrastructure.mcp.runtime import MCPProxyRuntime
 from infrastructure.tools.registry import ToolRegistry
 from domain.travel.context_manager import ContextManager
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from infrastructure.mcp.catalog import MCPCatalog
 from domain.memory.manager import DualLayerMemoryManager
 from domain.travel.prompt_context import PromptContext
@@ -58,7 +58,7 @@ class ContextPreparer:
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         reasoning: ReasoningEngine,
         session_store: SessionManager,
         task_store: TaskStateStore,

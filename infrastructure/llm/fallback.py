@@ -1,14 +1,18 @@
 """LLM Provider 降级链 — 多 provider 自动 fallback。
 
 社区版实用性：用户可能在各种网络环境下用，API 偶尔不可用，降级能提升可用性。
+
+P4.1：``providers`` 类型改为 ``list[LLMPort]``，不再绑定 ``OpenAILLM`` 具体类；
+任何满足 ``LLMPort`` 的实现均可加入降级链。
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
-from infrastructure.llm.openai import OpenAILLM, LLMResponse
+from domain.shared.llm.ports import LLMPort, LLMResponse  # noqa: F401  re-export LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,15 +48,15 @@ class FallbackLLM:
         response = await fallback.complete_with_tools(system=..., messages=..., tools=...)
     """
 
-    def __init__(self, providers: list[OpenAILLM]) -> None:
+    def __init__(self, providers: Sequence[LLMPort]) -> None:
         if not providers:
             raise ValueError("至少需要一个 LLM provider")
-        self._providers = providers
+        self._providers = list(providers)
         self._primary = providers[0]
         logger.info("FallbackLLM initialized with %d providers", len(providers))
 
     @property
-    def providers(self) -> list[OpenAILLM]:
+    def providers(self) -> list[LLMPort]:
         return list(self._providers)
 
     async def complete(self, *, system: str, messages: list[dict], **kwargs) -> str:

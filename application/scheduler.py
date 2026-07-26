@@ -27,7 +27,7 @@ import logging
 from config import settings
 from domain.memory.memory_distiller import MemoryDistiller
 from domain.memory.ports import get_default_memory_repository
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import get_default_llm
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +50,13 @@ async def run_memory_maintenance() -> None:
 
     while True:
         try:
-            # 每次循环都新建 distiller（LLM 配置可能在运行时被改）
-            llm = OpenAILLM(
-                api_key=settings.api_key,
-                base_url=settings.base_url or "",
-                model=settings.model,
-            )
+            # P4.1：通过组合根注册的默认 LLM 端口构造 distiller，
+            # 不再直接 ``OpenAILLM(...)`` 实例化（消除 application → infrastructure 依赖）。
+            llm = get_default_llm()
+            if llm is None:
+                logger.warning("No default LLM configured; skip memory maintenance cycle")
+                await asyncio.sleep(_DISTILL_INTERVAL)
+                continue
             distiller = MemoryDistiller(llm=llm)
 
             # 1. 枚举所有有短期记忆的用户，逐个蒸馏（确保隔离）

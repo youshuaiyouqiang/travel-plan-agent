@@ -5,7 +5,7 @@ import logging
 import re
 from typing import Any
 
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort, get_default_llm
 from domain.travel.itinerary.schema import Itinerary, DayPlan, Activity
 
 logger = logging.getLogger(__name__)
@@ -51,8 +51,8 @@ _PARSE_SYSTEM_PROMPT = """你是一个旅行行程解析器。你的任务是将
 
 
 class ItineraryParser:
-    def __init__(self, llm: OpenAILLM | None = None) -> None:
-        self._llm = llm or OpenAILLM()
+    def __init__(self, llm: LLMPort | None = None) -> None:
+        self._llm = llm or get_default_llm()
 
     async def parse(
         self,
@@ -60,6 +60,9 @@ class ItineraryParser:
         user_id: str = "",
         session_id: str = "",
     ) -> Itinerary | None:
+        if self._llm is None:
+            logger.warning("ItineraryParser has no LLM configured; skip parse")
+            return None
         try:
             result = await self._llm.complete_json(
                 system=_PARSE_SYSTEM_PROMPT,

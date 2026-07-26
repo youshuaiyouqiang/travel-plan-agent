@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 
 from domain.agent.base import BaseAgent
 from domain.agent.schema import AgentConfig
-from infrastructure.llm.openai import OpenAILLM
+from domain.shared.llm.ports import LLMPort
 from infrastructure.skills.provider import SkillProvider
 from infrastructure.tools.executor import ToolExecutor
 from infrastructure.tools.registry import ToolRegistry
@@ -33,7 +33,7 @@ class DynamicAgent(BaseAgent):
         self,
         *,
         config: AgentConfig,
-        llm: OpenAILLM,
+        llm: LLMPort,
         skill_provider: SkillProvider,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,

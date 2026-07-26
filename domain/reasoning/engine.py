@@ -10,7 +10,7 @@ from config import settings
 import re
 from infrastructure.tools.executor import ToolExecutor
 from infrastructure.tools.registry import ToolRegistry
-from infrastructure.llm.openai import OpenAILLM, LLMResponse, ToolCallResult as LLMToolCall
+from domain.shared.llm.ports import LLMPort, LLMResponse, ToolCallResult as LLMToolCall
 from domain.shared.audit.context import AuditContext
 from domain.shared.types import Decision, DecisionType, ToolCall
 from domain.reasoning.cost_guard import CostGuard
@@ -132,7 +132,7 @@ class ReasoningEngine:
     def __init__(
         self,
         *,
-        llm: OpenAILLM,
+        llm: LLMPort,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
         audit_logger: Any | None = None,

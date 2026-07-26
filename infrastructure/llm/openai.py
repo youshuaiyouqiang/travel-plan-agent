@@ -5,29 +5,17 @@ import logging
 import os
 import time
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass, field
 from typing import Any
 
 from openai import AsyncOpenAI
 
 from config import settings
 from domain.shared.audit.context import AuditContext
+# P4.1：LLMResponse / ToolCallResult / LLMPort 由 domain 定义，
+# 此处 re-export 保持 ``from infrastructure.llm.openai import LLMResponse`` 兼容。
+from domain.shared.llm.ports import LLMResponse, ToolCallResult  # noqa: F401
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ToolCallResult:
-    id: str
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass
-class LLMResponse:
-    content: str = ""
-    tool_calls: list[ToolCallResult] = field(default_factory=list)
-    has_tool_calls: bool = False
 
 
 class OpenAILLM:
