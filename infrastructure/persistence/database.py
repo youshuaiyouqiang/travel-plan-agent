@@ -156,12 +156,17 @@ def init_db(db_path: str | Path | None = None) -> None:
     configure_default_itinerary_repository(SqliteItineraryRepository())
 
     # P2.6：注册默认新闻来源与旅行草稿仓储
-    from application.news.ports import configure_default_news_source_repository
+    from application.news.ports import (
+        configure_default_news_favorite_repository,
+        configure_default_news_source_repository,
+    )
     from application.travel.ports import configure_default_travel_repository
     from infrastructure.persistence.news_repository import NewsSourceRepository
+    from infrastructure.persistence.repositories.news_favorite import SqliteNewsFavoriteRepository
     from infrastructure.persistence.travel_repository import TravelRepository
 
     configure_default_news_source_repository(NewsSourceRepository())
+    configure_default_news_favorite_repository(SqliteNewsFavoriteRepository())
     configure_default_travel_repository(TravelRepository())
 
     logger.info("Database initialized: %s", db_path or settings.database_path)

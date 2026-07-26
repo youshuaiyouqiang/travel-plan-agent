@@ -1,10 +1,14 @@
-"""新闻来源治理仓储端口。
+"""新闻来源治理与新闻收藏仓储端口。
 
 P2.6 引入：将 ``news_sources`` / ``news_source_audits`` / ``news_source_inits``
 三张表的访问从 application 层下沉到 infrastructure，应用层只消费此端口。
 
+P3.3b 引入：将 ``news_favorites`` 表的访问从 api 层下沉到 infrastructure，
+新增 ``NewsFavoriteRepositoryPort``。
+
 端口由消费方（application）定义，由 ``infrastructure.persistence.news_repository``
-提供 ``NewsSourceRepository`` 实现，在 ``init_db()`` 中装配默认实例。
+提供 ``NewsSourceRepository`` 实现、由 ``infrastructure.persistence.repositories.news_favorite``
+提供 ``SqliteNewsFavoriteRepository`` 实现，在 ``init_db()`` 中装配默认实例。
 测试可用 fake 实现替代，不创建 SQLite 文件。
 
 注意：新闻来源模型（``Source`` / ``SourceAudit`` / ``NewsSourceInit``）当前定义
@@ -14,7 +18,7 @@ P2.6 引入：将 ``news_sources`` / ``news_source_audits`` / ``news_source_init
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # 避免循环导入；Protocol 仅用于静态类型检查
     from application.news.models import NewsSourceInit, Source, SourceAudit, SourceStatus
@@ -117,3 +121,62 @@ def get_default_news_source_repository() -> NewsSourceRepositoryPort:
             "configure_default_news_source_repository() 或显式注入 repository 参数。"
         )
     return _default_repository
+
+
+# ════════════════════════════════════════════════════════════
+# 新闻收藏仓储端口（P3.3b）
+# ════════════════════════════════════════════════════════════
+
+
+@runtime_checkable
+class NewsFavoriteRepositoryPort(Protocol):
+    """新闻收藏（``news_favorites`` 表）的读写端口。
+
+    P3.3b 引入：将 ``api/v1/news.py`` 中 favorites 路由的裸 SQL 下沉到
+    infrastructure。实现必须保证：
+    - 所有 SQL 参数化；
+    - ``add`` 在 UNIQUE(user_id, title) 冲突时返回 False（幂等），不抛异常；
+    - ``delete`` 只删除属于 ``user_id`` 的行，避免 IDOR。
+    """
+
+    def list_by_user(self, user_id: str) -> list[dict[str, Any]]:
+        """列出用户全部新闻收藏（仅元数据，不含全文），按 id 倒序。"""
+        ...
+
+    def add(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        summary: str,
+        url: str,
+        source: str,
+        tag: str,
+    ) -> bool:
+        """插入收藏行；UNIQUE 冲突返回 False（幂等），新插入返回 True。"""
+        ...
+
+    def delete(self, *, favorite_id: int, user_id: str) -> bool:
+        """删除收藏；只命中属于 ``user_id`` 的行。返回是否实际删除。"""
+        ...
+
+
+# ── 默认仓储装配（过渡方案，同 P2.1–P2.5）───────────────────
+
+_default_favorite_repository: NewsFavoriteRepositoryPort | None = None
+
+
+def configure_default_news_favorite_repository(repository: NewsFavoriteRepositoryPort) -> None:
+    """注册全局默认新闻收藏仓储（由组合根调用）。"""
+    global _default_favorite_repository
+    _default_favorite_repository = repository
+
+
+def get_default_news_favorite_repository() -> NewsFavoriteRepositoryPort:
+    """获取全局默认新闻收藏仓储；未配置时抛 RuntimeError。"""
+    if _default_favorite_repository is None:
+        raise RuntimeError(
+            "NewsFavoriteRepositoryPort 未配置：请在组合根调用 "
+            "configure_default_news_favorite_repository() 或显式注入 repository 参数。"
+        )
+    return _default_favorite_repository

@@ -12,54 +12,6 @@
     "layer_rule": "api_no_infrastructure"
   },
   {
-    "file": "api/v1/itinerary.py",
-    "line": 107,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/memory.py",
-    "line": 62,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/news.py",
-    "line": 101,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/news.py",
-    "line": 131,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/news.py",
-    "line": 157,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/session.py",
-    "line": 180,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/session.py",
-    "line": 243,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
-    "file": "api/v1/session.py",
-    "line": 283,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "api_no_infrastructure"
-  },
-  {
     "file": "application/news/hotspot_service.py",
     "line": 218,
     "module": "infrastructure.news.fetchers",

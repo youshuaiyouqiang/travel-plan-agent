@@ -147,6 +147,29 @@ class FakeSessionRepository:
             data["locked_agent_id"] = locked_agent_id
             data["news_id"] = news_id
 
+    # 方案确认（P3.3b）
+
+    def get_confirmed_plan(self, session_id: str) -> dict[str, Any] | None:
+        data = self._sessions.get(session_id)
+        if data is None:
+            return None
+        return {
+            "confirmed_plan": data.get("confirmed_plan"),
+            "confirmed_at": data.get("confirmed_at"),
+        }
+
+    def set_confirmed_plan(self, *, session_id: str, plan_type: str, now: str) -> None:
+        data = self._sessions.get(session_id)
+        if data is not None:
+            data["confirmed_plan"] = plan_type
+            data["confirmed_at"] = now
+
+    def clear_confirmed_plan(self, session_id: str) -> None:
+        data = self._sessions.get(session_id)
+        if data is not None:
+            data["confirmed_plan"] = None
+            data["confirmed_at"] = None
+
     # 列表与消息
 
     def list_sessions_by_user(self, user_id: str) -> list[dict[str, Any]]:
@@ -164,6 +187,14 @@ class FakeSessionRepository:
                 })
         result.sort(key=lambda x: x["updated_at"], reverse=True)
         return result
+
+    def find_session_ids_by_user(self, user_id: str) -> list[str]:
+        """列出用户在 tasks 表中的去重 session_id（fake 实现）。"""
+        seen: list[str] = []
+        for sid, task in self._tasks.items():
+            if task.get("user_id") == user_id and sid and sid not in seen:
+                seen.append(sid)
+        return seen
 
     def get_session_messages(self, session_id: str) -> list[dict[str, Any]]:
         return list(self._turns.get(session_id, []))

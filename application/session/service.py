@@ -83,6 +83,14 @@ class SessionService:
             raise NotFoundException("session", session_id)
         return record
 
+    def find_session_ids_by_user(self, user_id: str) -> list[str]:
+        """列出用户在 ``tasks`` 表中的去重 ``session_id``。
+
+        P3.3b 引入：供 ``api/v1/itinerary.py`` 的 ``list_itineraries`` 路由
+        查找用户关联会话，避免 api 层直接查询 ``tasks`` 表。
+        """
+        return self._repository.find_session_ids_by_user(user_id)
+
     # ------------------------------------------------------------------
     # 更新模式
     # ------------------------------------------------------------------

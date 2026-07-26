@@ -1,17 +1,35 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from fastapi import APIRouter, Request
 
 from application.dto.request import NewsFavoriteRequest
 from application.exceptions import InternalException, NotFoundException, UnauthorizedException
 from application.news.models import NewsItem
+from application.news.ports import NewsFavoriteRepositoryPort
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["news"])
+
+
+def _get_news_favorite_repo(request: Request) -> NewsFavoriteRepositoryPort:
+    """从组合根容器获取新闻收藏仓储。
+
+    P3.3b：原路由内 ``from infrastructure.persistence.database import get_connection``
+    的裸 SQL 已下沉到 ``SqliteNewsFavoriteRepository``。兼容未设置 container 的
+    测试（回退到 ``app.state.news_favorite_repo`` 或默认装配）。
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.news_favorite_repo is not None:
+        return container.news_favorite_repo
+    repo = getattr(request.app.state, "news_favorite_repo", None)
+    if repo is not None:
+        return repo
+    from application.news.ports import get_default_news_favorite_repository
+
+    return get_default_news_favorite_repository()
 
 
 @router.get("/trending")
@@ -98,26 +116,9 @@ async def list_news_favorites(request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    rows = conn.execute(
-        "SELECT id, title, summary, url, source, tag, created_at "
-        "FROM news_favorites WHERE user_id = ? ORDER BY id DESC",
-        (user_id,),
-    ).fetchall()
-    favorites = [
-        {
-            "id": r["id"],
-            "title": r["title"],
-            "summary": r["summary"],
-            "url": r["url"],
-            "source": r["source"],
-            "tag": r["tag"],
-            "created_at": r["created_at"],
-        }
-        for r in rows
-    ]
+    # P3.3b：原裸 SQL 下沉到 NewsFavoriteRepositoryPort.list_by_user
+    repo = _get_news_favorite_repo(request)
+    favorites = repo.list_by_user(user_id)
     return {"favorites": favorites}
 
 
@@ -128,23 +129,22 @@ async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    from infrastructure.persistence.database import get_connection
-
-    now = datetime.utcnow().isoformat()
-    conn = get_connection()
+    # P3.3b：原裸 SQL 下沉到 NewsFavoriteRepositoryPort.add（UNIQUE 冲突幂等）
+    repo = _get_news_favorite_repo(request)
     try:
-        conn.execute(
-            "INSERT INTO news_favorites (user_id, title, summary, url, source, tag, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (user_id, req.title, req.summary, req.url, req.source, req.tag, now),
+        added = repo.add(
+            user_id=user_id,
+            title=req.title,
+            summary=req.summary,
+            url=req.url,
+            source=req.source,
+            tag=req.tag,
         )
-        conn.commit()
     except Exception as e:
-        # UNIQUE 约束冲突 = 已收藏，幂等返回成功
-        if "UNIQUE" in str(e) or "unique" in str(e):
-            return {"status": "already_favorited", "title": req.title}
         logger.error("Add news favorite failed: %s", e)
         raise InternalException("收藏失败")
+    if not added:
+        return {"status": "already_favorited", "title": req.title}
     return {"status": "ok", "title": req.title}
 
 
@@ -154,12 +154,7 @@ async def delete_news_favorite(favorite_id: int, request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    conn.execute(
-        "DELETE FROM news_favorites WHERE id = ? AND user_id = ?",
-        (favorite_id, user_id),
-    )
-    conn.commit()
+    # P3.3b：原裸 SQL 下沉到 NewsFavoriteRepositoryPort.delete（校验所有权）
+    repo = _get_news_favorite_repo(request)
+    repo.delete(favorite_id=favorite_id, user_id=user_id)
     return {"detail": "已取消收藏"}

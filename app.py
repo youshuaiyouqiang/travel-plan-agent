@@ -45,10 +45,14 @@ from application.news.empty_evidence_provider import EmptyEvidenceProvider
 from application.news.hotspot_service import HotspotService, get_default_service as get_default_hotspot_service
 from application.news.source_service import SourceService
 from application.session.service import SessionService
+from application.session.confirm_plan_service import ConfirmPlanService
 from domain.user.auth.auth import UserStore
 # P3.3a：api 层 domain repository 导入清除 — container 持有仓储实例供路由取用
 from domain.feedback.repository import FeedbackRepository
+from domain.memory.manager import DualLayerMemoryManager
 from domain.travel.itinerary.repository import ItineraryRepository
+# P3.3b：api 层 get_connection 直接 SQL 清除 — news favorites 端口
+from application.news.ports import NewsFavoriteRepositoryPort
 
 
 @dataclass
@@ -70,6 +74,10 @@ class AppContainer:
     # P3.3a：api 层 domain repository 导入清除 — 路由通过 container 取用
     feedback_repo: FeedbackRepository | None = None
     itinerary_repo: ItineraryRepository | None = None
+    # P3.3b：api 层 get_connection 直接 SQL 清除 — memory/news_favorites/session_confirm
+    memory_repo: DualLayerMemoryManager | None = None
+    news_favorite_repo: NewsFavoriteRepositoryPort | None = None
+    confirm_plan_service: ConfirmPlanService | None = None
 
 
 def _build_tool_infrastructure(
@@ -303,6 +311,14 @@ def build_orchestrator() -> AppContainer:
     # P3.3a：构造 domain 仓储委托实例供 api 路由取用（端口已在 init_db 配置）
     feedback_repo = FeedbackRepository()
     itinerary_repo = ItineraryRepository()
+    # P3.3b：memory 路由通过 container 取用 DualLayerMemoryManager
+    memory_repo = DualLayerMemoryManager()
+    # P3.3b：news favorites 路由通过 container 取用仓储端口
+    from infrastructure.persistence.repositories.news_favorite import SqliteNewsFavoriteRepository
+
+    news_favorite_repo = SqliteNewsFavoriteRepository()
+    # P3.3b：confirm-plan 路由通过 container 取用协调服务
+    confirm_plan_service = ConfirmPlanService()
 
     return AppContainer(
         orchestrator=orchestrator,
@@ -318,4 +334,7 @@ def build_orchestrator() -> AppContainer:
         admin_user_id=admin_user_id,
         feedback_repo=feedback_repo,
         itinerary_repo=itinerary_repo,
+        memory_repo=memory_repo,
+        news_favorite_repo=news_favorite_repo,
+        confirm_plan_service=confirm_plan_service,
     )

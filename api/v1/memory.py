@@ -3,8 +3,26 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from application.exceptions import UnauthorizedException, ValidationException, NotFoundException
+from domain.memory.manager import DualLayerMemoryManager
 
 router = APIRouter(tags=["memories"])
+
+
+def _get_memory_manager(request: Request) -> DualLayerMemoryManager:
+    """从组合根容器获取记忆管理器。
+
+    P3.3b：原路由在函数内 ``from domain.memory.manager import DualLayerMemoryManager``
+    并 ``DualLayerMemoryManager()`` 构造；现改为从 ``app.state.container`` 取用，
+    消除路由对具体实现的临时构造。兼容未设置 container 的测试（回退到
+    ``app.state.memory_repo`` 或默认构造）。
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.memory_repo is not None:
+        return container.memory_repo
+    mgr = getattr(request.app.state, "memory_repo", None)
+    if mgr is not None:
+        return mgr
+    return DualLayerMemoryManager()
 
 
 @router.get("")
@@ -13,9 +31,7 @@ async def get_memories(request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    from domain.memory.manager import DualLayerMemoryManager
-
-    mgr = DualLayerMemoryManager()
+    mgr = _get_memory_manager(request)
     ltm_list = mgr.get_long_term_memories(user_id)
     stm_list = mgr.get_short_term_memories(user_id, limit=20)
 
@@ -59,17 +75,9 @@ async def delete_memory(memory_type: str, memory_id: int, request: Request) -> d
     if memory_type not in ("short_term", "long_term"):
         raise ValidationException("无效的记忆类型")
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    # f-string SQL is safe: `table` is derived from whitelist check above
-    table = "short_term_memories" if memory_type == "short_term" else "long_term_memories"
-    row = conn.execute(
-        f"SELECT id FROM {table} WHERE id = ? AND user_id = ?",
-        (memory_id, user_id),
-    ).fetchone()
-    if not row:
+    # P3.3b：原裸 SQL 下沉到 MemoryRepositoryPort.delete_memory，校验所有权
+    mgr = _get_memory_manager(request)
+    deleted = mgr.delete_memory(user_id=user_id, memory_type=memory_type, memory_id=memory_id)
+    if not deleted:
         raise NotFoundException("记忆", memory_id)
-    conn.execute(f"DELETE FROM {table} WHERE id = ?", (memory_id,))
-    conn.commit()
     return {"detail": "已删除"}

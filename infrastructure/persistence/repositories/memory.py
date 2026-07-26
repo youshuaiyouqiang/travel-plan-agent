@@ -274,6 +274,29 @@ class SqliteMemoryRepository:
         conn.execute("DELETE FROM short_term_memories WHERE id = ?", (stm_id,))
         conn.commit()
 
+    def delete_memory(self, *, user_id: str, memory_type: str, memory_id: int) -> bool:
+        """按类型与 ID 删除单条记忆，校验所有权。
+
+        ``memory_type`` 仅接受 ``short_term`` / ``long_term``；表名来自硬编码
+        白名单（``_MEMORY_TABLES``），不接受外部输入。先 SELECT 校验所有权，
+        再 DELETE，保持与原路由一致的 404 语义。
+        """
+        table = _MEMORY_TABLES.get(memory_type)
+        if table is None:
+            raise ValueError(
+                f"Unknown memory_type: {memory_type!r}; expected 'short_term' or 'long_term'"
+            )
+        conn = get_connection()
+        row = conn.execute(
+            f"SELECT id FROM {table} WHERE id = ? AND user_id = ?",
+            (memory_id, user_id),
+        ).fetchone()
+        if not row:
+            return False
+        conn.execute(f"DELETE FROM {table} WHERE id = ?", (memory_id,))
+        conn.commit()
+        return True
+
     # ── 会话与提取记录 ────────────────────────────────────────
 
     def save_conversation(self, session_id: str, user_id: str, summary: str, now: str) -> int:

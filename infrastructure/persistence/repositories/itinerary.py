@@ -92,6 +92,15 @@ class SqliteItineraryRepository:
         ).fetchall()
         return [Itinerary.from_row(dict(r)) for r in rows]
 
+    def list_itineraries_by_session_id(self, session_id: str) -> list[Itinerary]:
+        """按 ``session_id`` 列出行程（不含 days），按 updated_at 倒序。"""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM itineraries WHERE session_id = ? ORDER BY updated_at DESC",
+            (session_id,),
+        ).fetchall()
+        return [Itinerary.from_row(dict(r)) for r in rows]
+
     def update_itinerary(self, itinerary_id: str, **kwargs: object) -> bool:
         conn = get_connection()
         sets: list[str] = []
@@ -274,6 +283,37 @@ class SqliteItineraryRepository:
         cursor = conn.execute("DELETE FROM shared_links WHERE token = ?", (token,))
         conn.commit()
         return cursor.rowcount > 0
+
+    # ── 方案确认（P3.3b）──────────────────────────────────────
+
+    def set_itinerary_confirmed_plan(self, *, itinerary_id: str, plan_type: str, now: str) -> None:
+        """更新行程的 ``confirmed_plan`` 与 ``confirmed_at``。"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE itineraries SET confirmed_plan = ?, confirmed_at = ? WHERE id = ?",
+            (plan_type, now, itinerary_id),
+        )
+        conn.commit()
+
+    def clear_itinerary_confirmed_plan(self, itinerary_id: str) -> None:
+        """清空行程的 ``confirmed_plan`` 与 ``confirmed_at``（置 NULL）。"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE itineraries SET confirmed_plan = NULL, confirmed_at = NULL WHERE id = ?",
+            (itinerary_id,),
+        )
+        conn.commit()
+
+    def find_itinerary_id_by_session(self, session_id: str) -> str | None:
+        """按 ``session_id`` 查询最新行程 ID。"""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id FROM itineraries WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return row["id"]
 
     # ── 辅助 ─────────────────────────────────────────────────
 

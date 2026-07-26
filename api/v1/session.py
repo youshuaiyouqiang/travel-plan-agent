@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from application.authz import AuthorizationService
 from application.exceptions import (
-    ConflictException,
-    InternalException,
-    NotFoundException,
     UnauthorizedException,
     ValidationException,
 )
 from application.dto.request import ConfirmPlanRequest, RevokeConfirmRequest
+from application.session.confirm_plan_service import ConfirmPlanService
 from application.session.schema import UserSessionMode
 from application.session.service import SessionService
 
@@ -37,6 +33,22 @@ def _get_authz_service(request: Request) -> AuthorizationService:
         service = AuthorizationService(session_service=_get_session_service(request))
         request.app.state.authz_service = service
     return service
+
+
+def _get_confirm_plan_service(request: Request) -> ConfirmPlanService:
+    """从组合根容器获取方案确认协调服务。
+
+    P3.3b：原路由内 ``from infrastructure.persistence.database import get_connection``
+    的裸 SQL 已下沉到 ``ConfirmPlanService``（协调 SessionRepositoryPort 与
+    ItineraryRepositoryPort）。兼容未设置 container 的测试（回退到默认装配）。
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.confirm_plan_service is not None:
+        return container.confirm_plan_service
+    service = getattr(request.app.state, "confirm_plan_service", None)
+    if service is not None:
+        return service
+    return ConfirmPlanService()
 
 
 def _session_to_payload(record) -> dict:
@@ -177,51 +189,13 @@ async def confirm_plan(
     if plan_type not in ("sightseeing", "budget"):
         raise ValidationException("plan_type 必须为 sightseeing 或 budget")
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT confirmed_plan FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if not row:
-            raise NotFoundException("session", session_id)
-
-        current = row["confirmed_plan"]
-        # 幂等：已确认同一个方案
-        if current == plan_type:
-            return {"message": "already confirmed", "plan_type": plan_type, "itinerary_id": itinerary_id}
-
-        # 冲突：已确认不同方案
-        if current is not None and current != "":
-            raise ConflictException(
-                "已确认其他方案，如需更换请先撤销",
-                details={
-                    "current_confirmed": current,
-                    "hint": "调用 POST /api/session/{session_id}/revoke-confirm 撤销后重新选择",
-                },
-            )
-
-        # 更新确认状态
-        now = datetime.now().isoformat()
-        conn.execute(
-            "UPDATE sessions SET confirmed_plan = ?, confirmed_at = ? WHERE session_id = ?",
-            (plan_type, now, session_id),
-        )
-        if itinerary_id:
-            conn.execute(
-                "UPDATE itineraries SET confirmed_plan = ?, confirmed_at = ? WHERE id = ?",
-                (plan_type, now, itinerary_id),
-            )
-        conn.commit()
-        return {"confirmed_plan": plan_type, "itinerary_id": itinerary_id, "confirmed_at": now}
-    except (NotFoundException, ConflictException, ValidationException):
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise InternalException(str(e))
+    # P3.3b：原裸 SQL 下沉到 ConfirmPlanService.confirm_plan
+    service = _get_confirm_plan_service(request)
+    return service.confirm_plan(
+        session_id=session_id,
+        plan_type=plan_type,
+        itinerary_id=itinerary_id,
+    )
 
 
 @confirm_router.post("/{session_id}/revoke-confirm")
@@ -240,34 +214,9 @@ async def revoke_confirm(
 
     itinerary_id = req.itinerary_id.strip()
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT confirmed_plan FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if not row or not row["confirmed_plan"]:
-            raise NotFoundException("确认记录", session_id)
-
-        conn.execute(
-            "UPDATE sessions SET confirmed_plan = NULL, confirmed_at = NULL WHERE session_id = ?",
-            (session_id,),
-        )
-        if itinerary_id:
-            conn.execute(
-                "UPDATE itineraries SET confirmed_plan = NULL, confirmed_at = NULL WHERE id = ?",
-                (itinerary_id,),
-            )
-        conn.commit()
-        return {"message": "确认已撤销，可重新选择方案"}
-    except NotFoundException:
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise InternalException(str(e))
+    # P3.3b：原裸 SQL 下沉到 ConfirmPlanService.revoke_confirm
+    service = _get_confirm_plan_service(request)
+    return service.revoke_confirm(session_id=session_id, itinerary_id=itinerary_id)
 
 
 @confirm_router.get("/{session_id}/confirm-status")
@@ -280,26 +229,6 @@ async def get_confirm_status(session_id: str, request: Request) -> dict:
     # 对象级授权：会话不属于当前用户统一 404，不泄漏存在性
     _get_authz_service(request).require_session(user_id=user_id, session_id=session_id)
 
-    from infrastructure.persistence.database import get_connection
-
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT confirmed_plan, confirmed_at FROM sessions WHERE session_id = ?",
-        (session_id,),
-    ).fetchone()
-    if not row:
-        raise NotFoundException("session", session_id)
-
-    # 查找关联的 itinerary_id
-    itinerary_row = conn.execute(
-        "SELECT id FROM itineraries WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
-        (session_id,),
-    ).fetchone()
-
-    result: dict = {
-        "confirmed_plan": row["confirmed_plan"] if row["confirmed_plan"] else None,
-        "confirmed_at": row["confirmed_at"] if row["confirmed_at"] else None,
-    }
-    if itinerary_row:
-        result["itinerary_id"] = itinerary_row["id"]
-    return result
+    # P3.3b：原裸 SQL 下沉到 ConfirmPlanService.get_confirm_status
+    service = _get_confirm_plan_service(request)
+    return service.get_confirm_status(session_id)

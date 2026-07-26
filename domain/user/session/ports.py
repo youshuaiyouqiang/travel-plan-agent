@@ -74,10 +74,37 @@ class SessionRepositoryPort(Protocol):
         """更新会话模式与锁定字段。"""
         ...
 
+    # ── 方案确认（P3.3b 引入，供 ConfirmPlanService 使用）─────────
+
+    def get_confirmed_plan(self, session_id: str) -> dict[str, Any] | None:
+        """读取会话的 ``confirmed_plan`` / ``confirmed_at`` 字段。
+
+        Returns:
+            含 ``confirmed_plan`` 与 ``confirmed_at`` 的 dict；会话不存在
+            或字段为 NULL 时对应值为 ``None``。会话行不存在时整体返回 ``None``。
+        """
+        ...
+
+    def set_confirmed_plan(self, *, session_id: str, plan_type: str, now: str) -> None:
+        """更新会话的 ``confirmed_plan`` 与 ``confirmed_at``。"""
+        ...
+
+    def clear_confirmed_plan(self, session_id: str) -> None:
+        """清空会话的 ``confirmed_plan`` 与 ``confirmed_at``（置 NULL）。"""
+        ...
+
     # ── 列表与消息 ──────────────────────────────────────────
 
     def list_sessions_by_user(self, user_id: str) -> list[dict[str, Any]]:
         """列出用户的所有会话，按 updated_at 倒序。"""
+        ...
+
+    def find_session_ids_by_user(self, user_id: str) -> list[str]:
+        """列出用户在 ``tasks`` 表中的去重 ``session_id``（排除空字符串）。
+
+        P3.3b 引入：供 ``api/v1/itinerary.py`` 的 ``list_itineraries`` 路由
+        查找用户关联会话，避免 api 层直接查询 ``tasks`` 表。
+        """
         ...
 
     def get_session_messages(self, session_id: str) -> list[dict[str, Any]]:

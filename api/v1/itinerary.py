@@ -14,6 +14,7 @@ from application.exceptions import (
     NotFoundException,
     UnauthorizedException,
 )
+from application.session.service import SessionService
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,22 @@ def _get_authz_service(request: Request) -> AuthorizationService:
             service = AuthorizationService(session_service=session_service)
         request.app.state.authz_service = service
     return service
+
+
+def _get_session_service(request: Request) -> SessionService:
+    """从组合根容器获取 SessionService。
+
+    P3.3b：``list_itineraries`` 路由需要查询用户关联的 session_ids，
+    通过 SessionService 委托 SessionRepositoryPort，避免 api 层直接查询
+    ``tasks`` 表。兼容未设置 container 的测试（回退到 ``app.state.session_service``）。
+    """
+    container = getattr(request.app.state, "container", None)
+    if container is not None and container.session_service is not None:
+        return container.session_service
+    service = getattr(request.app.state, "session_service", None)
+    if service is not None:
+        return service
+    return SessionService()
 
 
 @router.post("")
@@ -113,27 +130,19 @@ async def list_itineraries(request: Request) -> dict:
     if not user_id:
         raise UnauthorizedException()
 
-    items = _get_itinerary_repo(request).list_itineraries(user_id)
+    itinerary_repo = _get_itinerary_repo(request)
+    items = itinerary_repo.list_itineraries(user_id)
     seen_ids = {i.id for i in items}
-    from infrastructure.persistence.database import get_connection
 
-    conn = get_connection()
-    session_rows = conn.execute(
-        "SELECT DISTINCT session_id FROM tasks WHERE user_id = ? AND session_id != ''",
-        (user_id,),
-    ).fetchall()
-    for row in session_rows:
-        sid = row["session_id"]
+    # P3.3b：原裸 SQL 查询 tasks 表已下沉到
+    # SessionService.find_session_ids_by_user + ItineraryRepository.list_itineraries_by_session_id
+    session_service = _get_session_service(request)
+    session_ids = session_service.find_session_ids_by_user(user_id)
+    for sid in session_ids:
         if not sid:
             continue
-        session_itins = conn.execute(
-            "SELECT * FROM itineraries WHERE session_id = ? ORDER BY updated_at DESC",
-            (sid,),
-        ).fetchall()
-        for r in session_itins:
-            from domain.travel.itinerary.schema import Itinerary
-
-            itin = Itinerary.from_row(dict(r))
+        session_itins = itinerary_repo.list_itineraries_by_session_id(sid)
+        for itin in session_itins:
             if itin.id not in seen_ids:
                 items.append(itin)
                 seen_ids.add(itin.id)

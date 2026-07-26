@@ -48,6 +48,14 @@ class ItineraryRepositoryPort(Protocol):
         """列出用户全部行程（不含 days），按 updated_at 倒序。"""
         ...
 
+    def list_itineraries_by_session_id(self, session_id: str) -> list[Itinerary]:
+        """按 ``session_id`` 列出行程（不含 days），按 updated_at 倒序。
+
+        P3.3b 引入：供 ``api/v1/itinerary.py`` 的 ``list_itineraries`` 路由
+        查找用户会话关联的行程，避免 api 层直接查询 ``itineraries`` 表。
+        """
+        ...
+
     def update_itinerary(self, itinerary_id: str, **kwargs: object) -> bool:
         """按白名单字段更新行程；返回是否实际更新。"""
         ...
@@ -116,6 +124,24 @@ class ItineraryRepositoryPort(Protocol):
 
     def delete_share_link(self, token: str) -> bool:
         """删除分享链接；返回是否删除成功。"""
+        ...
+
+    # ── 方案确认（P3.3b 引入，供 ConfirmPlanService 使用）─────────
+
+    def set_itinerary_confirmed_plan(self, *, itinerary_id: str, plan_type: str, now: str) -> None:
+        """更新行程的 ``confirmed_plan`` 与 ``confirmed_at``。"""
+        ...
+
+    def clear_itinerary_confirmed_plan(self, itinerary_id: str) -> None:
+        """清空行程的 ``confirmed_plan`` 与 ``confirmed_at``（置 NULL）。"""
+        ...
+
+    def find_itinerary_id_by_session(self, session_id: str) -> str | None:
+        """按 ``session_id`` 查询最新行程 ID（ORDER BY created_at DESC LIMIT 1）。
+
+        P3.3b 引入：供 ``ConfirmPlanService.get_confirm_status`` 查找关联行程，
+        避免 api 层直接查询 ``itineraries`` 表。
+        """
         ...
 
 

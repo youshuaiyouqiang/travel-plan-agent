@@ -50,6 +50,9 @@ class ItineraryRepository:
     def list_itineraries(self, user_id: str) -> list[Itinerary]:
         return self._repository.list_itineraries(user_id)
 
+    def list_itineraries_by_session_id(self, session_id: str) -> list[Itinerary]:
+        return self._repository.list_itineraries_by_session_id(session_id)
+
     def update_itinerary(self, itinerary_id: str, **kwargs: object) -> bool:
         return self._repository.update_itinerary(itinerary_id, **kwargs)
 

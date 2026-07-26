@@ -212,6 +212,40 @@ class SqliteSessionRepository:
         )
         conn.commit()
 
+    # ── 方案确认（P3.3b）──────────────────────────────────────
+
+    def get_confirmed_plan(self, session_id: str) -> dict[str, Any] | None:
+        """读取会话的 ``confirmed_plan`` / ``confirmed_at`` 字段。"""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT confirmed_plan, confirmed_at FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "confirmed_plan": row["confirmed_plan"] if "confirmed_plan" in row.keys() else None,
+            "confirmed_at": row["confirmed_at"] if "confirmed_at" in row.keys() else None,
+        }
+
+    def set_confirmed_plan(self, *, session_id: str, plan_type: str, now: str) -> None:
+        """更新会话的 ``confirmed_plan`` 与 ``confirmed_at``。"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE sessions SET confirmed_plan = ?, confirmed_at = ? WHERE session_id = ?",
+            (plan_type, now, session_id),
+        )
+        conn.commit()
+
+    def clear_confirmed_plan(self, session_id: str) -> None:
+        """清空会话的 ``confirmed_plan`` 与 ``confirmed_at``（置 NULL）。"""
+        conn = get_connection()
+        conn.execute(
+            "UPDATE sessions SET confirmed_plan = NULL, confirmed_at = NULL WHERE session_id = ?",
+            (session_id,),
+        )
+        conn.commit()
+
     # ── 列表与消息 ──────────────────────────────────────────
 
     def list_sessions_by_user(self, user_id: str) -> list[dict[str, Any]]:
@@ -272,6 +306,15 @@ class SqliteSessionRepository:
                 (session_id,),
             )
         ]
+
+    def find_session_ids_by_user(self, user_id: str) -> list[str]:
+        """列出用户在 ``tasks`` 表中的去重 ``session_id``（排除空字符串）。"""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT session_id FROM tasks WHERE user_id = ? AND session_id != ''",
+            (user_id,),
+        ).fetchall()
+        return [row["session_id"] for row in rows if row["session_id"]]
 
     # ── 删除 ────────────────────────────────────────────────
 

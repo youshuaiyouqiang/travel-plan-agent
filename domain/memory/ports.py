@@ -151,6 +151,18 @@ class MemoryRepositoryPort(Protocol):
         """按 ID 删除单条 STM。"""
         ...
 
+    def delete_memory(self, *, user_id: str, memory_type: str, memory_id: int) -> bool:
+        """按类型与 ID 删除单条记忆，校验所有权。
+
+        P3.3b 引入：将 ``api/v1/memory.py`` 的 ``DELETE`` 路由裸 SQL 下沉到
+        仓储层。``memory_type`` 仅接受 ``short_term`` / ``long_term``（由调用方
+        先做白名单校验）；只删除属于 ``user_id`` 的行，避免 IDOR。
+
+        Returns:
+            ``True`` 表示命中并删除；``False`` 表示行不存在或不属于该用户。
+        """
+        ...
+
     # ── 会话与提取记录 ────────────────────────────────────────
 
     def save_conversation(self, session_id: str, user_id: str, summary: str, now: str) -> int:

@@ -147,6 +147,15 @@ class DualLayerMemoryManager:
         now = datetime.utcnow().isoformat()
         return self._repository.save_conversation(session_id, user_id, summary, now)
 
+    def delete_memory(self, *, user_id: str, memory_type: str, memory_id: int) -> bool:
+        """删除单条记忆；校验所有权，不通过返回 False。
+
+        P3.3b：将 ``api/v1/memory.py`` DELETE 路由的裸 SQL 下沉到仓储层。
+        """
+        return self._repository.delete_memory(
+            user_id=user_id, memory_type=memory_type, memory_id=memory_id
+        )
+
 
 class SessionMemory:
     def refresh_summary(self, session: Session) -> None:
