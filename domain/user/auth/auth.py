@@ -5,8 +5,12 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
-from infrastructure.persistence.database import get_connection
-from infrastructure.security.password import hash_password, verify_password, needs_upgrade
+from domain.user.auth.ports import (
+    PasswordHasherPort,
+    UserRepositoryPort,
+    get_default_password_hasher,
+    get_default_user_repository,
+)
 
 
 @dataclass
@@ -25,10 +29,23 @@ class User:
 
 
 class UserStore:
+    """用户存储；通过 ``UserRepositoryPort`` 与 ``PasswordHasherPort`` 访问持久化与哈希。
+
+    P2.3：原直连 ``get_connection()`` 的 SQL 与 ``infrastructure.security.password``
+    模块函数已下沉到 infrastructure 层端口实现。本类只负责内存缓存（带 TTL）、
+    username 索引与业务逻辑编排（创建、认证、PBKDF2 → bcrypt 自动升级）。
+    """
+
     # P2-1：缓存 TTL（秒），过期后下次 _load_to_cache 重新从 DB 加载
     _CACHE_TTL = 300
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        repository: UserRepositoryPort | None = None,
+        hasher: PasswordHasherPort | None = None,
+    ) -> None:
+        self._repository = repository or get_default_user_repository()
+        self._hasher = hasher or get_default_password_hasher()
         self._cache: dict[str, User] = {}
         self._username_index: dict[str, str] = {}
         self._cache_time: float = 0.0
@@ -39,16 +56,7 @@ class UserStore:
             return
         self._cache.clear()
         self._username_index.clear()
-        conn = get_connection()
-        rows = conn.execute("SELECT user_id, username, password_hash, created_at, updated_at FROM users").fetchall()
-        for row in rows:
-            user = User(
-                user_id=row["user_id"],
-                username=row["username"],
-                password_hash=row["password_hash"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-            )
+        for user in self._repository.load_all():
             self._cache[user.user_id] = user
             self._username_index[user.username] = user.user_id
         self._cache_time = time.time()
@@ -58,15 +66,10 @@ class UserStore:
         if username in self._username_index:
             raise ValueError("用户名已存在")
         user_id = os.urandom(8).hex()
-        password_hash = hash_password(password)
+        password_hash = self._hasher.hash(password)
         now = datetime.utcnow().isoformat()
         user = User(user_id=user_id, username=username, password_hash=password_hash, created_at=now, updated_at=now)
-        conn = get_connection()
-        conn.execute(
-            "INSERT INTO users (user_id, username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (user.user_id, user.username, user.password_hash, user.created_at, user.updated_at),
-        )
-        conn.commit()
+        self._repository.insert(user)
         self._cache[user.user_id] = user
         self._username_index[user.username] = user.user_id
         return user
@@ -79,17 +82,12 @@ class UserStore:
         user = self._cache.get(user_id)
         if not user:
             return None
-        if not verify_password(password, user.password_hash):
+        if not self._hasher.verify(password, user.password_hash):
             return None
         # Auto-upgrade: PBKDF2 → bcrypt
-        if needs_upgrade(user.password_hash):
-            new_hash = hash_password(password)
-            conn = get_connection()
-            conn.execute(
-                "UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?",
-                (new_hash, datetime.utcnow().isoformat(), user.user_id),
-            )
-            conn.commit()
+        if self._hasher.needs_upgrade(user.password_hash):
+            new_hash = self._hasher.hash(password)
+            self._repository.update_password(user.user_id, new_hash, datetime.utcnow().isoformat())
             user.password_hash = new_hash
         return user
 

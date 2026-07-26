@@ -364,23 +364,5 @@
     "line": 115,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/auth/auth.py",
-    "line": 8,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/auth/auth.py",
-    "line": 9,
-    "module": "infrastructure.security.password",
-    "layer_rule": "domain_no_infrastructure"
-  },
-  {
-    "file": "domain/user/auth/token.py",
-    "line": 8,
-    "module": "infrastructure.persistence.database",
-    "layer_rule": "domain_no_infrastructure"
   }
 ]

@@ -5,7 +5,7 @@ import os
 import time
 from dataclasses import dataclass
 
-from infrastructure.persistence.database import get_connection
+from domain.user.auth.ports import TokenRepositoryPort, get_default_token_repository
 
 
 @dataclass
@@ -27,63 +27,65 @@ def hash_token(token: str) -> str:
 
     所有数据库写入与查询均以 ``hash_token(token)`` 作为 key，
     原始 token 永不落盘。bearer / cookie 两种认证方式共用同一张表。
+
+    纯函数，无基础设施依赖；供 domain 层与 infrastructure 仓储实现共用。
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _ensure_table() -> None:
-    conn = get_connection()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_token_hashes (
-            token_hash TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            expires_at REAL NOT NULL
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_auth_token_hashes_user ON auth_token_hashes(user_id)")
-    conn.commit()
+def generate_token(
+    user_id: str,
+    repository: TokenRepositoryPort | None = None,
+) -> str:
+    """生成新 token 并入库其哈希，返回原始 token 给调用方。
 
-
-def generate_token(user_id: str) -> str:
-    """生成新 token 并入库其哈希，返回原始 token 给调用方。"""
+    Args:
+        user_id: 令牌归属用户 ID。
+        repository: 可选的令牌仓储；未注入时回退到全局默认实现。
+    """
+    repo = repository or get_default_token_repository()
     raw = f"{user_id}:{os.urandom(16).hex()}:{time.time()}"
     token = hashlib.sha256(raw.encode()).hexdigest()
     expires_at = time.time() + _TOKEN_EXPIRY_SECONDS
-    _ensure_table()
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO auth_token_hashes (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
-        (hash_token(token), user_id, expires_at),
-    )
-    conn.commit()
+    repo.insert(hash_token(token), user_id, expires_at)
     return token
 
 
-def verify_token(token: str) -> str | None:
-    """校验 token（先哈希再查询）。返回 user_id 或 None。"""
+def verify_token(
+    token: str,
+    repository: TokenRepositoryPort | None = None,
+) -> str | None:
+    """校验 token（先哈希再查询）。返回 user_id 或 None。
+
+    Args:
+        token: 待校验的原始 token。
+        repository: 可选的令牌仓储；未注入时回退到全局默认实现。
+    """
     if not token:
         return None
-    _ensure_table()
-    conn = get_connection()
+    repo = repository or get_default_token_repository()
     now = time.time()
-    conn.execute("DELETE FROM auth_token_hashes WHERE expires_at < ?", (now,))
-    conn.commit()
-    row = conn.execute(
-        "SELECT user_id, expires_at FROM auth_token_hashes WHERE token_hash = ?",
-        (hash_token(token),),
-    ).fetchone()
-    if not row or time.time() > row["expires_at"]:
+    repo.delete_expired(now)
+    found = repo.find(hash_token(token))
+    if not found:
         return None
-    return row["user_id"]
+    user_id, expires_at = found
+    if time.time() > expires_at:
+        return None
+    return user_id
 
 
-def revoke_token(token: str) -> None:
-    """撤销 token（按哈希删除）。"""
+def revoke_token(
+    token: str,
+    repository: TokenRepositoryPort | None = None,
+) -> None:
+    """撤销 token（按哈希删除）。
+
+    Args:
+        token: 待撤销的原始 token。
+        repository: 可选的令牌仓储；未注入时回退到全局默认实现。
+    """
     if not token:
         return
-    _ensure_table()
-    conn = get_connection()
-    conn.execute("DELETE FROM auth_token_hashes WHERE token_hash = ?", (hash_token(token),))
-    conn.commit()
+    repo = repository or get_default_token_repository()
+    repo.delete(hash_token(token))

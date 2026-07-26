@@ -121,4 +121,20 @@ def init_db(db_path: str | Path | None = None) -> None:
 
     configure_default_profile_repository(SqliteProfileRepository())
 
+    # P2.3：注册默认用户/令牌仓储与密码哈希器
+    from domain.user.auth.ports import (
+        configure_default_password_hasher,
+        configure_default_token_repository,
+        configure_default_user_repository,
+    )
+    from infrastructure.persistence.repositories.auth import (
+        SqliteTokenRepository,
+        SqliteUserRepository,
+    )
+    from infrastructure.security.password_hasher import BcryptPasswordHasher
+
+    configure_default_user_repository(SqliteUserRepository())
+    configure_default_token_repository(SqliteTokenRepository())
+    configure_default_password_hasher(BcryptPasswordHasher())
+
     logger.info("Database initialized: %s", db_path or settings.database_path)
