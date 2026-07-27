@@ -71,7 +71,7 @@ async def register(req: RegisterRequest, response: Response) -> AuthResponse:
     try:
         user = user_store.create(req.username, req.password)
     except ValueError as e:
-        raise ValidationException(str(e))
+        raise ValidationException(str(e)) from e
     token = generate_token(user.user_id)
     _set_auth_cookies(response, token)
     logger.info("User registered: user_id=%s username=%s", user.user_id, user.username)

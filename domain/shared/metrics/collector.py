@@ -16,7 +16,7 @@ def _init_metrics():
     if not settings.metrics_enabled:
         return
     try:
-        from prometheus_client import Counter, Histogram, Gauge
+        from prometheus_client import Counter, Histogram
 
         _collectors["request_count"] = Counter(
             "yunhe_requests_total",

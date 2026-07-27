@@ -13,7 +13,7 @@
   },
   {
     "file": "application/news/hotspot_service.py",
-    "line": 218,
+    "line": 217,
     "module": "infrastructure.news.fetchers",
     "layer_rule": "application_no_infrastructure"
   },
@@ -37,19 +37,19 @@
   },
   {
     "file": "domain/travel/tools/travel_tools.py",
-    "line": 36,
+    "line": 35,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
   },
   {
     "file": "domain/travel/tools/travel_tools.py",
-    "line": 48,
+    "line": 47,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
   },
   {
     "file": "domain/travel/tools/travel_tools.py",
-    "line": 115,
+    "line": 114,
     "module": "infrastructure.persistence.database",
     "layer_rule": "domain_no_infrastructure"
   }

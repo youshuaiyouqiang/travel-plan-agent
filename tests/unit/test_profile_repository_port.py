@@ -5,9 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Any
 
-import pytest
 
 from domain.user.profile.manager import ProfileManager
 from domain.user.profile.schema import UserProfile

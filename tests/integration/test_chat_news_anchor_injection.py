@@ -36,11 +36,8 @@ from application.news.analysis_service import NewsAnalysisService
 from application.news.hotspot_service import HotspotService
 from application.news.models import (
     Evidence,
-    EvidenceCard,
-    NewsAnalysisResponse,
     NewsAnchor,
     NewsItem,
-    UnverifiedLead,
 )
 from application.news.source_service import SourceService
 from application.session.service import SessionService

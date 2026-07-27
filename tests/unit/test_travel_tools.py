@@ -6,12 +6,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from domain.travel.tools import travel_tools
 from domain.travel.tools.travel_tools import (
     _extract_plan_content,
     _generate_itinerary_overview,

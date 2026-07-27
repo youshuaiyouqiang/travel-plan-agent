@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 
-from domain.shared.tools.base import ToolHandler, ToolSpec, bind_tool
+from domain.shared.tools.base import ToolHandler, ToolSpec
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,6 @@ async def _save_itinerary(arguments: dict) -> dict:
     if not content:
         return {"is_error": True, "content": "missing itinerary content"}
     from config import settings
-    from pathlib import Path
 
     path = settings.project_root / "itineraries" / f"{title}.md"
     path.parent.mkdir(parents=True, exist_ok=True)

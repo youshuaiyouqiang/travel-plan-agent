@@ -10,7 +10,6 @@ import pytest
 from domain.agent.repository import CustomAgentRepository
 from domain.agent.schema import AgentConfig
 from domain.user.profile.manager import ProfileManager
-from domain.user.profile.schema import UserProfile
 from infrastructure.persistence.database import init_db, reset_connection
 
 

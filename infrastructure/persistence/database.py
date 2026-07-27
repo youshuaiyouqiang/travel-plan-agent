@@ -24,7 +24,8 @@ from config import settings
 
 from infrastructure.persistence.connection import get_connection, reset_connection
 from infrastructure.persistence.schema import _SCHEMA
-from infrastructure.persistence.serialization import _json_dumps, _json_loads
+# 重新导出：外部代码（含测试）经 database 模块访问 serialization 工具函数。
+from infrastructure.persistence.serialization import _json_dumps, _json_loads  # noqa: F401
 from infrastructure.persistence.migrations.runner import (
     downgrade,
     get_migration_status,

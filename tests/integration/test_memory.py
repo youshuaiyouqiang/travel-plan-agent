@@ -2,7 +2,7 @@
 
 import pytest
 
-from domain.memory.manager import DualLayerMemoryManager, ShortTermMemory, LongTermMemory, SessionMemory
+from domain.memory.manager import DualLayerMemoryManager, SessionMemory
 from domain.user.session.manager import Session
 from infrastructure.persistence.database import init_db, reset_connection, _json_dumps
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from domain.memory.memory_extractor import MemoryExtractor, ExtractedMemory
 from domain.memory.memory_distiller import MemoryDistiller
-from infrastructure.persistence.database import init_db, reset_connection, _json_dumps
+from infrastructure.persistence.database import init_db, reset_connection
 
 
 class TestExtractedMemory:

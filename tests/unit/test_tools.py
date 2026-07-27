@@ -2,7 +2,7 @@
 
 import pytest
 
-from infrastructure.tools.base import ToolSpec, Tool, ToolHandler, bind_tool
+from infrastructure.tools.base import ToolSpec, Tool, bind_tool
 from infrastructure.tools.registry import ToolRegistry
 from infrastructure.tools.catalog import ToolCatalog
 from infrastructure.tools.policy import ToolPolicy, PolicyMode, PolicyDecision

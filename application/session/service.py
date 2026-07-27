@@ -16,7 +16,6 @@ P2.1：原直连 ``get_connection()`` 的 SQL 已下沉到
 from __future__ import annotations
 
 import os
-from datetime import datetime
 
 from application.exceptions import NotFoundException, ValidationException
 from application.session.schema import SessionMode, SessionRecord

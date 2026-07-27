@@ -142,7 +142,7 @@ async def add_news_favorite(req: NewsFavoriteRequest, request: Request) -> dict:
         )
     except Exception as e:
         logger.error("Add news favorite failed: %s", e)
-        raise InternalException("收藏失败")
+        raise InternalException("收藏失败") from e
     if not added:
         return {"status": "already_favorited", "title": req.title}
     return {"status": "ok", "title": req.title}

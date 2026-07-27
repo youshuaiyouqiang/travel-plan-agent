@@ -12,10 +12,6 @@
 from __future__ import annotations
 
 from application.news.anchor_prompt import (
-    ANCHOR_HEADER,
-    USER_QUESTION_HEADER,
-    build_news_anchor_message,
-    build_news_anchor_prompt,
     build_news_full_context,
 )
 from application.news.evidence_prompt import (

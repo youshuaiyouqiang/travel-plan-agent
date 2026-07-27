@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
 
 from domain.shared.llm.ports import LLMPort
 from domain.memory.manager import SessionMemory

@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from application.exceptions import NotFoundException, ValidationException
-from application.news.models import Source, SourceCandidateInput
+from application.news.models import SourceCandidateInput
 from application.news.source_candidate_scorer import SourceCandidateScorer
 from application.news.source_service import SourceService
 from infrastructure.persistence.database import get_connection, init_db, reset_connection

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from application.news.analysis_service import EvidenceProvider
 from application.news.models import Evidence, NewsAnchor
 
 

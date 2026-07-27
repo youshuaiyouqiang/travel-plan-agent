@@ -14,7 +14,6 @@ from typing import Any
 
 from infrastructure.persistence.connection import get_connection
 from infrastructure.persistence.migrations.registry import MIGRATIONS
-from infrastructure.persistence.migrations.types import Migration
 
 logger = logging.getLogger(__name__)
 

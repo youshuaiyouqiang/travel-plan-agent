@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from domain.travel.context_manager import PreparedContext
 from domain.shared.types import IntentResult

@@ -11,9 +11,7 @@ from domain.reasoning.engine import (
     ConfirmationNeeded,
     _strip_code_fences,
     _extract_json_object,
-    REACT_SYSTEM_SUFFIX,
 )
-from domain.shared.types import Decision, DecisionType, ToolCall
 from infrastructure.llm.openai import LLMResponse, ToolCallResult as LLMToolCall
 from infrastructure.tools.registry import ToolRegistry
 from infrastructure.tools.executor import ToolExecutor

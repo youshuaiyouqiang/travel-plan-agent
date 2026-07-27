@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,7 +16,7 @@ from domain.travel.services.cache_manager import CacheManager
 from domain.travel.services.itinerary_generator import ItineraryGenerator
 from domain.travel.services.memory_processor import MemoryProcessor
 from domain.travel.services.prompt_helper import PromptHelper
-from domain.user.session.task_state import TaskRecord, TaskStatus
+from domain.user.session.task_state import TaskRecord
 
 
 # ----------------------------------------------------------------------

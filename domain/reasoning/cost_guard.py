@@ -3,7 +3,7 @@
 社区版的核心价值：防止 API 费用失控（自用/分享都有成本）。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import logging
 
 logger = logging.getLogger(__name__)

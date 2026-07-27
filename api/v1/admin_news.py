@@ -22,7 +22,6 @@ from application.news.models import (
     NewsSourceInit,
     Source,
     SourceAudit,
-    SourceStatus,
 )
 from application.news.source_service import BUILTIN_WHITELIST, SourceService
 

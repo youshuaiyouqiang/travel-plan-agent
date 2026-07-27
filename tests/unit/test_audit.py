@@ -5,7 +5,6 @@ import json
 import time
 from pathlib import Path
 
-import pytest
 
 from domain.shared.audit.sanitizer import sanitize, sanitize_dict
 from domain.shared.audit.logger import AuditLogger

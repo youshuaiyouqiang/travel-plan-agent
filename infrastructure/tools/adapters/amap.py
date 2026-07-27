@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 
-from infrastructure.tools.base import ToolHandler, ToolSpec, bind_tool
+from infrastructure.tools.base import ToolHandler, ToolSpec
 
 logger = logging.getLogger(__name__)
 

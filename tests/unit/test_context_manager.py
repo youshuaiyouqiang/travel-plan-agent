@@ -1,9 +1,8 @@
 """Tests for domain/travel/context_manager.py — ContextManager, PreparedContext"""
 
-import pytest
 
 from domain.travel.context_manager import ContextManager, PreparedContext
-from domain.user.session.manager import Session, Turn
+from domain.user.session.manager import Session
 
 
 class TestPreparedContext:

@@ -110,7 +110,6 @@ class ContextPreparer:
         """
         self._llm.set_audit_context(session_id=session_id, user_id=memory_scope, trace_id=trace_id)
         self._reasoning.set_audit_context(session_id=session_id, user_id=memory_scope, trace_id=trace_id)
-        from domain.shared.tools.executor import ToolExecutor
 
         # ToolExecutor audit context is set by the caller (Agent) since it owns the executor
         session = self._session_store.get(session_id)

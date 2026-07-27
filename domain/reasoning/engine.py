@@ -10,7 +10,7 @@ from config import settings
 import re
 from domain.shared.tools.executor import ToolExecutor
 from domain.shared.tools.registry import ToolRegistry
-from domain.shared.llm.ports import LLMPort, LLMResponse, ToolCallResult as LLMToolCall
+from domain.shared.llm.ports import LLMPort, LLMResponse
 from domain.shared.audit.context import AuditContext
 from domain.shared.types import Decision, DecisionType, ToolCall
 from domain.reasoning.cost_guard import CostGuard

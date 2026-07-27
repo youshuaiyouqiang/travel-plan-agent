@@ -42,8 +42,8 @@ format: ## 代码格式化
 typecheck: ## 类型检查
 	mypy api application config domain infrastructure
 
-test: ## 运行测试
-	pytest tests/ -v
+test: ## 运行测试（与 CI 一致的 coverage 命令）
+	python -m pytest --cov=api --cov=application --cov=domain --cov=infrastructure --cov-fail-under=70
 
 clean: ## 清理缓存
 	@echo "清理 __pycache__ / .pytest_cache / .mypy_cache / .ruff_cache ..."

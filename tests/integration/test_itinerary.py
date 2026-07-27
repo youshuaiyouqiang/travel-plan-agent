@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import pytest
-from datetime import datetime
 
-from infrastructure.persistence.database import get_connection, reset_connection, init_db
+from infrastructure.persistence.database import reset_connection, init_db
 from domain.travel.itinerary.schema import Itinerary, DayPlan, Activity
 from domain.travel.itinerary.repository import ItineraryRepository
 from domain.travel.itinerary.parser import ItineraryParser

@@ -13,7 +13,6 @@ from typing import Any
 
 from application.news.models import (
     NewsSourceInit,
-    ScoringMode,
     Source,
     SourceAudit,
     SourceStatus,

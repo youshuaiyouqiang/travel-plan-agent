@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from config import settings
 from domain.memory.memory_distiller import MemoryDistiller
 from domain.memory.ports import get_default_memory_repository
 from domain.shared.llm.ports import get_default_llm
