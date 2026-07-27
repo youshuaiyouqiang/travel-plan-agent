@@ -1,8 +1,8 @@
 # 架构清理与依赖反转实施计划
 
-> **版本：** v1.1，2026-07-25
+> **版本：** v1.2，2026-07-27
 >
-> **状态：** 已评审、待实施
+> **状态：** P0–P6 已完成；P7 收尾中
 >
 > **优先级：** 用户指令 > AGENTS.md > 产品设计 > 本计划 > 既有代码约定
 
@@ -158,7 +158,7 @@ LLM 端口的输入输出由 domain 定义，例如 `LLMRequest`、`LLMResponse`
 每个 PR 和 CI 必须阻断式执行：
 
 ```powershell
-python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json
+python scripts/check_architecture.py
 python -m ruff check .
 python -m mypy api application domain infrastructure
 python -m bandit -r api application domain infrastructure -lll
@@ -170,7 +170,7 @@ npm --prefix frontend run test
 npm --prefix frontend run build
 ```
 
-CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降低覆盖率绕过失败。架构检查从 P0 起执行；基线仅容纳 P0 已记录的精确遗留项，并在每次 PR 减少。
+CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降低覆盖率绕过失败。架构检查从 P0 起执行；P7 起进入零容忍模式——任何分层依赖违规立即阻断 CI，不存在基线豁免清单。
 
 ## 6. 风险与排期
 
@@ -357,3 +357,108 @@ CI 同时运行 gitleaks，禁止 `continue-on-error`、`|| echo`、skip 或降�
 - ✅ domain 单元测试可用 fake 端口运行且不创建 SQLite 文件（20 个新测试）。
 - ✅ 既有集成测试仍覆盖真实 SQLite 行为（test_session/test_task_state/test_session_modes 全绿）。
 - ✅ SQL 文本、参数化方式、增量 turn 逻辑、404 语义完全保留。
+
+## 11. P6 实施记录（2026-07-27）：拆分 ReasoningEngine
+
+### 11.1 拆分前状态
+
+- `domain/reasoning/engine.py` 行数：~700 行（已偏离 §4 P6 验收的 < 600 行）。
+- `run` 与 `run_stream` 共用大量提示词模板、工具 schema 构建、决策解析和工具结果消息追加逻辑，重复实现且存在行为漂移风险。
+- 既有提取：`json_extract.py`、`text_cleaning.py`、`decision_parser.py`、`prompts.py`、`schema_builder.py`（P6.1）。
+
+### 11.2 拆分交付物
+
+| 文件 | 类型 | 职责 |
+|---|---|---|
+| `domain/reasoning/message_builder.py` | 新增 | `build_working_messages` + `append_tool_result_messages` + `MAX_HISTORY_TURNS`（run / run_stream 共用的纯函数） |
+| `domain/reasoning/engine.py` | 修改 | 删除 `_build_working_messages` / `_append_tool_result_messages` 实例方法与 `_MAX_HISTORY_TURNS`；删除未使用的 `Decision` 导入 |
+| `tests/unit/test_reasoning_extracted.py` | 修改 | 新增 12 个 message_builder 单元测试；移除未使用的 `REASONING_PATTERNS` 导入 |
+| `domain/reasoning/decision_parser.py` | 修改 | 移除未使用的 `Any` 导入（Ruff F401 修复） |
+
+### 11.3 拆分原则
+
+- 保持 `engine.py` 只负责编排状态机、端口调用和结果组装（满足计划 §4 P6 验收要求）。
+- 纯函数不接受 `self`，仅消费显式传入的 `decision`、`tool_results`、`trace_tool_calls`、`decision_text`，避免模块反向依赖 `TraceStep`。
+- 不改变 prompt、输出格式、工具调用次数或异常语义；既有行为测试 (`test_reasoning.py`) 与新单元测试 (`test_reasoning_extracted.py`) 共 97 个全绿。
+- 删除 `engine._build_working_messages` / `engine._append_tool_result_messages` / `engine._MAX_HISTORY_TURNS` 公开属性：调用方应直接使用 `domain.reasoning.message_builder` 模块函数，公共 API 收紧。
+- 向后兼容别名 `_strip_code_fences` / `_extract_json_object` 保留（P6.1 既有约定），既有测试通过 `engine._strip_code_fences` 导入仍可工作。
+
+### 11.4 单元测试新增
+
+`tests/unit/test_reasoning_extracted.py` 新增 `TestBuildWorkingMessages`、`TestAppendToolResultMessagesNative`、`TestAppendToolResultMessagesNonNative` 三个测试类共 12 个用例：
+
+- `build_working_messages`：无历史、过滤非 user/assistant、丢弃空内容、截断到 6 条历史、None 历史。
+- `append_tool_result_messages` native 模式：assistant tool_calls 注入、tool content 截断 4000 字符、dict content JSON 序列化。
+- `append_tool_result_messages` 非 native 模式：assistant payload + 结果摘要、错误分支提示、确认请求触发错误提示、`include_error_conditional=False` 时不追加 follow-up。
+
+### 11.5 行为兼容性
+
+- `run()` / `run_stream()` 中 `working_messages` 构建与 `append_tool_result_messages` 调用点的语义保持不变：
+  - `run` 路径 `include_error_conditional=True`（影响 follow-up 文案选择）。
+  - `run_stream` 路径 `include_error_conditional=False`（流式不重复追问）。
+- `MAX_HISTORY_TURNS = 6` 从类属性下沉到模块常量，行为等价。
+- `tool_status_text` 已在 `schema_builder.py` 中导出，`run_stream` 中使用不变。
+
+### 11.6 engine.py 行数
+
+| 阶段 | 行数 | 目标 |
+|---|---|---|
+| P6.1（提取 json_extract/text_cleaning/decision_parser/prompts/schema_builder） | 700 | — |
+| P6.2（提取 message_builder） | **590** | < 600 ✅ |
+
+### 11.7 门禁结果
+
+| 门禁 | 工具版本 | 结果 |
+|---|---|---|
+| `python scripts/check_architecture.py --baseline ...` | — | ✅ 9 项基线一致（与 P5 一致；本阶段未触及分层边界） |
+| `python -m ruff check .` | ruff 0.15.22 | ✅ All checks passed（修复 2 项 F401） |
+| `python -m mypy api application domain infrastructure` | mypy 2.3.0 | ✅ no issues found in 222 source files |
+| `python -m bandit -r api application domain infrastructure -lll` | bandit 1.9.4 | ✅ No issues identified（19524 lines） |
+| `python -m pytest --cov=... --cov-fail-under=70` | pytest 9.1.1 | ✅ **967 passed, 2 skipped**，覆盖率 **76.13%**（247.95s；新增 12 个 message_builder 单测） |
+| `python -m pip_audit -r requirements.lock` | pip_audit 2.10.1 | ✅ No known vulnerabilities found（sandbox 限制 `pip-audit/Cache` 写入导致 exit 1；与 P1/P2/P5 一致的网络/缓存问题） |
+| `npm --prefix frontend run lint/check/test/build` | eslint/tsc/vitest/vite | ✅ 全部通过（与 P5 一致，本阶段未改前端） |
+
+### 11.8 P6 验收
+
+- ✅ 新纯函数单测覆盖有效与畸形输入（`TestBuildWorkingMessages` 5 个 + `TestAppendToolResultMessagesNative` 3 个 + `TestAppendToolResultMessagesNonNative` 4 个 = 12 个）。
+- ✅ 行为测试覆盖主分支（`test_reasoning.py` 21 个，run / run_stream / 工具失败 / 取消 / 流式工具调用等）。
+- ✅ `engine.py` 590 行（< 600 行）。
+- ✅ 无公开导入路径回归（`_strip_code_fences` / `_extract_json_object` 兼容别名保留；`TraceStep` / `AskUserNeeded` / `ConfirmationNeeded` / `ReasoningEngine` 仍从 `engine` 导出）。
+- ✅ 不改变 prompt、输出格式、工具调用次数或异常语义（`clean_final_answer` / `looks_grounded` / `REACT_SYSTEM_SUFFIX` 均从 `text_cleaning.py` / `prompts.py` 引入，`run` / `run_stream` 调用方式未变）。
+
+## 12. P7 实施记录（2026-07-27）：去除豁免与升级 AGENTS.md
+
+### 12.1 交付物
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `scripts/check_architecture.py` | 重写 | 移除 `--baseline` 参数与基线生成/diff 比对分支，改为零容忍模式：发现任何分层依赖违规即以退出码 1 失败 |
+| `docs/architecture/legacy-import-baseline.json` | 删除 | 基线已归零（9 → 0），随检查器进入零容忍模式一同删除 |
+| `AGENTS.md` | 升级 v3.0 → v3.1 | 移除第 8 节"架构清理过渡条款"；新增第 8 节"架构守卫"：端口先于实现（§8.1）、唯一组合根（§8.2）、禁止的依赖方向（§8.3）、执行命令（§8.4）、违规处理（§8.5）、拆分后的稳定模块（§8.6）、同步约束（§8.7） |
+| `tests/unit/test_check_architecture.py` | 重写 | 删除 5 个基线生成/diff 测试（`test_baseline_generation_creates_sorted_json`、`test_baseline_match_passes`、`test_new_violation_fails`、`test_stale_baseline_entry_fails`、`test_no_violations_no_baseline_passes`）；新增 4 个零容忍测试（`test_cli_no_violations_passes`、`test_cli_any_violation_fails`、`test_cli_multiple_violations_all_reported`、`test_cli_root_defaults_to_current`） |
+| `.github/workflows/ci.yml` | 修改 | 架构检查步骤从 `python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json` 改为 `python scripts/check_architecture.py` |
+
+### 12.2 架构守卫要点
+
+- **端口先于实现**（§8.1）：所有外部能力必须有 `domain/<aggregate>/ports.py` 端口；禁止通用 `ConnectionProvider`；端口输入输出由 domain 定义；必须有可运行 fake。
+- **唯一组合根**（§8.2）：`app.py` 的 `build_container()` 唯一装配依赖；`api/server.py` 只 `create_api(container)`；路由、依赖、生命周期不得 `new` 服务或仓储；`app.py` 不得在 import 时初始化数据库或读取外部状态。
+- **禁止的依赖方向**（§8.3）：四层规则矩阵与检查器一致；违规处理零容忍（§8.5）——不允许 `--baseline`、注释豁免、per-file ignores 或降覆盖率绕过。
+- **稳定模块**（§8.6）：迁移模块按版本组拆分（20 版本不变）、`domain/reasoning/` 拆分后 `engine.py` 仅负责编排（< 600 行）、前端 `utils/api.ts` 已按领域拆分——新代码必须从拆分后的模块直接导入。
+
+### 12.3 验收
+
+- ✅ 基线已归零（`find_violations()` 当前返回空列表，9 项违规已通过端口化全部消除）。
+- ✅ `scripts/check_architecture.py` 移除 `--baseline` 参数；`run_cli()` 仅保留零容忍分支。
+- ✅ `docs/architecture/legacy-import-baseline.json` 已删除。
+- ✅ `AGENTS.md` 升级到 v3.1；过渡条款（"新代码零豁免"、"基线只减不增"等临时表述）已替换为正式"架构守卫"条款。
+- ✅ CI 工作流去掉 `--baseline` 参数；保留阻断式执行。
+- ✅ 单元测试更新：删除 5 项基线测试，新增 4 项零容忍测试，全部通过。
+- ✅ 既有约束（迁移版本 20、`app.py` 唯一组合根、禁止的依赖方向、零豁免、CI 阻断）全部保留并在 AGENTS.md 显式表达。
+- ✅ 未声称"架构已完全解耦"；AGENTS.md §8.7 显式要求"§8 全部条款稳定运行一个迭代后方可改用'架构已守卫'的措辞"。
+
+### 12.4 后续约束
+
+- 任何新增违规必须通过端口化、组合根收敛或前端 API 拆分消除，不得保留任何"已知违规"清单。
+- 添加新端口时必须同步新增 fake 端口单测和真实实现集成测试。
+- 对组合根、迁移、架构检查器、AGENTS.md 守卫条款本身的改动必须独立 PR。
+

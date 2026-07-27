@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""架构分层依赖检查器（P0 基线工具）.
+"""架构分层依赖检查器（零容忍守卫）.
 
 使用 ``ast.parse`` 扫描全部 Python 源文件，检测违反分层依赖规则的导入语句。
-规则矩阵定义于 ``docs/superpowers/plans/2026-07-25-architecture-cleanup.md`` §4.P0：
+规则矩阵定义于 ``docs/superpowers/plans/2026-07-25-architecture-cleanup.md`` §4.P0
+与 AGENTS.md §8 架构守卫：
 
 - ``domain`` 不得导入 ``infrastructure``、``api``、``application``、``fastapi``，或具体外部 I/O SDK；
 - ``application`` 不得导入 ``infrastructure``、``api``、``fastapi``；
@@ -12,25 +13,27 @@
 覆盖的导入形式：顶层导入、函数/方法内导入、``TYPE_CHECKING`` 块导入、``try/except ImportError``
 块导入、别名导入（``import x as y``）。相对导入（``from . import ...``）视为同包内导入，不检查。
 
+P7 起：基线已归零并删除，本检查器改为零容忍——发现任何违规即以退出码 1 失败。
+不允许通过 ``--baseline`` 或其他豁免机制绕过。
+
 使用方式：
 
-    # 生成或更新基线（基线文件不存在时写入；存在时比对）
-    python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json
+    # 默认检查当前目录
+    python scripts/check_architecture.py
 
-    # 指定扫描根目录（默认当前目录）
-    python scripts/check_architecture.py --root . --baseline docs/architecture/legacy-import-baseline.json
+    # 指定扫描根目录
+    python scripts/check_architecture.py --root .
 
 退出码：
 
-- 0 — 无违规，或当前违规与基线完全一致
-- 1 — 发现新增违规，或基线中存在已删除项（基线腐烂）
+- 0 — 无违规
+- 1 — 发现任何分层依赖违规
 """
 
 from __future__ import annotations
 
 import argparse
 import ast
-import json
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -118,7 +121,7 @@ class Violation:
         return asdict(self)
 
     def key(self) -> tuple[str, int, str, str]:
-        """返回用于基线比对的稳定标识元组。"""
+        """返回稳定标识元组（保留以便历史日志对比）。"""
         return (self.file, self.line, self.module, self.layer_rule)
 
 
@@ -219,7 +222,7 @@ def _check_api_import(module: str) -> str | None:
     """对 api 层文件应用规则；返回触发的 layer_rule 或 None。
 
     domain 仓储实现模块判定：模块路径以 ``domain.`` 开头且末段为
-    ``repository`` 或 ``repositories``（含其子模块）。P2 将把这些实现迁至
+    ``repository`` 或 ``repositories``（含其子模块）。P2 已将这些实现迁至
     ``infrastructure/persistence/repositories/`` 并以端口替代。
     """
     top = _top_level_package(module)
@@ -289,51 +292,6 @@ def find_violations(root: Path) -> list[Violation]:
     return violations
 
 
-# ── 基线比对 ──────────────────────────────────────────────
-
-
-def _load_baseline(path: Path) -> list[Violation] | None:
-    """加载基线文件；文件不存在返回 None。"""
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [
-        Violation(
-            file=entry["file"],
-            line=entry["line"],
-            module=entry["module"],
-            layer_rule=entry["layer_rule"],
-        )
-        for entry in data
-    ]
-
-
-def _write_baseline(path: Path, violations: list[Violation]) -> None:
-    """将违规列表以稳定排序 JSON 写入基线文件。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = [v.as_dict() for v in violations]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _diff_violations(
-    current: list[Violation], baseline: list[Violation]
-) -> tuple[list[Violation], list[Violation]]:
-    """比对当前违规与基线。
-
-    Returns:
-        ``(new_violations, stale_baseline)``：
-        - ``new_violations`` — 当前存在但基线没有的违规（新增）。
-        - ``stale_baseline`` — 基线存在但当前没有的违规（应从基线删除）。
-    """
-    current_set = {v.key(): v for v in current}
-    baseline_set = {v.key(): v for v in baseline}
-    new_keys = current_set.keys() - baseline_set.keys()
-    stale_keys = baseline_set.keys() - current_set.keys()
-    new_violations = sorted((current_set[k] for k in new_keys), key=lambda v: v.key())
-    stale_violations = sorted((baseline_set[k] for k in stale_keys), key=lambda v: v.key())
-    return new_violations, stale_violations
-
-
 # ── CLI ───────────────────────────────────────────────────
 
 
@@ -345,76 +303,34 @@ def _format_violation(v: Violation, prefix: str = "  ") -> str:
 def run_cli(argv: list[str] | None = None) -> int:
     """CLI 入口；返回进程退出码。
 
+    P7 起：零容忍模式。无基线、无豁免；发现任何分层依赖违规即失败。
+
     Args:
         argv: 参数列表；为 None 时取 ``sys.argv[1:]``。
 
     Returns:
-        0 表示通过（无违规或与基线一致），1 表示失败（新增违规或基线腐烂）。
+        0 表示通过（无违规），1 表示失败（发现违规）。
     """
     parser = argparse.ArgumentParser(
-        description="架构分层依赖检查器（P0 基线工具）",
+        description="架构分层依赖检查器（零容忍守卫）",
     )
     parser.add_argument(
         "--root",
         default=".",
         help="扫描根目录（默认当前目录）",
     )
-    parser.add_argument(
-        "--baseline",
-        default=None,
-        help="基线 JSON 路径；文件不存在时生成，存在时比对",
-    )
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
     current = find_violations(root)
 
-    if args.baseline is None:
-        # 无基线模式：发现任何违规即失败（用于本地开发）
-        if current:
-            print(f"发现 {len(current)} 处分层依赖违规：", file=sys.stderr)
-            for v in current:
-                print(_format_violation(v), file=sys.stderr)
-            return 1
+    if not current:
         print("架构检查通过：无分层依赖违规")
         return 0
 
-    baseline_path = Path(args.baseline).resolve()
-    baseline = _load_baseline(baseline_path)
-
-    if baseline is None:
-        # 基线文件不存在：生成并退出
-        _write_baseline(baseline_path, current)
-        print(
-            f"基线已生成：{baseline_path}（{len(current)} 项违规已记录为显式债务）",
-            file=sys.stderr,
-        )
-        if current:
-            for v in current:
-                print(_format_violation(v), file=sys.stderr)
-        return 0
-
-    new_violations, stale_violations = _diff_violations(current, baseline)
-
-    if not new_violations and not stale_violations:
-        print(f"架构检查通过：当前违规与基线一致（{len(current)} 项显式债务）")
-        return 0
-
-    if new_violations:
-        print(
-            f"发现 {len(new_violations)} 处新增分层依赖违规（基线未记录）：",
-            file=sys.stderr,
-        )
-        for v in new_violations:
-            print(_format_violation(v), file=sys.stderr)
-    if stale_violations:
-        print(
-            f"基线中 {len(stale_violations)} 项违规已从代码中删除，"
-            "请同步从基线文件移除：",
-            file=sys.stderr,
-        )
-        for v in stale_violations:
-            print(_format_violation(v), file=sys.stderr)
+    print(f"发现 {len(current)} 处分层依赖违规：", file=sys.stderr)
+    for v in current:
+        print(_format_violation(v), file=sys.stderr)
     return 1
 
 

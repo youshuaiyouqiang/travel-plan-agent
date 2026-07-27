@@ -1,16 +1,15 @@
 """``scripts/check_architecture.py`` 的单元测试。
 
-覆盖分层依赖规则的检测能力，包括：
+P7 起：基线已删除，检查器改为零容忍模式。覆盖分层依赖规则的检测能力：
 - 顶层导入、函数内导入、TYPE_CHECKING 块导入、别名导入
 - domain/application/api/infrastructure 四层规则矩阵
-- 基线生成与 diff 比对（新增项/过期项均失败）
+- 零容忍 CLI 行为：无违规通过；任何违规即失败
 - 文件路径使用正斜杠以保证跨平台一致
 """
 
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 
@@ -141,7 +140,7 @@ def test_application_fastapi_import_detected(checker, tmp_path):
 
 
 def test_application_domain_import_allowed(checker, tmp_path):
-    """application 导入 domain 模型/仓储不是违规（P0 规则只禁止 infra/api/fastapi）。"""
+    """application 导入 domain 模型/仓储不是违规（规则只禁止 infra/api/fastapi）。"""
     _write(
         tmp_path,
         "application/authz/service.py",
@@ -244,61 +243,36 @@ def test_file_paths_use_forward_slash(checker, tmp_path):
     assert violations[0].file == "domain/deep/nested/file.py"
 
 
-def test_baseline_generation_creates_sorted_json(checker, tmp_path):
-    """首次运行（基线文件不存在）生成稳定排序的 JSON。"""
-    _write(tmp_path, "domain/b.py", "import infrastructure\n")
-    _write(tmp_path, "domain/a.py", "import infrastructure\n")
-    baseline_path = tmp_path / "baseline.json"
-    rc = checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)])
-    assert rc == 0
-    data = json.loads(baseline_path.read_text(encoding="utf-8"))
-    assert isinstance(data, list)
-    assert len(data) == 2
-    # 稳定排序：a 在 b 前
-    assert data[0]["file"] == "domain/a.py"
-    assert data[1]["file"] == "domain/b.py"
-    for entry in data:
-        assert set(entry.keys()) == {"file", "line", "module", "layer_rule"}
+# ── 零容忍 CLI 测试（P7 新增） ─────────────────────────────
 
 
-def test_baseline_match_passes(checker, tmp_path):
-    """当前违规与基线完全一致时退出码 0。"""
-    _write(tmp_path, "domain/sample/agent.py", "import infrastructure\n")
-    baseline_path = tmp_path / "baseline.json"
-    # 生成基线
-    assert checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)]) == 0
-    # 再次运行应通过
-    assert checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)]) == 0
-
-
-def test_new_violation_fails(checker, tmp_path):
-    """新增违规必须失败。"""
-    _write(tmp_path, "domain/sample/agent.py", "import infrastructure\n")
-    baseline_path = tmp_path / "baseline.json"
-    assert checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)]) == 0
-    # 新增违规
-    _write(tmp_path, "domain/sample/service.py", "import infrastructure\n")
-    rc = checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)])
-    assert rc == 1
-
-
-def test_stale_baseline_entry_fails(checker, tmp_path):
-    """基线中已删除项仍保留时必须失败（防止基线腐烂）。"""
-    _write(tmp_path, "domain/sample/agent.py", "import infrastructure\n")
-    _write(tmp_path, "domain/sample/service.py", "import infrastructure\n")
-    baseline_path = tmp_path / "baseline.json"
-    assert checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)]) == 0
-    # 删除一个违规
-    (tmp_path / "domain/sample/service.py").unlink()
-    rc = checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)])
-    assert rc == 1
-
-
-def test_no_violations_no_baseline_passes(checker, tmp_path):
-    """无违规且无基线时退出码 0，并生成空基线。"""
+def test_cli_no_violations_passes(checker, tmp_path):
+    """零容忍模式：无违规时退出码 0。"""
     _write(tmp_path, "domain/sample/agent.py", "from dataclasses import dataclass\n")
-    baseline_path = tmp_path / "baseline.json"
-    rc = checker.run_cli(["--root", str(tmp_path), "--baseline", str(baseline_path)])
+    _write(tmp_path, "api/v1/route.py", "from fastapi import APIRouter\n")
+    rc = checker.run_cli(["--root", str(tmp_path)])
     assert rc == 0
-    data = json.loads(baseline_path.read_text(encoding="utf-8"))
-    assert data == []
+
+
+def test_cli_any_violation_fails(checker, tmp_path):
+    """零容忍模式：任何违规立即退出码 1。"""
+    _write(tmp_path, "domain/sample/agent.py", "import infrastructure\n")
+    rc = checker.run_cli(["--root", str(tmp_path)])
+    assert rc == 1
+
+
+def test_cli_multiple_violations_all_reported(checker, tmp_path):
+    """零容忍模式：多条违规必须全部报告。"""
+    _write(tmp_path, "domain/a.py", "import infrastructure\n")
+    _write(tmp_path, "domain/b.py", "import fastapi\n")
+    _write(tmp_path, "api/v1/x.py", "import infrastructure\n")
+    rc = checker.run_cli(["--root", str(tmp_path)])
+    assert rc == 1
+
+
+def test_cli_root_defaults_to_current(checker, tmp_path, monkeypatch):
+    """--root 缺省时扫描当前工作目录。"""
+    monkeypatch.chdir(tmp_path)
+    _write(tmp_path, "domain/sample/agent.py", "import infrastructure\n")
+    rc = checker.run_cli([])
+    assert rc == 1

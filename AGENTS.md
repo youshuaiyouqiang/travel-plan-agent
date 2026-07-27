@@ -1,6 +1,6 @@
 # 云合开发规范
 
-> **版本：** v3.0，2026-07-19
+> **版本：** v3.1，2026-07-27
 >
 > **优先级：** 用户指令 > 本文件 > 产品设计与实施计划 > 既有代码约定。
 
@@ -72,7 +72,7 @@ docs/             产品设计、计划、验收报告
 ```powershell
 # Python
 python -m pip install -r requirements.lock
-python scripts/check_architecture.py --baseline docs/architecture/legacy-import-baseline.json
+python scripts/check_architecture.py
 python -m ruff check .
 python -m mypy api application domain infrastructure
 python -m bandit -r api application domain infrastructure -lll
@@ -96,13 +96,69 @@ npm --prefix frontend run build
 - 先报告架构冲突、迁移风险和安全影响；未经明确同意，不执行破坏性数据清理或对外操作。
 - 完成一个任务后先自审：业务边界、授权、敏感数据、迁移、测试、前端类型与可访问性。
 
-## 8. 架构清理过渡条款（P0–P7，临时）
+## 8. 架构守卫
 
-> 本节为 `docs/superpowers/plans/2026-07-25-architecture-cleanup.md` 的执行约束，P7 完成后整体改写为"架构守卫"并升级版本号。在此之前不得把架构状态写成"已完全解耦"。
+> 实施记录见 `docs/superpowers/plans/2026-07-25-architecture-cleanup.md`（P0–P7）。
+> 实施前不得把架构状态写成"已完全解耦"；P7 完成、门禁有证据后方可使用此节作为正式约束。
 
-- 分层依赖基线 `docs/architecture/legacy-import-baseline.json` 由 `scripts/check_architecture.py` 用 AST 生成，是显式债务豁免清单，不是数量阈值。
-- CI 阻断新增违规；基线条目只能逐项删除，不得新增；已从代码删除的条目必须同步从基线移除，否则 CI 失败。
-- 现有违规清单不得模仿或复制到新代码；新代码零豁免。
-- `frontend/src/utils/api.ts`、`domain/reasoning/engine.py` 在所属阶段（P5/P6）拆分前不得新增功能，只允许维护性修复；`infrastructure/persistence/database.py` 已于 P1 拆分为 `connection.py`/`schema.py`/`serialization.py`/`migrations/` 子包，新代码应从拆分后的模块直接导入。
-- `app.py` 是唯一组合根；`api/server.py` 只创建 FastAPI 应用并接收容器（P3 收敛前不得新增模块级服务构造）。
-- 迁移版本号固定为 20；P1 已按版本组（`v001_005`/`v006_010`/`v011_015`/`v016_020`）拆分迁移模块，未改变 SQL 文本、版本号或 `schema_migrations` 数据；后续阶段不得修改历史迁移。
+### 8.1 端口先于实现
+
+- 任何领域/应用层需要数据库、网络、LLM、MCP、缓存、限流、密码学或文件系统等外部能力时，必须先在消费方所属领域包中定义 `Protocol` 端口（如 `domain/<aggregate>/ports.py`、`domain/shared/<capability>/ports.py`）。
+- 禁止设计通用 `ConnectionProvider`、`Database` 之类的"通用仓库"让 domain 继续写 SQL；端口按业务聚合命名（`SessionRepositoryPort`、`ItineraryRepositoryPort`、`LLMPort`、`MCPCatalogPort` 等）。
+- 端口的输入/输出类型（DTO、`LLMRequest`、`ToolCall`）由 domain 定义；不得复制 `OpenAILLM` 的全部公共方法，不得泄漏 OpenAI SDK、MCP `build_specs()`/`build_handlers()`、SQLite 驱动等装配细节。
+- 端口必须有可运行的 fake/stub 实现，领域单元测试不创建真实 SQLite 文件、不发起网络请求。
+
+### 8.2 唯一组合根
+
+- `app.py` 的 `build_container(settings) -> AppContainer` 是唯一依赖装配入口，负责创建 SQLite、LLM、MCP、工具、缓存、限流和应用服务，并显式注入端口实现。
+- `api/server.py` 只提供 `create_api(container) -> FastAPI`：注册路由、生命周期和中间件，将 `AppContainer` 放入 `app.state.container`。
+- 路由、依赖函数、生命周期钩子不得 `new` 服务、仓储或基础设施实现；只能通过 FastAPI dependency 从 `request.app.state.container` 取得应用服务。
+- `app.py` 不得在 import 时初始化数据库、启动指标服务或读取外部状态；启动期副作用集中到 `lifespan` 钩子。
+
+### 8.3 禁止的依赖方向
+
+| 起点 | 禁止的依赖 |
+|---|---|
+| `domain` | `infrastructure`、`api`、`application`、`fastapi`、具体 I/O SDK（`sqlalchemy`/`aiosqlite`/`sqlite3`/`openai`/`anthropic`/`httpx`/`requests`/`aiohttp`/`urllib3`/`bcrypt`/`passlib`/`cryptography`/`starlette`/`uvicorn`/`redis`/`mcp`） |
+| `application` | `infrastructure`、`api`、`fastapi` |
+| `api` | `infrastructure`、领域仓储实现模块（`domain.*.repository` / `domain.*.repositories` 及其子模块） |
+| `infrastructure` | `api` |
+
+- `application` 可依赖 `domain`（包括仓储端口）；`infrastructure` 可实现 `domain` 端口并消费领域模型。
+- 相对导入（`from . import ...`）视为同包内导入，不视为违规。
+
+### 8.4 执行命令
+
+```powershell
+python scripts/check_architecture.py        # 零容忍：发现任何违规即失败
+python -m ruff check .
+python -m mypy api application domain infrastructure
+python -m bandit -r api application domain infrastructure -lll
+python -m pytest --cov=api --cov=application --cov=domain --cov=infrastructure --cov-fail-under=70
+python -m pip_audit -r requirements.lock
+```
+
+- 架构检查由 `scripts/check_architecture.py` 实现，使用 `ast.parse` 扫描全部 `*.py`，覆盖顶层、函数内、`TYPE_CHECKING` 块、别名和 `try/except ImportError` 块导入。
+- 违规条目使用正斜杠相对路径，保证跨平台 CI 一致。
+- `tests/` 与 `scripts/` 目录不参与分层规则检查。
+
+### 8.5 违规处理
+
+- CI 阻断式执行；本地开发运行同一命令预览结果。
+- 不允许通过 `--baseline`、per-file ignores、注释豁免或降低覆盖率绕过；必须修改代码消除违规。
+- 既有违规必须通过端口化、迁移聚合、组合根收敛或前端 API 拆分消除，不得保留任何"已知违规"清单。
+- 新增违规立即在 PR 反馈中修复；不得在 PR 中混入"暂留债务"提交。
+
+### 8.6 拆分后的稳定模块（不得回退合并）
+
+- `infrastructure/persistence/` 已按职责拆分为 `connection.py` / `schema.py` / `serialization.py` / `migrations/`（`v001_005` / `v006_010` / `v011_015` / `v016_020` / `registry` / `runner` / `types`）；`database.py` 仅为兼容 re-export，新代码必须从拆分后的模块直接导入。
+- 迁移版本号固定为 20；不得修改历史迁移的 SQL 文本、版本号或 `schema_migrations` 数据。
+- `domain/reasoning/` 已拆分为 `json_extract.py` / `text_cleaning.py` / `decision_parser.py` / `prompts.py` / `schema_builder.py` / `message_builder.py`，`engine.py` 仅负责编排状态机与端口调用（目标 < 600 行）。
+- 前端 `utils/api.ts` 已按 `features/<domain>/api.ts` 拆分为 auth、chat、memory、agent、skill、mcp、news、travel（itinerary / geocode / draft-archive）等子模块；新 API 仅放入 `features/<domain>/api.ts`，并统一走 `features/auth/client.ts` 的 Cookie + CSRF 客户端。
+
+### 8.7 架构守卫的同步约束
+
+- 任何层违反 §8.3 的依赖方向，必须先开 PR 修复后才能合入；禁止在 PR 中以"暂未拆分"为由遗留。
+- 添加新端口时，必须同步新增 fake 端口单测和真实实现集成测试。
+- 任何对组合根、迁移、架构检查器、AGENTS.md 守卫条款本身的改动，必须在 PR 描述中显式声明并独立提交。
+- 在 §8 全部条款稳定运行一个迭代后，方可在本文件中改用"架构已守卫"的措辞。
