@@ -281,3 +281,134 @@ class TestReasoningEngine:
             force_tool=False,
         )
         assert "Stopped" in result or "maximum" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_run_tool_failure_continues(self):
+        """P6 前置：工具执行失败时，引擎应将错误结果反馈给 LLM 并继续推理。"""
+        engine, mock_llm = self._make_engine()
+
+        async def _failing_handler(arguments: dict) -> dict:
+            raise RuntimeError("simulated tool failure")
+
+        fail_spec = ToolSpec(name="failing_tool", description="Always fails", category="Test")
+        engine._tool_registry.register(bind_tool(fail_spec, _failing_handler))
+
+        tool_call_response = json.dumps(
+            {
+                "tool_calls": [{"name": "failing_tool", "arguments": {"text": "go"}}],
+                "text": "Let me try this tool",
+            }
+        )
+        final_response = "The tool failed, but here is my best answer based on what I know."
+        self._setup_mock_responses(mock_llm, [tool_call_response, final_response])
+
+        result = await engine.run(
+            system_prompt="You are a helpful assistant.",
+            user_message="Use the failing tool",
+            force_tool=False,
+        )
+        assert "best answer" in result
+        # 工具失败结果应记录在 trace 中
+        tool_traces = [t for t in engine.last_trace if t.tool_results]
+        assert len(tool_traces) >= 1
+        assert any(r.get("is_error") for r in tool_traces[-1].tool_results)
+
+    @pytest.mark.asyncio
+    async def test_run_invalid_decision_falls_back_to_final_answer(self):
+        """P6 前置：LLM 输出无法解析为工具调用时，应回退为最终答案。"""
+        engine, mock_llm = self._make_engine()
+
+        # 既不是合法 JSON，也不包含可识别的 tool_call 模式
+        garbage_response = "This is just plain text with no structure whatsoever."
+        self._setup_mock_responses(mock_llm, [garbage_response])
+
+        result = await engine.run(
+            system_prompt="You are a helpful assistant.",
+            user_message="Tell me something",
+            force_tool=False,
+        )
+        assert "plain text" in result or "structure" in result
+        assert engine.last_trace[-1].decision_type == "final_answer"
+
+    @pytest.mark.asyncio
+    async def test_run_stream_final_answer_immediately(self):
+        """P6 前置：run_stream 在无工具调用时应流式输出最终答案。"""
+        engine, mock_llm = self._make_engine()
+        self._setup_mock_responses(mock_llm, ["The streaming answer is 42."])
+
+        # stream_complete 需要 mock
+        async def _fake_stream(*, system: str, messages: list):
+            for chunk in ["The ", "streaming ", "answer ", "is ", "42."]:
+                yield chunk
+
+        mock_llm.stream_complete = _fake_stream
+
+        chunks: list[str] = []
+        async for chunk in engine.run_stream(
+            system_prompt="You are a helpful assistant.",
+            user_message="What is the answer?",
+            force_tool=False,
+        ):
+            if not chunk.startswith("__status__:"):
+                chunks.append(chunk)
+
+        result = "".join(chunks)
+        assert "42" in result
+
+    @pytest.mark.asyncio
+    async def test_run_stream_tool_call_then_answer(self):
+        """P6 前置：run_stream 在工具调用后应输出最终答案。"""
+        engine, mock_llm = self._make_engine()
+
+        tool_call_response = json.dumps(
+            {
+                "tool_calls": [{"name": "echo_tool", "arguments": {"text": "stream"}}],
+                "text": "Calling echo",
+            }
+        )
+        final_response = "Echo result: echo: stream"
+        self._setup_mock_responses(mock_llm, [tool_call_response, final_response])
+
+        chunks: list[str] = []
+        statuses: list[str] = []
+        async for chunk in engine.run_stream(
+            system_prompt="You are a helpful assistant.",
+            user_message="Echo stream",
+            force_tool=False,
+        ):
+            if chunk.startswith("__status__:"):
+                statuses.append(chunk)
+            else:
+                chunks.append(chunk)
+
+        result = "".join(chunks)
+        assert "echo: stream" in result
+        # 应该有工具状态通知
+        assert any("echo_tool" in s or "thinking" in s for s in statuses)
+
+    @pytest.mark.asyncio
+    async def test_run_stream_cancellation(self):
+        """P6 前置：run_stream 应支持消费者提前取消（GeneratorExit 不抛出未处理异常）。"""
+        engine, mock_llm = self._make_engine()
+        self._setup_mock_responses(mock_llm, ["A long final answer that should be streamed."])
+
+        async def _fake_stream(*, system: str, messages: list):
+            for chunk in ["chunk1", "chunk2", "chunk3", "chunk4", "chunk5"]:
+                yield chunk
+
+        mock_llm.stream_complete = _fake_stream
+
+        gen = engine.run_stream(
+            system_prompt="You are a helpful assistant.",
+            user_message="Stream something",
+            force_tool=False,
+        )
+        # 消费少量 chunk 后提前退出，触发 GeneratorExit
+        consumed: list[str] = []
+        async for chunk in gen:
+            if not chunk.startswith("__status__:"):
+                consumed.append(chunk)
+            if len(consumed) >= 2:
+                break
+        # 验证没有未处理异常，且消费了部分输出
+        assert len(consumed) >= 1
