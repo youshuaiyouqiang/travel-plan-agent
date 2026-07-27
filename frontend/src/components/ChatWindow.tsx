@@ -7,7 +7,7 @@ import { AgentActionCard } from './AgentActionCard'
 import { TrendingBar } from './TrendingBar'
 import { EvidenceCards } from './news/EvidenceCards'
 
-import type { AgentInfo } from '../utils/api'
+import type { AgentInfo } from '../features/agent/api'
 
 // ★ 多方案锚点解析
 const MULTI_PLAN_ANCHOR_RE = /<!--MULTI_PLAN:(.*?)-->/

@@ -209,3 +209,71 @@ export async function registerBuiltinSource(req: {
   if (!res.ok) throw new Error('注册内置白名单失败')
   return (await res.json()) as NewsSource
 }
+
+// ==================== Trending / 新闻收藏（P5.3 从 utils/api.ts 迁入） ====================
+
+const LEGACY_BASE = '/api/news'
+
+/** 热点条目（legacy trending 接口；与 HotspotItem 字段不同）。 */
+export interface TrendingItem {
+  title: string
+  tag: string
+  summary: string
+  url?: string
+  img?: string
+  hotScore?: string
+  hotChange?: string
+  source?: string
+}
+
+export async function getTrending(refresh: boolean = false): Promise<TrendingItem[]> {
+  try {
+    const url = refresh ? `${LEGACY_BASE}/trending?refresh=true` : `${LEGACY_BASE}/trending`
+    const res = await authClient().request(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    return data.items || []
+  } catch {
+    return []
+  }
+}
+
+export interface NewsFavorite {
+  id: number
+  title: string
+  summary: string
+  url: string
+  source: string
+  tag: string
+  created_at: string
+}
+
+export async function listNewsFavorites(): Promise<NewsFavorite[]> {
+  const res = await authClient().request(`${LEGACY_BASE}/favorites`)
+  if (!res.ok) throw new Error('获取收藏失败')
+  const data = await res.json()
+  return data.favorites || []
+}
+
+export async function addNewsFavorite(item: {
+  title: string
+  summary?: string
+  url?: string
+  source?: string
+  tag?: string
+}): Promise<{ status: string }> {
+  const res = await authClient().request(`${LEGACY_BASE}/favorites`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify(item),
+  })
+  if (!res.ok) throw new Error('收藏失败')
+  return res.json()
+}
+
+export async function deleteNewsFavorite(favoriteId: number): Promise<void> {
+  const res = await authClient().request(`${LEGACY_BASE}/favorites/${favoriteId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('取消收藏失败')
+}

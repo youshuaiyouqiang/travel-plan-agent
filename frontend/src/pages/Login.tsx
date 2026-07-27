@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MapPin, LogIn, UserPlus } from 'lucide-react'
-import { register, login } from '../utils/api'
+import { register, login } from '../features/auth/api'
 import { useAuthStore } from '../hooks/useAuthStore'
 
 export function LoginPage() {

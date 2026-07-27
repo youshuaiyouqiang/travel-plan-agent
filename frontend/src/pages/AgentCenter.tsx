@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Edit2, Trash2, ArrowLeft, Copy } from 'lucide-react'
-import { fetchAgents, deleteCustomAgent, cloneCustomAgent, AgentInfo } from '../utils/api'
+import { fetchAgents, deleteCustomAgent, cloneCustomAgent, AgentInfo } from '../features/agent/api'
 
 export function AgentCenter() {
   const navigate = useNavigate()

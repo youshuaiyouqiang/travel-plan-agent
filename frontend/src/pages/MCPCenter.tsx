@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plug, CheckCircle, AlertTriangle } from 'lucide-react'
-import { fetchMCPServers, MCPServerInfo } from '../utils/api'
+import { fetchMCPServers, MCPServerInfo } from '../features/mcp/api'
 
 export function MCPCenter() {
   const [servers, setServers] = useState<MCPServerInfo[]>([])

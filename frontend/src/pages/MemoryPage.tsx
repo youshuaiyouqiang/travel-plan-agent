@@ -13,7 +13,7 @@ import {
   Clock,
   TrendingUp,
 } from 'lucide-react'
-import { getMemories, deleteMemory, MemoriesResponse, MemoryItem } from '../utils/api'
+import { getMemories, deleteMemory, MemoriesResponse, MemoryItem } from '../features/memory/api'
 
 const _CATEGORY_CONFIG: Record<
   string,

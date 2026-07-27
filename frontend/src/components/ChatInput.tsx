@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, RotateCcw, Square, ChevronDown, Bot } from 'lucide-react'
-import type { AgentInfo } from '../utils/api'
+import type { AgentInfo } from '../features/agent/api'
 
 interface Props {
   onSend: (message: string) => void

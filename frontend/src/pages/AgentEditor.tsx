@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { fetchSkills, fetchAgents, fetchMCPServers, createCustomAgent, updateCustomAgent, SkillInfo, MCPServerInfo } from '../utils/api'
+import { fetchSkills, type SkillInfo } from '../features/skill/api'
+import { fetchAgents, createCustomAgent, updateCustomAgent } from '../features/agent/api'
+import { fetchMCPServers, type MCPServerInfo } from '../features/mcp/api'
 
 export function AgentEditor() {
   const navigate = useNavigate()

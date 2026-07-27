@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { useAuthStore } from './useAuthStore'
-import { login, register } from '../utils/api'
+import { login, register } from '../features/auth/api'
 
 describe('useAuthStore persist (P0-1)', () => {
   let originalFetch: typeof globalThis.fetch

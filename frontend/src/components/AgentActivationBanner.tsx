@@ -1,5 +1,5 @@
 import { Plane } from 'lucide-react'
-import type { AgentInfo } from '../utils/api'
+import type { AgentInfo } from '../features/agent/api'
 
 interface Props {
   /** 当前激活的智能体信息（由父组件从 agentMap 查询后传入，避免本组件重复 fetch）。

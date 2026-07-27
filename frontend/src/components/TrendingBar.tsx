@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Flame, Share2, Bot, Star } from 'lucide-react'
-import { getTrending, addNewsFavorite, deleteNewsFavorite, listNewsFavorites, type TrendingItem } from '../utils/api'
+import { getTrending, addNewsFavorite, deleteNewsFavorite, listNewsFavorites, type TrendingItem } from '../features/news/api'
 
 interface Props {
   onSelect: (text: string) => void

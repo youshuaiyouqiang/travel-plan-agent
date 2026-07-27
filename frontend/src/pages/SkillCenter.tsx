@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Wrench } from 'lucide-react'
-import { fetchSkills, SkillInfo } from '../utils/api'
+import { fetchSkills, SkillInfo } from '../features/skill/api'
 
 export function SkillCenter() {
   const [skills, setSkills] = useState<SkillInfo[]>([])

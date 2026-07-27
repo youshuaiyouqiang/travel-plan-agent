@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Star, ExternalLink, Trash2, ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { listNewsFavorites, deleteNewsFavorite, type NewsFavorite } from '../utils/api'
+import { listNewsFavorites, deleteNewsFavorite, type NewsFavorite } from '../features/news/api'
 import { NavSidebar } from '../components/NavSidebar'
 
 export function FavoritesPage() {
