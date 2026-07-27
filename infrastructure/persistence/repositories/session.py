@@ -307,6 +307,38 @@ class SqliteSessionRepository:
             )
         ]
 
+    def get_recent_assistant_turns(
+        self, session_id: str, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """按 turn_index 倒序返回最近的 ``limit`` 条 assistant 消息。
+
+        P7 引入：替代 ``domain.travel.tools`` 中直接 ``SELECT ... FROM session_turns``
+        的内联 SQL；travel_tools 改为消费本端口。
+        """
+        conn = get_connection()
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT role, content FROM session_turns "
+                "WHERE session_id = ? AND role = 'assistant' "
+                "ORDER BY turn_index DESC LIMIT ?",
+                (session_id, limit),
+            )
+        ]
+
+    def get_user_id_by_session(self, session_id: str) -> str | None:
+        """按 ``session_id`` 从 ``tasks`` 表查 ``user_id``；不存在返回 None。
+
+        P7 引入：替代 ``domain.travel.tools`` 中直接 ``SELECT user_id FROM tasks``
+        的内联 SQL。
+        """
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT user_id FROM tasks WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return row["user_id"] if row and row["user_id"] else None
+
     def find_session_ids_by_user(self, user_id: str) -> list[str]:
         """列出用户在 ``tasks`` 表中的去重 ``session_id``（排除空字符串）。"""
         conn = get_connection()

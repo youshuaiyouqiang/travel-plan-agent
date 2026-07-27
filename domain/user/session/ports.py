@@ -111,6 +111,26 @@ class SessionRepositoryPort(Protocol):
         """按时间顺序返回会话的所有消息。"""
         ...
 
+    def get_recent_assistant_turns(
+        self, session_id: str, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """按 turn_index 倒序返回最近的 ``limit`` 条 assistant 消息。
+
+        P7 引入：供 ``domain.travel.tools.generate_itinerary_overview`` 在
+        tool handler 中按反向顺序扫描最近 assistant 内容以提取行程内容；
+        替代之前直接 ``SELECT ... FROM session_turns`` 的内联 SQL。
+        """
+        ...
+
+    def get_user_id_by_session(self, session_id: str) -> str | None:
+        """按 ``session_id`` 从 ``tasks`` 表查 ``user_id``；不存在返回 None。
+
+        P7 引入：供 ``domain.travel.tools.generate_itinerary_overview`` 在
+        tool handler 中推断 user_id；替代之前直接 ``SELECT user_id FROM tasks``
+        的内联 SQL。
+        """
+        ...
+
     # ── 删除 ────────────────────────────────────────────────
 
     def delete_session(self, session_id: str) -> None:

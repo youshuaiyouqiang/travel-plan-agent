@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from collections.abc import AsyncGenerator
 
-from application.session.schema import SessionMode
+from domain.user.session.modes import SessionMode
 from domain.agent.base import BaseAgent
 from domain.shared.llm.ports import LLMPort
 from domain.agent.schema import AgentConfig

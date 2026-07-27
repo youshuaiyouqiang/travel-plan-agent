@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from config import settings
@@ -9,11 +9,13 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("")
-async def health() -> dict:
+async def health(request: Request) -> dict:
+    # P7：health checker 由组合根注入；未注入时回退到 NoOp
+    checker = getattr(request.app.state, "health_checker", None)
+    if checker is None:
+        return {"status": "ok", "details": {"checker": "noop"}}
     try:
-        from infrastructure.persistence.health import check_health
-
-        status = check_health()
+        status = checker.check_health()
         return {"status": status.status, "details": status.details}
     except Exception as exc:
         return {"status": "degraded", "details": {"error": str(exc)}}

@@ -150,6 +150,10 @@ def create_api(container: AppContainer) -> FastAPI:
     app.state.hotspot_service = container.hotspot_service
     app.state.news_analysis_service = container.news_analysis_service
     app.state.admin_user_id = container.admin_user_id
+    # P7：限流器从组合根注入；中间件不再直接 import infrastructure
+    app.state.rate_limiter = container.rate_limiter
+    # P7：健康检查从组合根注入；路由不再直接 import infrastructure
+    app.state.health_checker = container.health_checker
 
     # ── CORS ──────────────────────────────────────────────
     app.add_middleware(

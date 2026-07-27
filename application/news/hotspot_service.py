@@ -203,6 +203,15 @@ class HotspotService:
 
 
 _default_service: HotspotService | None = None
+# P7：默认 fetcher 由组合根注入；未注入时 ``get_default_service`` 抛错，
+# 避免 application 层偷偷 import infrastructure。
+_default_fetcher: NewsFetcherProtocol | None = None
+
+
+def set_default_fetcher(fetcher: NewsFetcherProtocol) -> None:
+    """由组合根注册默认 fetcher；测试中也可显式注入 fake。"""
+    global _default_fetcher
+    _default_fetcher = fetcher
 
 
 def get_default_service() -> HotspotService:
@@ -211,14 +220,20 @@ def get_default_service() -> HotspotService:
     供 ``application.trending.manager`` 包装层与启动期 warmup 使用；
     路由层应通过 ``request.app.state.hotspot_service`` 注入测试替身。
     生产环境通过显式 ``cache_path`` 启用文件持久化，跨进程共享缓存。
+
+    P7 引入：``fetcher`` 必须由组合根通过 ``set_default_fetcher`` 注入；
+    未注入时抛 ``RuntimeError``，避免 application 反向依赖 infrastructure。
     """
     global _default_service
     if _default_service is None:
-        from infrastructure.news.fetchers import NewsFetcher
-
+        if _default_fetcher is None:
+            raise RuntimeError(
+                "HotspotService 默认 fetcher 未注册："
+                "请在应用启动期调用 set_default_fetcher(...) 注入实现"
+            )
         _default_service = HotspotService(
             sources=SourceService(),
-            fetcher=NewsFetcher(),
+            fetcher=_default_fetcher,
             repository=HotspotRepository(cache_path=_DEFAULT_CACHE_FILE),
         )
     return _default_service
@@ -228,3 +243,6 @@ def reset_default_service() -> None:
     """重置默认实例（仅用于测试隔离）。"""
     global _default_service
     _default_service = None
+    # 同步重置 fetcher，避免旧测试遗留 fetcher 影响下一轮
+    global _default_fetcher
+    _default_fetcher = None

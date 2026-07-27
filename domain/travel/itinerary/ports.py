@@ -144,6 +144,15 @@ class ItineraryRepositoryPort(Protocol):
         """
         ...
 
+    def update_raw_content(self, itinerary_id: str, raw_content: str) -> bool:
+        """更新行程的 ``raw_content`` 字段（用于保存多方案元数据）。
+
+        P7 引入：供 ``domain.travel.tools.generate_itinerary_overview`` 在
+        tool handler 中保存原始行程内容；替代之前直接 ``UPDATE itineraries``
+        的内联 SQL。
+        """
+        ...
+
 
 # ── 默认仓储装配（过渡方案，同 P2.1–P2.4）───────────────────
 

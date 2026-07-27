@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from config import settings
 from infrastructure.llm.openai import OpenAILLM
@@ -25,6 +26,7 @@ from infrastructure.tools.catalog import ToolCatalog
 from infrastructure.tools.base import bind_tool
 from infrastructure.mcp.catalog import MCPCatalog
 from infrastructure.mcp.runtime import MCPProxyRuntime
+from domain.agent.ports import SkillProviderPort
 from domain.travel.intent.travel_classifier import TravelIntentClassifier
 from domain.user.profile.manager import ProfileManager
 from domain.shared.audit.logger import AuditLogger
@@ -38,7 +40,7 @@ from domain.agent.repository import CustomAgentRepository
 from domain.agent.factory import AgentFactory
 from domain.agent.orchestrator import OrchestratorAgent
 from domain.travel.agent import TravelAgent
-from infrastructure.skills.provider import FileSkillProvider, SkillProvider
+from infrastructure.skills.provider import FileSkillProvider
 # P3.1：收敛 server.py 中的应用服务构造到组合根
 from application.authz import AuthorizationService
 from application.news.analysis_service import NewsAnalysisService
@@ -61,7 +63,8 @@ class AppContainer:
     """依赖注入容器 — 持有总调度及供 API 路由使用的依赖。"""
 
     orchestrator: OrchestratorAgent
-    skill_provider: SkillProvider
+    # P7：SkillProvider 端口化后，AppContainer 只持有端口类型
+    skill_provider: SkillProviderPort
     builtin_configs: list[AgentConfig] = field(default_factory=list)
     custom_repo: CustomAgentRepository = None  # type: ignore[assignment]
     mcp_runtime: MCPProxyRuntime = None  # type: ignore[assignment]
@@ -79,6 +82,10 @@ class AppContainer:
     memory_repo: DualLayerMemoryManager | None = None
     news_favorite_repo: NewsFavoriteRepositoryPort | None = None
     confirm_plan_service: ConfirmPlanService | None = None
+    # P7：限流器端口（由组合根装配，中间件从 app.state.rate_limiter 取得）
+    rate_limiter: Any | None = None
+    # P7：健康检查（由组合根装配，路由从 app.state.health_checker 取得）
+    health_checker: Any | None = None
 
 
 def _build_tool_infrastructure(
@@ -302,6 +309,12 @@ def build_orchestrator() -> AppContainer:
     session_service = SessionService(available_agent_ids=_lockable_agent_ids)
     # Task 2: 集中式对象级授权服务；复用同一 SessionService 保证会话所有权判定一致。
     authz_service = AuthorizationService(session_service=session_service)
+    # P7：先注册 application 默认 fetcher，再取默认 HotspotService
+    # （避免 application 反向依赖 infrastructure）。
+    from application.news.hotspot_service import set_default_fetcher
+    from infrastructure.news.fetchers import NewsFetcher
+
+    set_default_fetcher(NewsFetcher())
     # 路由通过 request.app.state.hotspot_service 取用；未配置时 GET /hotspots 返回空列表。
     hotspot_service = get_default_hotspot_service()
     # 新闻研判分析服务：调用 analyze 把证据按来源状态分类为 verified / conflicted
@@ -324,6 +337,22 @@ def build_orchestrator() -> AppContainer:
     # P3.3b：confirm-plan 路由通过 container 取用协调服务
     confirm_plan_service = ConfirmPlanService()
 
+    # P7：限流器由组合根装配；未配置 Redis URL 时回退到 NullRateLimiter
+    rate_limiter: Any | None = None
+    if settings.redis_url:
+        from infrastructure.cache.rate_limit import RateLimiter
+
+        rate_limiter = RateLimiter(redis_url=settings.redis_url)
+    else:
+        from domain.shared.cache.ports import NullRateLimiter
+
+        rate_limiter = NullRateLimiter()
+
+    # P7：健康检查由组合根装配；未注入时 health 端点回退到 noop
+    from infrastructure.persistence.health import HealthChecker
+
+    health_checker = HealthChecker()
+
     return AppContainer(
         orchestrator=orchestrator,
         skill_provider=skill_provider,
@@ -341,4 +370,6 @@ def build_orchestrator() -> AppContainer:
         memory_repo=memory_repo,
         news_favorite_repo=news_favorite_repo,
         confirm_plan_service=confirm_plan_service,
+        rate_limiter=rate_limiter,
+        health_checker=health_checker,
     )

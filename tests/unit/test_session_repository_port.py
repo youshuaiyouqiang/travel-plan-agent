@@ -199,6 +199,22 @@ class FakeSessionRepository:
     def get_session_messages(self, session_id: str) -> list[dict[str, Any]]:
         return list(self._turns.get(session_id, []))
 
+    def get_recent_assistant_turns(
+        self, session_id: str, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """返回最近的 assistant 消息（fake：按 created_at 倒序，最多 limit 条）。"""
+        turns = self._turns.get(session_id, [])
+        assistants = [t for t in turns if t["role"] == "assistant"]
+        assistants.sort(key=lambda t: t["created_at"], reverse=True)
+        return assistants[:limit]
+
+    def get_user_id_by_session(self, session_id: str) -> str | None:
+        """返回会话关联的 user_id（fake：从 _sessions 读取）。"""
+        data = self._sessions.get(session_id)
+        if data is None:
+            return None
+        return data.get("user_id")
+
     # 删除
 
     def delete_session(self, session_id: str) -> None:

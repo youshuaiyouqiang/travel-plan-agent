@@ -1,6 +1,6 @@
 """infrastructure/persistence/health.py 单元测试。
 
-覆盖：
+覆盖（基于 P7 引入的 HealthChecker 类）：
 - SQLite healthy 路径
 - SQLite 异常路径（overall=degraded）
 - session_backend != "redis" 时 redis="skipped"
@@ -25,14 +25,14 @@ class TestCheckHealth:
         init_db(db_path)
 
     def test_sqlite_healthy(self):
-        result = health.check_health()
+        result = health.HealthChecker().check_health()
         assert result.status == "healthy"
         assert result.details is not None
         assert result.details["sqlite"] == "ok"
         assert result.details["redis"] == "skipped"
 
     def test_redis_skipped_when_backend_not_redis(self):
-        result = health.check_health()
+        result = health.HealthChecker().check_health()
         assert result.redis == "skipped"
 
     def test_redis_checked_when_backend_is_redis(self, monkeypatch):
@@ -44,7 +44,7 @@ class TestCheckHealth:
             called["count"] += 1
 
         monkeypatch.setattr(health, "_check_redis", _fake_check_redis)
-        result = health.check_health()
+        result = health.HealthChecker().check_health()
         assert called["count"] == 1
         assert result.details is not None
         assert result.details["redis"] == "ok"
@@ -56,7 +56,7 @@ class TestCheckHealth:
             raise RuntimeError("redis down")
 
         monkeypatch.setattr(health, "_check_redis", _raise)
-        result = health.check_health()
+        result = health.HealthChecker().check_health()
         assert result.status == "degraded"
         assert result.details is not None
         assert result.details["redis"].startswith("error:")

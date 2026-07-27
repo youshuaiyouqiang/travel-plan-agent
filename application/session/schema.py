@@ -1,15 +1,17 @@
-"""会话模式相关的类型与数据结构。"""
+"""会话模式相关的类型与数据结构。
+
+P7 引入：``SessionMode`` / ``UserSessionMode`` 由 ``domain.user.session.modes``
+定义，本模块重新导出以保持向后兼容（``application.session`` 历史调用方不变）。
+新代码应直接 ``from domain.user.session.modes import SessionMode``。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
-# 全部会话模式：包含内部使用的 news_analysis_locked。
-SessionMode = Literal["yunhe_default", "agent_locked", "news_analysis_locked"]
+from domain.user.session.modes import SessionMode, UserSessionMode
 
-# 用户 API 可设置的模式：news_analysis_locked 只能由新闻分析服务在内部创建。
-UserSessionMode = Literal["yunhe_default", "agent_locked"]
+__all__ = ["SessionMode", "UserSessionMode", "SessionRecord"]
 
 
 @dataclass(frozen=True)

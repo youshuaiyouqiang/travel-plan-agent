@@ -7,8 +7,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from config import settings
+from domain.shared.cache.ports import NullRateLimiter, RateLimitPort
 from domain.user.auth.token import verify_token
-from infrastructure.cache.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,18 @@ _RATE_MAX_REQUESTS = settings.rate_limit_rpm
 _RATE_CLEANUP_INTERVAL = 300
 _last_rate_cleanup = 0.0
 
-# Initialize Redis-based rate limiter if redis URL is configured
-_rate_limiter: RateLimiter | None = None
-if settings.redis_url:
-    _rate_limiter = RateLimiter(redis_url=settings.redis_url)
+
+def _resolve_rate_limiter(request: Request) -> RateLimitPort:
+    """从 ``app.state`` 取得组合根注册的限流器；未注册时回退到 ``NullRateLimiter``。
+
+    P7 引入：``api/middleware`` 不再直接 import ``infrastructure.cache``。
+    限流器实例在 ``app.py`` 的 ``build_container()`` 中创建并放入
+    ``app.state.rate_limiter``；中间件只消费 ``RateLimitPort`` 端口。
+    """
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter is None:
+        return NullRateLimiter()
+    return limiter
 
 
 def _make_rate_key(user_id: str, ip: str, path: str) -> str:
@@ -58,6 +66,33 @@ def _check_rate(user_id: str, ip: str, path: str) -> bool:
         return True
     counter["count"] += 1
     return counter["count"] <= _RATE_MAX_REQUESTS
+
+
+def _enforce_rate_limit(
+    request: Request, user_id: str, client_ip: str, path: str
+) -> JSONResponse | None:
+    """根据 ``app.state.rate_limiter`` 端口执行限流；超限返回 429 响应。
+
+    P7 引入：限流器从 ``app.state`` 获取，不再 import ``infrastructure``。
+    未配置限流器时回退到 ``NullRateLimiter``（始终放行）。
+    """
+    rate_limiter = _resolve_rate_limiter(request)
+    rate_key = _make_rate_key(user_id, client_ip, path)
+    if rate_limiter is not None and not isinstance(rate_limiter, NullRateLimiter):
+        allowed, _info = rate_limiter.is_allowed(
+            rate_key, _RATE_MAX_REQUESTS, _RATE_WINDOW
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429, content={"detail": "请求过于频繁，请稍后再试"}
+            )
+        return None
+    # NullRateLimiter 视为未配置；继续走本地内存计数（向后兼容）
+    if not _check_rate(user_id, client_ip, path):
+        return JSONResponse(
+            status_code=429, content={"detail": "请求过于频繁，请稍后再试"}
+        )
+    return None
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -112,13 +147,9 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_id = user_id
             request.state.auth_method = "bearer"
             client_ip = request.client.host if request.client else "unknown"
-            rate_key = _make_rate_key(user_id, client_ip, path)
-            if _rate_limiter:
-                allowed, _info = _rate_limiter.is_allowed(rate_key, _RATE_MAX_REQUESTS, _RATE_WINDOW)
-                if not allowed:
-                    return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
-            elif not _check_rate(user_id, client_ip, path):
-                return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
+            rate_block = _enforce_rate_limit(request, user_id, client_ip, path)
+            if rate_block is not None:
+                return rate_block
             return await call_next(request)
         return JSONResponse(status_code=401, content={"detail": "未登录或登录已过期"})
 
@@ -131,13 +162,9 @@ async def auth_middleware(request: Request, call_next):
             request.state.user_id = user_id
             request.state.auth_method = "cookie"
             client_ip = request.client.host if request.client else "unknown"
-            rate_key = _make_rate_key(user_id, client_ip, path)
-            if _rate_limiter:
-                allowed, _info = _rate_limiter.is_allowed(rate_key, _RATE_MAX_REQUESTS, _RATE_WINDOW)
-                if not allowed:
-                    return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
-            elif not _check_rate(user_id, client_ip, path):
-                return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
+            rate_block = _enforce_rate_limit(request, user_id, client_ip, path)
+            if rate_block is not None:
+                return rate_block
             return await call_next(request)
         return JSONResponse(status_code=401, content={"detail": "未登录或登录已过期"})
 

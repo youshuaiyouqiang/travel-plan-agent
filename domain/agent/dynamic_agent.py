@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator
 from domain.agent.base import BaseAgent
 from domain.agent.schema import AgentConfig
 from domain.shared.llm.ports import LLMPort
-from infrastructure.skills.provider import SkillProvider
+from domain.agent.ports import SkillProviderPort
 from domain.shared.tools.executor import ToolExecutor
 from domain.shared.tools.registry import ToolRegistry
 from domain.shared.mcp.ports import MCPCatalogPort, NullMCPCatalog
@@ -34,7 +34,7 @@ class DynamicAgent(BaseAgent):
         *,
         config: AgentConfig,
         llm: LLMPort,
-        skill_provider: SkillProvider,
+        skill_provider: SkillProviderPort,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
         session_store: SessionManager,
@@ -95,7 +95,7 @@ class DynamicAgent(BaseAgent):
     def _resolve_tools(
         self,
         config: AgentConfig,
-        skill_provider: SkillProvider,
+        skill_provider: SkillProviderPort,
         mcp_catalog: MCPCatalogPort,
     ) -> list[str]:
         """根据 config.skills 和 config.mcp_servers 解析需要的工具名。

@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from domain.agent.base import BaseAgent
 from domain.shared.llm.ports import LLMPort
-from infrastructure.skills.provider import SkillProvider
+from domain.agent.ports import SkillProviderPort
 from domain.shared.tools.registry import ToolRegistry
 from domain.shared.tools.executor import ToolExecutor
 from domain.shared.mcp.ports import MCPCatalogPort
@@ -32,7 +32,7 @@ class AgentFactory:
         self,
         *,
         llm: LLMPort,
-        skill_provider: SkillProvider,
+        skill_provider: SkillProviderPort,
         tool_registry: ToolRegistry,
         tool_executor: ToolExecutor,
         session_store: SessionManager,

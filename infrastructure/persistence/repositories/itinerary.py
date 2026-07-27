@@ -315,6 +315,20 @@ class SqliteItineraryRepository:
             return None
         return row["id"]
 
+    def update_raw_content(self, itinerary_id: str, raw_content: str) -> bool:
+        """更新行程的 ``raw_content`` 字段（多方案元数据）。
+
+        P7 引入：替代 ``domain.travel.tools.generate_itinerary_overview`` 中
+        直接 ``UPDATE itineraries`` 的内联 SQL。
+        """
+        conn = get_connection()
+        cursor = conn.execute(
+            "UPDATE itineraries SET raw_content = ? WHERE id = ?",
+            (raw_content[:5000], itinerary_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
     # ── 辅助 ─────────────────────────────────────────────────
 
     def _load_days(self, itinerary_id: str) -> list[DayPlan]:

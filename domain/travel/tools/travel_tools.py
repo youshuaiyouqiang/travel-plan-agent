@@ -4,6 +4,8 @@ import json
 import logging
 
 from domain.shared.tools.base import ToolHandler, ToolSpec
+from domain.user.session.ports import get_default_session_repository
+from domain.travel.itinerary.ports import get_default_itinerary_repository
 
 logger = logging.getLogger(__name__)
 
@@ -31,41 +33,38 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
     end_date = str(arguments.get("end_date", "")).strip()
     plan_type = str(arguments.get("plan_type", "")).strip()  # sightseeing / budget / ""
 
+    # P7：通过 SessionRepositoryPort 推断 user_id，替代直接 SELECT tasks 表
     if not user_id and session_id:
-        from infrastructure.persistence.database import get_connection
+        repo = get_default_session_repository()
+        resolved = repo.get_user_id_by_session(session_id)
+        if resolved:
+            user_id = resolved
+            logger.info(
+                "generate_itinerary_overview: user_id resolved from task store: %s", user_id
+            )
 
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT user_id FROM tasks WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        if row and row["user_id"]:
-            user_id = row["user_id"]
-            logger.info("generate_itinerary_overview: user_id resolved from task store: %s", user_id)
-
+    # P7：通过 SessionRepositoryPort 拉取最近 assistant turns，替代直接 SELECT session_turns 表
     if not content and session_id:
-        from infrastructure.persistence.database import get_connection
-
-        conn = get_connection()
-        rows = conn.execute(
-            "SELECT role, content FROM session_turns WHERE session_id = ? ORDER BY turn_index DESC",
-            (session_id,),
-        ).fetchall()
+        repo = get_default_session_repository()
+        rows = repo.get_recent_assistant_turns(session_id, limit=20)
         itinerary_markers = ["第1天", "第一天", "Day 1", "行程安排", "每日行程"]
         for row in rows:
-            if row["role"] == "assistant" and len(row["content"]) > 100:
-                if any(marker in row["content"] for marker in itinerary_markers):
-                    content = row["content"]
-                    logger.info(
-                        "generate_itinerary_overview: content resolved from session history, length=%d", len(content)
-                    )
-                    break
+            text = row.get("content", "")
+            if len(text) > 100 and any(marker in text for marker in itinerary_markers):
+                content = text
+                logger.info(
+                    "generate_itinerary_overview: content resolved from session history, length=%d",
+                    len(content),
+                )
+                break
         if not content:
             for row in rows:
-                if row["role"] == "assistant" and len(row["content"]) > 200:
-                    content = row["content"]
+                text = row.get("content", "")
+                if len(text) > 200:
+                    content = text
                     logger.info(
-                        "generate_itinerary_overview: fallback to longest assistant turn, length=%d", len(content)
+                        "generate_itinerary_overview: fallback to longest assistant turn, length=%d",
+                        len(content),
                     )
                     break
 
@@ -77,7 +76,6 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
         return {"is_error": True, "content": "missing itinerary content: please provide content or session_id"}
 
     from domain.travel.itinerary.parser import ItineraryParser
-    from domain.travel.itinerary.repository import ItineraryRepository
 
     parser = ItineraryParser()
     try:
@@ -105,20 +103,14 @@ async def _generate_itinerary_overview(arguments: dict) -> dict:
     if end_date:
         itinerary.end_date = end_date
 
-    repo = ItineraryRepository()
-    saved = repo.save_full_itinerary(itinerary)
+    # P7：通过 ItineraryRepositoryPort 持久化，替代直接 SQL
+    itinerary_repo = get_default_itinerary_repository()
+    saved = itinerary_repo.save_full_itinerary(itinerary)
 
-    # 如果有 plan_type，保存多方案元数据到 itinerary 的 metadata
+    # 如果有 plan_type，通过 ItineraryRepositoryPort 保存多方案元数据
     if plan_type:
         try:
-            from infrastructure.persistence.database import get_connection
-
-            conn = get_connection()
-            conn.execute(
-                "UPDATE itineraries SET raw_content = ? WHERE id = ?",
-                (content[:5000], saved.id),
-            )
-            conn.commit()
+            itinerary_repo.update_raw_content(saved.id, content[:5000])
         except Exception:
             logger.warning("Failed to update itinerary with plan metadata")
 

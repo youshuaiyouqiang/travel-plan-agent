@@ -147,8 +147,11 @@ class TestGenerateItineraryOverview:
         saved.destination = "北京"
         saved.days = [MagicMock(activities=[MagicMock()])]
         mock_repo.save_full_itinerary = MagicMock(return_value=saved)
+        # travel_tools 已通过 ``from ... import get_default_itinerary_repository``
+        # 把名称导入到模块作用域；必须 patch travel_tools 模块内的名称
+        # 才能拦截实际调用。
         monkeypatch.setattr(
-            "domain.travel.itinerary.repository.ItineraryRepository",
+            "domain.travel.tools.travel_tools.get_default_itinerary_repository",
             lambda: mock_repo,
         )
 

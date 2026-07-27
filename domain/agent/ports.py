@@ -1,10 +1,11 @@
-"""自定义智能体仓储端口。
+"""自定义智能体仓储端口 + Skill 提供者端口。
 
 P2.5 引入：将 ``custom_agents`` 表的访问从 domain 层下沉到 infrastructure，
 领域层只消费此端口。
 
-端口由消费方（domain）定义，由 ``infrastructure.persistence.repositories.agent``
-提供 ``SqliteCustomAgentRepository`` 实现，在 ``init_db()`` 中装配默认实例。
+P7 扩展：新增 ``SkillProviderPort``，让 ``domain.agent`` 不再直接 import
+``infrastructure.skills.provider.SkillProvider``。``FileSkillProvider``
+显式满足新端口；组合根 ``app.py`` 在启动期注册默认实现。
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # 避免循环导入；Protocol 仅用于静态类型检查
-    from domain.agent.schema import AgentConfig
+    from domain.agent.schema import AgentConfig, SkillInfo
 
 
 @runtime_checkable
@@ -73,3 +74,42 @@ def get_default_custom_agent_repository() -> CustomAgentRepositoryPort:
             "configure_default_custom_agent_repository() 或显式注入 repository 参数。"
         )
     return _default_repository
+
+
+# ── Skill 提供者端口（P7 引入） ──────────────────────────────────────────────
+
+
+@runtime_checkable
+class SkillProviderPort(Protocol):
+    """Skill 提供者端口 — 列出与按名获取 SkillInfo。
+
+    实现方（``infrastructure.skills.provider.FileSkillProvider``）必须满足此协议。
+    Domain/Application 层不直接 import 具体实现。
+    """
+
+    def list_skills(self) -> list[SkillInfo]:
+        """返回所有可用 skill。"""
+        ...
+
+    def get_skill(self, name: str) -> SkillInfo | None:
+        """按名称获取 skill；不存在返回 None。"""
+        ...
+
+
+_default_skill_provider: SkillProviderPort | None = None
+
+
+def configure_default_skill_provider(provider: SkillProviderPort) -> None:
+    """注册全局默认 Skill 提供者（由组合根调用）。"""
+    global _default_skill_provider
+    _default_skill_provider = provider
+
+
+def get_default_skill_provider() -> SkillProviderPort:
+    """获取全局默认 Skill 提供者；未配置时抛 RuntimeError。"""
+    if _default_skill_provider is None:
+        raise RuntimeError(
+            "SkillProviderPort 未配置：请在组合根调用 "
+            "configure_default_skill_provider() 或显式注入 provider 参数。"
+        )
+    return _default_skill_provider
