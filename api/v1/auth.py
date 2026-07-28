@@ -22,7 +22,9 @@ router = APIRouter(tags=["auth"])
 _COOKIE_PATH = "/"
 _COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 _COOKIE_MAX_AGE = 86400 * 7  # 与 token 过期时间一致
-_COOKIE_DOMAIN = "127.0.0.1"  # 明确设置 domain 支持 127.0.0.1 访问
+# Cookie domain: 开发环境不设置 domain，让浏览器自动匹配当前 host
+# 生产环境可以通过环境变量配置
+_COOKIE_DOMAIN: str | None = None  # None = 浏览器自动匹配当前 host
 
 
 def _generate_csrf_token() -> str:
