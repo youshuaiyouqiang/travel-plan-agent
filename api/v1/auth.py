@@ -22,6 +22,7 @@ router = APIRouter(tags=["auth"])
 _COOKIE_PATH = "/"
 _COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 _COOKIE_MAX_AGE = 86400 * 7  # 与 token 过期时间一致
+_COOKIE_DOMAIN = "127.0.0.1"  # 明确设置 domain 支持 127.0.0.1 访问
 
 
 def _generate_csrf_token() -> str:
@@ -46,6 +47,7 @@ def _set_auth_cookies(response: Response, token: str, *, secure: bool = True) ->
         value=token,
         max_age=_COOKIE_MAX_AGE,
         path=_COOKIE_PATH,
+        domain=_COOKIE_DOMAIN,
         httponly=True,
         secure=secure,
         samesite=_COOKIE_SAMESITE,
@@ -55,6 +57,7 @@ def _set_auth_cookies(response: Response, token: str, *, secure: bool = True) ->
         value=csrf_value,
         max_age=_COOKIE_MAX_AGE,
         path=_COOKIE_PATH,
+        domain=_COOKIE_DOMAIN,
         httponly=False,
         secure=secure,
         samesite=_COOKIE_SAMESITE,
