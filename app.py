@@ -86,6 +86,14 @@ class AppContainer:
     rate_limiter: Any | None = None
     # P7：健康检查（由组合根装配，路由从 app.state.health_checker 取得）
     health_checker: Any | None = None
+    # Task 5：股市复盘服务（AGENTS.md §8.7 声明事项）
+    stock_data_source: Any | None = None
+    stock_cache_repo: Any | None = None
+    stock_query_service: Any | None = None
+    stock_report_service: Any | None = None
+    stock_correlation_service: Any | None = None
+    stock_task_registry: Any | None = None
+    stock_review_service: Any | None = None
 
 
 def _build_tool_infrastructure(
@@ -353,6 +361,40 @@ def build_orchestrator() -> AppContainer:
 
     health_checker = HealthChecker()
 
+    # ===== 股市复盘服务（Task 5 装配，AGENTS.md §8.7 声明事项） =====
+    # 端口与 DTO 全部在 domain/stock/；application 只持有 stock_* 服务，
+    # 不直接 import infrastructure.stock（仅在组合根内合法）。
+    from application.stock.correlation_service import CorrelationService
+    from application.stock.query_service import StockQueryService
+    from application.stock.report_service import ReportService
+    from application.stock.review_service import StockReviewService
+    from application.stock.review_task_registry import ReviewTaskRegistry
+    from infrastructure.persistence.connection import get_connection
+    from infrastructure.stock.cache_repository import CacheRepository
+    from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+    # 数据源（只读缓存）
+    stock_data_source: Any = SqliteStockDataSource(conn=get_connection())
+    # 缓存仓储（写路径）
+    stock_cache_repo: Any = CacheRepository(conn=get_connection())
+    # 读侧查询服务
+    stock_query_service: Any = StockQueryService(data_source=stock_data_source)
+    # 复盘文存档/查询服务
+    stock_report_service: Any = ReportService(cache_repo=stock_cache_repo)
+    # 庄股/抱团股识别（周复盘专用）
+    stock_correlation_service: Any = CorrelationService(
+        data_source=stock_data_source,
+    )
+    # 复盘任务注册表（进程内单例，跨用户隔离）
+    stock_task_registry: Any = ReviewTaskRegistry()
+    # 复盘服务（7 步思维链）
+    stock_review_service: Any = StockReviewService(
+        data_source=stock_data_source,
+        llm=llm,
+        cache_repo=stock_cache_repo,
+        skill_md_path=settings.skills_dir / "builtin" / "stock-review" / "SKILL.md",
+    )
+
     return AppContainer(
         orchestrator=orchestrator,
         skill_provider=skill_provider,
@@ -372,4 +414,11 @@ def build_orchestrator() -> AppContainer:
         confirm_plan_service=confirm_plan_service,
         rate_limiter=rate_limiter,
         health_checker=health_checker,
+        stock_data_source=stock_data_source,
+        stock_cache_repo=stock_cache_repo,
+        stock_query_service=stock_query_service,
+        stock_report_service=stock_report_service,
+        stock_correlation_service=stock_correlation_service,
+        stock_task_registry=stock_task_registry,
+        stock_review_service=stock_review_service,
     )

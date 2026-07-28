@@ -1,0 +1,32 @@
+interface:
+  display_name: 股市复盘
+  default_prompt: 请帮我做今日 A 股周期复盘
+  category: finance
+  tools:
+    # 大盘维度（最高优先级）
+    - get_market_snapshot
+    # 情绪指标（返回多日序列数据，供 AI 看趋势而非截面）
+    - get_emotion_indicators
+    - get_emotion_indicators_trend
+    - get_strong_repair_leaders
+    # 板块维度
+    - get_sector_rotation
+    - get_sector_heat_distribution
+    - get_resistant_sectors
+    - get_sector_leaders
+    - get_sector_divergence
+    - get_sector_rotation_trend
+    # 个股维度
+    - get_watchlist
+    - get_stock_daily
+    - get_signal_stocks
+    - get_watchlist_trend
+    # 周复盘专用（每日复盘不调用）
+    - get_correlation
+i18n:
+  zh:
+    name: 股市复盘
+    description: |
+      A 股市场周期复盘方法论与工具集。覆盖大盘、板块、个股三维度，
+      抗跌、板块高潮、龙头候选、庄股/抱团股等多类候选池。
+      所有判定基于多日趋势曲线而非单日截面，庄股/抱团股识别仅周复盘调用。

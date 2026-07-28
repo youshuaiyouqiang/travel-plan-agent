@@ -20,8 +20,9 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
+from application.stock.cache_repository_port import CacheRepositoryPort
 from domain.shared.llm.ports import LLMPort
 from domain.stock.ports import StockDataSource
 
@@ -51,33 +52,6 @@ _LLM_TEMPERATURE = 0.3
 
 class ReviewValidationError(Exception):
     """复盘文章节校验失败。"""
-
-
-class CacheRepositoryPort(Protocol):
-    """缓存仓储端口——由 application 层定义契约，infrastructure 层实现。
-
-    当前 Task 4 范围仅需 ``save_review_report``。其余方法（watchlist upsert
-    等）由后续 Task 补全。
-    """
-
-    async def save_review_report(
-        self,
-        *,
-        user_id: str,
-        trade_date: str,
-        content: str,
-        status: str,
-        llm_metadata: dict[str, Any] | None = None,
-    ) -> str:
-        """保存复盘文到 review_reports 表，返回生成的 report_id。"""
-        ...
-
-
-def _review_report_dto() -> Any:
-    """延迟导入 ReviewReport DTO 避免循环依赖。"""
-    from domain.stock.models import ReviewReport
-
-    return ReviewReport
 
 
 class StockReviewService:

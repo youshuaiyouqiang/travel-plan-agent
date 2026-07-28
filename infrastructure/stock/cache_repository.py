@@ -2,12 +2,14 @@
 
 Task 3 最小实现：仅实现 limit_stocks_daily 表的 upsert/select。
 Task 4 扩展：实现 review_reports 表的 save_review_report。
+Task 5 扩展：实现 watchlist_stocks 表的 add/remove + review_reports 查询。
 
 设计要点：
 - 表名全部走 ALLOWED_TABLES 白名单；任何动态表名不在白名单内必须抛 ValueError
 - 所有用户输入（trade_date / stock_code / stock_name 等）必须用 ? 占位符参数化
 - upsert 用 INSERT OR REPLACE，复合主键 (trade_date, stock_code) 防重复
 - 复用 infrastructure.persistence.connection 的 get_connection() 取得当前线程连接
+- 公开方法对应 ``application.stock.cache_repository_port.CacheRepositoryPort``
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import sqlite3
 import uuid
 from typing import Any
 
-from domain.stock.models import LimitStock
+from domain.stock.models import LimitStock, ReviewReport, WatchlistStock
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +184,160 @@ class CacheRepository:
         )
         self._conn.commit()
         return report_id
+
+    async def select_review_report(
+        self, *, report_id: str, user_id: str
+    ) -> ReviewReport | None:
+        """按 (report_id, user_id) 查询复盘文。
+
+        Args:
+            report_id: 复盘文 ID。
+            user_id: 用户 ID（所有权过滤）。
+
+        Returns:
+            ReviewReport DTO；不存在或所有权不匹配返回 None。
+        """
+        _validate_table("review_reports")
+        row = self._conn.execute(
+            "SELECT id, user_id, trade_date, content, status, llm_metadata, created_at "
+            "FROM review_reports WHERE id = ? AND user_id = ?",
+            (report_id, user_id),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_review_report(row)
+
+    async def select_review_reports(
+        self, *, user_id: str, limit: int
+    ) -> list[ReviewReport]:
+        """列出某 user 的复盘文（按 trade_date DESC, created_at DESC）。
+
+        Args:
+            user_id: 用户 ID（所有权过滤）。
+            limit: 返回上限。
+
+        Returns:
+            ReviewReport DTO 列表；无数据时为空列表。
+        """
+        _validate_table("review_reports")
+        bounded_limit = max(1, min(int(limit), 100))
+        rows = self._conn.execute(
+            "SELECT id, user_id, trade_date, content, status, llm_metadata, created_at "
+            "FROM review_reports WHERE user_id = ? "
+            "ORDER BY trade_date DESC, created_at DESC LIMIT ?",
+            (user_id, bounded_limit),
+        ).fetchall()
+        return [self._row_to_review_report(r) for r in rows]
+
+    @staticmethod
+    def _row_to_review_report(row: Any) -> ReviewReport:
+        """sqlite3.Row → ReviewReport DTO。"""
+        llm_metadata_raw = row["llm_metadata"]
+        if llm_metadata_raw is None:
+            llm_metadata_str = "{}"
+        else:
+            llm_metadata_str = str(llm_metadata_raw)
+        return ReviewReport(
+            id=row["id"],
+            user_id=row["user_id"],
+            trade_date=row["trade_date"],
+            content=row["content"],
+            status=row["status"],
+            llm_metadata=llm_metadata_str,
+            created_at=row["created_at"],
+        )
+
+    # ── watchlist_stocks ────────────────────────────────────
+
+    async def add_watchlist_stock(self, *, stock: Any) -> None:
+        """upsert 一只股票到 watchlist_stocks 表。
+
+        Args:
+            stock: WatchlistStock DTO（任意带同名属性的对象，运行时 duck-type）。
+
+        Raises:
+            ValueError: 当 watchlist_stocks 不在白名单时。
+        """
+        _validate_table("watchlist_stocks")
+        now = self._now_iso()
+        self._conn.execute(
+            "INSERT INTO watchlist_stocks "
+            "(stock_code, stock_name, category, entry_date, entry_price, "
+            "status, market_index_snapshot, notes, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(stock_code) DO UPDATE SET "
+            "stock_name = excluded.stock_name, "
+            "category = excluded.category, "
+            "entry_date = excluded.entry_date, "
+            "entry_price = excluded.entry_price, "
+            "status = excluded.status, "
+            "market_index_snapshot = excluded.market_index_snapshot, "
+            "notes = excluded.notes, "
+            "updated_at = excluded.updated_at",
+            (
+                stock.stock_code,
+                stock.stock_name,
+                stock.category,
+                stock.entry_date,
+                stock.entry_price,
+                stock.status,
+                stock.market_index_snapshot,
+                stock.notes,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    async def remove_watchlist_stock(self, *, stock_code: str) -> int:
+        """从 watchlist_stocks 表删除指定 stock_code。
+
+        Args:
+            stock_code: 股票代码。
+
+        Returns:
+            受影响行数（0/1）。
+        """
+        _validate_table("watchlist_stocks")
+        cur = self._conn.execute(
+            "DELETE FROM watchlist_stocks WHERE stock_code = ?",
+            (stock_code,),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def select_watchlist(
+        self, *, status: str = "active"
+    ) -> list[WatchlistStock]:
+        """查询观察池（同步，便于同步 fetcher 调用）。
+
+        Args:
+            status: 过滤状态，默认 active（排除 removed）。
+
+        Returns:
+            WatchlistStock DTO 列表。
+        """
+        _validate_table("watchlist_stocks")
+        rows = self._conn.execute(
+            "SELECT stock_code, stock_name, category, entry_date, entry_price, "
+            "status, market_index_snapshot, notes "
+            "FROM watchlist_stocks WHERE status = ? "
+            "ORDER BY category ASC, entry_date DESC",
+            (status,),
+        ).fetchall()
+        return [
+            WatchlistStock(
+                stock_code=r["stock_code"],
+                stock_name=r["stock_name"],
+                category=r["category"],
+                entry_date=r["entry_date"],
+                entry_price=r["entry_price"],
+                status=r["status"],
+                market_index_snapshot=r["market_index_snapshot"],
+                notes=r["notes"],
+            )
+            for r in rows
+        ]
 
     @staticmethod
     def _now_iso() -> str:

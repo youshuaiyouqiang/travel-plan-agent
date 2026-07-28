@@ -154,6 +154,14 @@ def create_api(container: AppContainer) -> FastAPI:
     app.state.rate_limiter = container.rate_limiter
     # P7：健康检查从组合根注入；路由不再直接 import infrastructure
     app.state.health_checker = container.health_checker
+    # Task 5：股市复盘服务从组合根注入到 app.state
+    app.state.stock_data_source = container.stock_data_source
+    app.state.stock_cache_repo = container.stock_cache_repo
+    app.state.stock_query_service = container.stock_query_service
+    app.state.stock_report_service = container.stock_report_service
+    app.state.stock_correlation_service = container.stock_correlation_service
+    app.state.stock_task_registry = container.stock_task_registry
+    app.state.stock_review_service = container.stock_review_service
 
     # ── CORS ──────────────────────────────────────────────
     app.add_middleware(
