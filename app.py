@@ -20,6 +20,7 @@ from infrastructure.tools.adapters.fliggy import get_fliggy_handlers, get_fliggy
 from infrastructure.tools.adapters.qweather import get_qweather_handlers, get_qweather_specs
 from infrastructure.tools.adapters.drive_cost import get_drive_cost_handlers, get_drive_cost_specs
 from infrastructure.tools.adapters.shared import get_shared_handlers, get_shared_specs
+from infrastructure.tools.adapters.stock import get_stock_handlers, get_stock_specs
 from infrastructure.tools.policy import ToolPolicy
 from infrastructure.tools.registry import ToolRegistry
 from infrastructure.tools.catalog import ToolCatalog
@@ -117,6 +118,7 @@ def _build_tool_infrastructure(
         + get_qweather_specs()
         + get_drive_cost_specs()
         + get_shared_specs()
+        + get_stock_specs()
         + mcp_runtime.build_specs()
     )
     for spec in all_specs:
@@ -131,6 +133,7 @@ def _build_tool_infrastructure(
     all_handlers.update(get_qweather_handlers())
     all_handlers.update(get_drive_cost_handlers())
     all_handlers.update(get_shared_handlers())
+    all_handlers.update(get_stock_handlers())
     all_handlers.update(mcp_runtime.build_handlers())
 
     for spec in tool_catalog.list_specs():
