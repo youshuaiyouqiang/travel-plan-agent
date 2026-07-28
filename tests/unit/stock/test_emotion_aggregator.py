@@ -11,8 +11,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from domain.stock.models import LimitStock
 
 

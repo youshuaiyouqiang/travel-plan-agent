@@ -14,7 +14,6 @@ import os
 
 import pytest
 
-from infrastructure.persistence.connection import get_connection
 from infrastructure.persistence.database import init_db, reset_connection
 from domain.stock.models import StockDaily, SectorDivergence
 

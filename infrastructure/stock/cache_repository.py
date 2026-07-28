@@ -1,8 +1,7 @@
 """缓存仓储——所有 SQL 参数化，表名白名单（AGENTS.md §4 安全与数据）。
 
 Task 3 最小实现：仅实现 limit_stocks_daily 表的 upsert/select。
-其余 7 张表的方法在后续 Task 补全——本模块先建好 ALLOWED_TABLES 白名单
-和 connection 注入基座，确保 SQL 注入防护覆盖全模块。
+Task 4 扩展：实现 review_reports 表的 save_review_report。
 
 设计要点：
 - 表名全部走 ALLOWED_TABLES 白名单；任何动态表名不在白名单内必须抛 ValueError
@@ -13,8 +12,11 @@ Task 3 最小实现：仅实现 limit_stocks_daily 表的 upsert/select。
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
+import uuid
+from typing import Any
 
 from domain.stock.models import LimitStock
 
@@ -135,3 +137,55 @@ class CacheRepository:
             )
             for row in rows
         ]
+
+    # ── review_reports ─────────────────────────────────────
+
+    async def save_review_report(
+        self,
+        *,
+        user_id: str,
+        trade_date: str,
+        content: str,
+        status: str,
+        llm_metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """保存复盘文到 review_reports 表，返回生成的 report_id。
+
+        Args:
+            user_id: 用户 ID（所有权隔离用，AGENTS.md §4）。
+            trade_date: 交易日期。
+            content: 复盘文 Markdown 全文。
+            status: completed / degraded / no_data。
+            llm_metadata: 元数据 dict（会序列化为 JSON 字符串）。
+
+        Returns:
+            新生成的 report_id（32 字符 hex）。
+
+        Raises:
+            ValueError: 当 review_reports 不在白名单时。
+        """
+        _validate_table("review_reports")
+        report_id = uuid.uuid4().hex
+        self._conn.execute(
+            "INSERT INTO review_reports "
+            "(id, user_id, trade_date, content, status, llm_metadata, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                report_id,
+                user_id,
+                trade_date,
+                content,
+                status,
+                json.dumps(llm_metadata or {}, ensure_ascii=False),
+                self._now_iso(),
+            ),
+        )
+        self._conn.commit()
+        return report_id
+
+    @staticmethod
+    def _now_iso() -> str:
+        """当前 UTC ISO 时间戳。"""
+        from datetime import datetime, timezone
+
+        return datetime.now(timezone.utc).isoformat()
