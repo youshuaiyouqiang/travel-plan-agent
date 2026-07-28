@@ -6,7 +6,7 @@
  */
 import { AuthClient } from '../auth/client'
 
-const API_BASE = '/api'
+const API_BASE = '/api/v1'
 
 function authClient(): AuthClient {
   return new AuthClient()
