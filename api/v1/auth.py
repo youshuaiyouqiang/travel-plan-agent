@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 from typing import Literal
 
@@ -23,8 +24,10 @@ _COOKIE_PATH = "/"
 _COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 _COOKIE_MAX_AGE = 86400 * 7  # 与 token 过期时间一致
 # Cookie domain: 开发环境不设置 domain，让浏览器自动匹配当前 host
-# 生产环境可以通过环境变量配置
 _COOKIE_DOMAIN: str | None = None  # None = 浏览器自动匹配当前 host
+
+# 开发环境检测：非 production 且非 HTTPS 时关闭 Secure cookie
+_IS_DEV = os.getenv("YUNHE_ENVIRONMENT", "development").lower() != "production"
 
 
 def _generate_csrf_token() -> str:
@@ -78,7 +81,7 @@ async def register(req: RegisterRequest, response: Response) -> AuthResponse:
     except ValueError as e:
         raise ValidationException(str(e)) from e
     token = generate_token(user.user_id)
-    _set_auth_cookies(response, token)
+    _set_auth_cookies(response, token, secure=not _IS_DEV)
     logger.info("User registered: user_id=%s username=%s", user.user_id, user.username)
     return AuthResponse(user_id=user.user_id, username=user.username)
 
@@ -90,6 +93,6 @@ async def login(req: LoginRequest, response: Response) -> AuthResponse:
     if not user:
         raise UnauthorizedException("用户名或密码错误")
     token = generate_token(user.user_id)
-    _set_auth_cookies(response, token)
+    _set_auth_cookies(response, token, secure=not _IS_DEV)
     logger.info("User logged in: user_id=%s username=%s", user.user_id, user.username)
     return AuthResponse(user_id=user.user_id, username=user.username)
