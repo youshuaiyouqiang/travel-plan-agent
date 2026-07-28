@@ -15,12 +15,12 @@ interface:
     - get_resistant_sectors
     - get_sector_leaders
     - get_sector_divergence
-    - get_sector_rotation_trend
+    - get_sector_history
     # 个股维度
     - get_watchlist
     - get_stock_daily
     - get_signal_stocks
-    - get_watchlist_trend
+    - get_limit_stocks
     # 周复盘专用（每日复盘不调用）
     - get_correlation
 i18n:
