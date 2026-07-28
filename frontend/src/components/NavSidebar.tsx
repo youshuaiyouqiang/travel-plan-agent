@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Bot, Brain, LogOut, Sparkles, Wrench, Plug, Star, ShieldCheck } from 'lucide-react'
+import { Bot, Brain, LogOut, Sparkles, Wrench, Plug, Star, ShieldCheck, TrendingUp } from 'lucide-react'
 import { useAuthStore } from '../hooks/useAuthStore'
 
 /**
@@ -17,6 +17,7 @@ export function NavSidebar() {
   const isSkills = location.pathname.startsWith('/skills')
   const isMcps = location.pathname.startsWith('/mcps')
   const isAdminNews = location.pathname.startsWith('/admin/news')
+  const isStock = location.pathname.startsWith('/stock')
 
   return (
     <div className="w-56 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
@@ -89,6 +90,17 @@ export function NavSidebar() {
         >
           <ShieldCheck size={18} className="flex-shrink-0" />
           新闻来源审核
+        </button>
+        <button
+          onClick={() => navigate('/stock')}
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+            isStock
+              ? 'bg-indigo-50 text-indigo-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <TrendingUp size={18} className="flex-shrink-0" />
+          股市复盘
         </button>
         <button
           onClick={() => navigate('/favorites')}

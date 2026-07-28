@@ -35,6 +35,7 @@ const FavoritesPage = lazy(() =>
   import('./pages/FavoritesPage').then((m) => ({ default: m.FavoritesPage })),
 )
 const NewsAdmin = lazy(() => import('./pages/NewsAdmin').then((m) => ({ default: m.NewsAdmin })))
+const StockPage = lazy(() => import('./features/stock').then((m) => ({ default: m.StockPage })))
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -137,6 +138,24 @@ function App() {
             element={
               <PrivateRoute>
                 <NewsAdmin />
+              </PrivateRoute>
+            }
+          />
+
+          {/* 股市复盘（Task 7） */}
+          <Route
+            path="/stock"
+            element={
+              <PrivateRoute>
+                <StockPage />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/stock/reports/:reportId"
+            element={
+              <PrivateRoute>
+                <StockPage />
               </PrivateRoute>
             }
           />
