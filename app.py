@@ -94,6 +94,8 @@ class AppContainer:
     stock_correlation_service: Any | None = None
     stock_task_registry: Any | None = None
     stock_review_service: Any | None = None
+    # Task 6：股票抓取管线（调度器依赖）
+    stock_pipeline: Any | None = None
 
 
 def _build_tool_infrastructure(
@@ -365,12 +367,18 @@ def build_orchestrator() -> AppContainer:
     # 端口与 DTO 全部在 domain/stock/；application 只持有 stock_* 服务，
     # 不直接 import infrastructure.stock（仅在组合根内合法）。
     from application.stock.correlation_service import CorrelationService
+    from application.stock.pipeline import (
+        StockPipelineService,
+        set_default_pipeline,
+    )
     from application.stock.query_service import StockQueryService
     from application.stock.report_service import ReportService
     from application.stock.review_service import StockReviewService
     from application.stock.review_task_registry import ReviewTaskRegistry
     from infrastructure.persistence.connection import get_connection
+    from infrastructure.stock.akshare_client import AkshareClient
     from infrastructure.stock.cache_repository import CacheRepository
+    from infrastructure.stock.limit_fetcher_adapter import LimitFetcherAdapter
     from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
 
     # 数据源（只读缓存）
@@ -394,6 +402,18 @@ def build_orchestrator() -> AppContainer:
         cache_repo=stock_cache_repo,
         skill_md_path=settings.skills_dir / "builtin" / "stock-review" / "SKILL.md",
     )
+    # Task 6：股票抓取管线（写路径 fetcher 编排）
+    # 通过 Fetcher / CacheWritePort 端口注入基础设施层实现
+    # application 层仅持协议（AGENTS.md §8.1 / §8.3 零容忍）
+    akshare_client: Any = AkshareClient()
+    limit_fetcher_adapter: Any = LimitFetcherAdapter(client=akshare_client)
+    stock_pipeline: Any = StockPipelineService(
+        repo=stock_cache_repo,
+        fetchers=[limit_fetcher_adapter],
+        correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
+    )
+    # 接缝 4：注册为进程内默认 pipeline，scheduler 函数内惰性取用
+    set_default_pipeline(stock_pipeline)
 
     return AppContainer(
         orchestrator=orchestrator,
@@ -421,4 +441,5 @@ def build_orchestrator() -> AppContainer:
         stock_correlation_service=stock_correlation_service,
         stock_task_registry=stock_task_registry,
         stock_review_service=stock_review_service,
+        stock_pipeline=stock_pipeline,
     )

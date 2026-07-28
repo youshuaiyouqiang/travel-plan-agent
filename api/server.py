@@ -34,6 +34,9 @@ _BACKGROUND_TASK: asyncio.Task | None = None
 _MEMORY_TASK: asyncio.Task | None = None
 _HOTSPOT_REFRESH_TASK: asyncio.Task | None = None
 _HOTSPOT_CLEANUP_TASK: asyncio.Task | None = None
+# Task 6：股票复盘后台任务（早盘 11:30 / 收盘 16:30 轮询）
+_STOCK_MORNING_TASK: asyncio.Task | None = None
+_STOCK_CLOSE_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
 
 # P3.1：``resolve_admin_user_id`` 已迁移到 ``app.py`` 组合根，此处保留
@@ -80,12 +83,27 @@ async def _periodic_hotspot_cleanup() -> None:
     await run_hotspot_cleanup()
 
 
+async def _periodic_stock_morning_fetch() -> None:
+    """股票复盘早盘抓取后台任务（Task 6，11:30 窗口轮询）。"""
+    from application.scheduler import run_stock_morning_fetch
+
+    await run_stock_morning_fetch()
+
+
+async def _periodic_stock_close_fetch() -> None:
+    """股票复盘收盘抓取后台任务（Task 6，16:30 窗口 + 周五链式 correlation）。"""
+    from application.scheduler import run_stock_close_fetch
+
+    await run_stock_close_fetch()
+
+
 # ── 生命周期 ──────────────────────────────────────────────
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _BACKGROUND_TASK, _MEMORY_TASK, _HOTSPOT_REFRESH_TASK, _HOTSPOT_CLEANUP_TASK
+    global _STOCK_MORNING_TASK, _STOCK_CLOSE_TASK  # Task 6
     logger.info("Server starting: warming up trending pool")
     try:
         count = await refresh_pool()
@@ -110,12 +128,17 @@ async def lifespan(app: FastAPI):
     _MEMORY_TASK = asyncio.create_task(_periodic_memory_maintenance())
     _HOTSPOT_REFRESH_TASK = asyncio.create_task(_periodic_hotspot_refresh())
     _HOTSPOT_CLEANUP_TASK = asyncio.create_task(_periodic_hotspot_cleanup())
+    # Task 6：股票复盘调度（组合根/lifespan 改动 — AGENTS.md §8.7）
+    _STOCK_MORNING_TASK = asyncio.create_task(_periodic_stock_morning_fetch())
+    _STOCK_CLOSE_TASK = asyncio.create_task(_periodic_stock_close_fetch())
     yield
     for task in (
         _BACKGROUND_TASK,
         _MEMORY_TASK,
         _HOTSPOT_REFRESH_TASK,
         _HOTSPOT_CLEANUP_TASK,
+        _STOCK_MORNING_TASK,
+        _STOCK_CLOSE_TASK,
     ):
         if task:
             task.cancel()
@@ -162,6 +185,8 @@ def create_api(container: AppContainer) -> FastAPI:
     app.state.stock_correlation_service = container.stock_correlation_service
     app.state.stock_task_registry = container.stock_task_registry
     app.state.stock_review_service = container.stock_review_service
+    # Task 6：股票抓取管线（供 admin/refresh 等使用；调度器走默认注册）
+    app.state.stock_pipeline = container.stock_pipeline
 
     # ── CORS ──────────────────────────────────────────────
     app.add_middleware(
