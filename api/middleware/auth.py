@@ -13,7 +13,7 @@ from domain.user.auth.token import verify_token
 logger = logging.getLogger(__name__)
 
 _PUBLIC_PATHS = {"/api/auth/register", "/api/auth/login", "/api/news/trending", "/api/health", "/api/health/metrics", "/api/shared", "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/news/trending", "/api/v1/health", "/api/v1/health/metrics", "/api/v1/shared", "/health", "/metrics", "/docs", "/openapi.json", "/redoc"}
-_PUBLIC_PREFIXES = ("/docs", "/openapi.json", "/redoc")
+_PUBLIC_PREFIXES = ("/docs", "/openapi.json", "/redoc", "/api/auth", "/api/v1/auth", "/api/shared", "/api/v1/shared")
 
 # Task 4: 不安全方法（非 GET/HEAD/OPTIONS）使用 cookie 认证时必须携带匹配的 CSRF header
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
