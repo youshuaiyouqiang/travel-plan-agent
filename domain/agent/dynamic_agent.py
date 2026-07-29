@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from domain.agent.base import BaseAgent
 from domain.agent.schema import AgentConfig
@@ -17,6 +19,36 @@ from domain.reasoning.engine import ReasoningEngine, AskUserNeeded, Confirmation
 from domain.safety.prompt_guard import PromptGuard
 
 logger = logging.getLogger(__name__)
+
+
+# ── 日期前缀注入（方案 B：所有 DynamicAgent 派生同步受益） ──
+# A 股 / 股票复盘与所有 DynamicAgent 派生场景使用北京时间（与
+# application/scheduler.py._CST 保持一致，跨进程统一时区基准）。
+_CST = ZoneInfo("Asia/Shanghai")
+
+# Monday=0 .. Sunday=6 → 中文星期；与 datetime.weekday() 对齐。
+_WEEKDAY_ZH: tuple[str, ...] = (
+    "星期一",
+    "星期二",
+    "星期三",
+    "星期四",
+    "星期五",
+    "星期六",
+    "星期日",
+)
+
+
+def _current_date_prefix() -> str:
+    """返回 ``📅 今天是YYYY年M月D日，星期X。`` 形式的当前日期前缀（CST）。
+
+    所有 DynamicAgent 派生实例（stock / academic / news / yunhe / 自定义
+    等）的 system_prompt 顶部都会注入此段，避免 LLM 在用户问"今天""明
+    天""本周"时自行猜错日期（典型 bug：股票复盘给出 trade_date=2025-
+    04-18 而非当天）。与 ``domain/travel/prompting.py._build_identity_
+    section`` 的格式保持一致，便于 LLM 跨 Agent 复用日期解析模式。
+    """
+    now = datetime.now(_CST)
+    return f"📅 今天是{now.year}年{now.month}月{now.day}日，{_WEEKDAY_ZH[now.weekday()]}。"
 
 
 class DynamicAgent(BaseAgent):
@@ -130,8 +162,13 @@ class DynamicAgent(BaseAgent):
         return unique
 
     def _build_system_prompt(self) -> str:
-        """构建 system prompt，注入 skill 说明和 MCP 描述。"""
-        prompt = self._config.system_prompt
+        """构建 system prompt，注入日期前缀、skill 说明和 MCP 描述。
+
+        顶部固定注入 ``_current_date_prefix()``（CST 今日日期），确保 LLM
+        在调用日期相关工具时使用正确的具体日期。skill / MCP 段继续追加
+        在原始 ``config.system_prompt`` 之后，保持既有行为。
+        """
+        prompt = _current_date_prefix() + "\n\n" + self._config.system_prompt
 
         if self._config.skills:
             prompt += "\n\n## 可用技能\n"
