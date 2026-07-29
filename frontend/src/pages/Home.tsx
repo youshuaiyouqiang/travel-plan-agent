@@ -35,11 +35,12 @@ export function Home() {
     setUserId,
     addThinkingStep,
     clearThinkingSteps,
-    resetSession,
   } = useChatStore()
 
   const authUserId = useAuthStore((s) => s.userId)
-  const [activeSessionId, setActiveSessionId] = useState(sessionId)
+  // ★ Task 2.2 修复：activeSessionId 改为派生自 store.sessionId，
+  //   避免 useState 双源导致切换时 sessionId 错位。
+  const activeSessionId = useChatStore((s) => s.sessionId)
   const [agentMap, setAgentMap] = useState<Record<string, AgentInfo>>({})
   const activeAgent = useSessionStore((s) => s.activeAgent)
   const [sessionListRefresh, setSessionListRefresh] = useState(0)
@@ -92,36 +93,54 @@ export function Home() {
     }
   }, [searchParams, setActiveAgent, setSearchParams])
 
+  /**
+   * 会话切换唯一切入口（Task 2.2 单入口收敛）。
+   *
+   * 业务契约：
+   * 1. 立刻 ``setSessionId``：让 header / ChatInput / 路由守卫等依赖
+   *    ``useChatStore.sessionId`` 的组件同步刷新。
+   * 2. 立刻 ``clearMessages``：避免切换瞬间展示旧会话消息。
+   * 3. 同步重置 ``useSessionStore`` 临时态（activeAgent / agentActions /
+   *    sessionConfirmedPlan）。
+   * 4. 异步 ``getSessionMessages`` + ``loadMessages`` 加载新会话消息。
+   * 5. 异步 ``syncConfirmStatus`` 恢复确认状态。
+   * 6. ``setSessionListRefresh`` 通知 SessionSidebar 刷新列表。
+   */
+  const handleSessionChange = useCallback(async (newSessionId: string) => {
+    setSessionId(newSessionId)
+    useChatStore.getState().clearMessages()
+    useSessionStore.getState().clearAgentActions()
+    useSessionStore.getState().setActiveAgent(null)
+    useSessionStore.getState().setSessionConfirmedPlan(null)
+    try {
+      const msgs = await getSessionMessages(newSessionId)
+      useChatStore.getState().loadMessages(msgs)
+    } catch {
+      // 消息加载失败时，clearMessages 已生效，messages=[] 是预期
+    }
+    useSessionStore.getState().syncConfirmStatus(newSessionId)
+    setSessionListRefresh((n) => n + 1)
+  }, [setSessionId])
+
   const initSession = useCallback(async () => {
     try {
       // 先尝试恢复上一次的会话
       const sessions = await listSessions()
       if (sessions.length > 0) {
-        const lastSession = sessions[0]
-        setSessionId(lastSession.session_id)
-        if (authUserId) setUserId(authUserId)
-        setActiveSessionId(lastSession.session_id)
-        // 恢复该会话的消息
-        try {
-          const msgs = await getSessionMessages(lastSession.session_id)
-          useChatStore.getState().loadMessages(msgs)
-        } catch {
-          // 消息加载失败，不阻塞
-        }
-        // ★ 恢复确认状态（页面刷新时同步sessionConfirmedPlan）
-        useSessionStore.getState().syncConfirmStatus(lastSession.session_id)
+        await handleSessionChange(sessions[0].session_id)
         return
       }
       // 没有历史会话，创建新会话
       const result = await createSession()
-      setSessionId(result.session_id)
-      if (authUserId) setUserId(authUserId)
-      setActiveSessionId(result.session_id)
+      await handleSessionChange(result.session_id)
     } catch {
-      resetSession()
-      setActiveSessionId(useChatStore.getState().sessionId)
+      // 兜底：清空展示态，避免残留上一个会话的消息
+      useChatStore.getState().clearMessages()
+      useSessionStore.getState().clearAgentActions()
+      useSessionStore.getState().setActiveAgent(null)
+      useSessionStore.getState().setSessionConfirmedPlan(null)
     }
-  }, [authUserId, setSessionId, setUserId, resetSession])
+  }, [handleSessionChange])
 
   useEffect(() => {
     // P2-2：ref 守卫确保只在 mount 后执行一次初始化，
@@ -132,25 +151,6 @@ export function Home() {
       initSession()
     }
   }, [sessionId, initSession])
-
-  const handleSessionChange = async (newSessionId: string) => {
-    setActiveSessionId(newSessionId)
-    setSessionId(newSessionId)
-    resetSession()
-    // 清除旧会话的临时状态
-    useSessionStore.getState().clearAgentActions()
-    useSessionStore.getState().setActiveAgent(null)
-    // ★ 先重置确认状态，避免异步期间渲染使用旧值
-    useSessionStore.getState().setSessionConfirmedPlan(null)
-    // 从服务端恢复确认状态
-    useSessionStore.getState().syncConfirmStatus(newSessionId)
-    try {
-      const msgs = await getSessionMessages(newSessionId)
-      useChatStore.getState().loadMessages(msgs)
-    } catch {
-      // 消息加载失败，不阻塞
-    }
-  }
 
   // 点击"AI 深度研判"：创建 news_analysis_locked 会话，并自动驱动新闻 Agent
   // 基于锚点做一次深度研判。用户期望"点了就要看到分析"，因此创建会话后立即
@@ -186,19 +186,51 @@ export function Home() {
     }
   }
 
-  const handleNewChat = async () => {
+  const handleNewChat = useCallback(async () => {
     abortRef.current?.abort()
     try {
       const result = await createSession()
-      resetSession()
-      setSessionId(result.session_id)
       if (authUserId) setUserId(authUserId)
-      setActiveSessionId(result.session_id)
+      // ★ Task 2.2：收敛到 handleSessionChange 单入口
+      await handleSessionChange(result.session_id)
     } catch {
-      resetSession()
-      setActiveSessionId(useChatStore.getState().sessionId)
+      // 兜底：清空展示态
+      useChatStore.getState().clearMessages()
+      useSessionStore.getState().clearAgentActions()
+      useSessionStore.getState().setActiveAgent(null)
+      useSessionStore.getState().setSessionConfirmedPlan(null)
     }
-  }
+  }, [authUserId, setUserId, handleSessionChange])
+
+  /**
+   * 删除当前活跃会话（Task 2.2 单入口收敛）。
+   *
+   * 由 ``SessionSidebar.handleDeleteSession`` 在删除当前活跃会话时调用。
+   * 业务契约：删除后必须确保 UI 仍指向一个有效会话 —
+   *  - 优先选择剩余列表中的第一个会话（保持上下文连续）
+   *  - 若没有剩余会话，创建一个新会话
+   *  - 任何情况下都通过 ``handleSessionChange`` 收敛切换副作用
+   */
+  const handleDeleteActiveSession = useCallback(async (deletedId: string) => {
+    try {
+      const list = await listSessions()
+      useChatStore.getState().setSessions(list)
+      const next = list.find((s) => s.session_id !== deletedId)
+      if (next) {
+        await handleSessionChange(next.session_id)
+        return
+      }
+      // 没有剩余会话：新建一个
+      const result = await createSession()
+      await handleSessionChange(result.session_id)
+    } catch {
+      // 兜底：清空当前展示态
+      useChatStore.getState().clearMessages()
+      useSessionStore.getState().clearAgentActions()
+      useSessionStore.getState().setActiveAgent(null)
+      useSessionStore.getState().setSessionConfirmedPlan(null)
+    }
+  }, [handleSessionChange])
 
   const handleStop = () => {
     abortRef.current?.abort()
@@ -414,6 +446,7 @@ export function Home() {
 
       <SessionSidebar
         onSessionChange={handleSessionChange}
+        onDeleteActiveSession={handleDeleteActiveSession}
         activeSessionId={activeSessionId}
         refreshTrigger={sessionListRefresh}
       />

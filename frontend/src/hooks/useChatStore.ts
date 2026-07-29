@@ -140,7 +140,7 @@ export const useChatStore = create<ChatState>((set) => ({
       return { thinkingSteps: steps }
     }),
   clearThinkingSteps: () => set({ thinkingSteps: [] }),
-  clearMessages: () => set({ messages: [], isEscalated: false, sessionId: generateId(), thinkingSteps: [] }),
+  clearMessages: () => set({ messages: [], isEscalated: false, thinkingSteps: [] }),
   loadMessages: (msgs) =>
     set({
       messages: msgs.map((m, i) => ({
@@ -150,7 +150,7 @@ export const useChatStore = create<ChatState>((set) => ({
         timestamp: m.created_at ? new Date(m.created_at).getTime() : Date.now(),
       })),
     }),
-  resetSession: () => set({ messages: [], isEscalated: false, sessionId: generateId(), thinkingSteps: [] }),
+  resetSession: () => set({ messages: [], isEscalated: false, thinkingSteps: [] }),
   setSessions: (sessions) => set({ sessions, sessionsLoadedAt: Date.now() }),
 }))
 

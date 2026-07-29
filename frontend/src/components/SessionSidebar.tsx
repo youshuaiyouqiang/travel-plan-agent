@@ -1,27 +1,39 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, Trash2, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useChatStore } from '../hooks/useChatStore'
-import { useSessionStore } from '../hooks/useSessionStore'
-import { listSessions, createSession, deleteSession, getSessionMessages } from '../features/chat/api'
+import { listSessions, createSession, deleteSession } from '../features/chat/api'
 import type { SessionInfo } from '../features/chat/api'
 
 interface Props {
+  /** 会话切换/新建回调：被点击的会话 ID 交给父组件处理。 */
   onSessionChange: (sessionId: string) => void
+  /** 删除当前活跃会话回调：父组件决定下一个活跃会话。 */
+  onDeleteActiveSession?: (deletedId: string) => void
   activeSessionId: string
   refreshTrigger?: number          // 外部递增此值可强制刷新会话列表
 }
 
 /**
  * 会话列表栏 — 只负责会话历史展示与切换。
- * 位于对话区右侧。
- * sessions 存在全局 store，Home 卸载重挂载时不会丢失，避免每次返回都白屏重新加载。
+ *
+ * 设计契约（Task 2.2，修复 Bug 2 — 切换入口分散）：
+ * - 本组件不直接修改 ``useChatStore`` 的 ``sessionId`` / ``messages`` /
+ *   ``isEscalated`` / ``thinkingSteps``，所有 store 副作用收敛到
+ *   ``Home`` 组件的 ``handleSessionChange`` / ``handleDeleteActiveSession``。
+ * - 会话切换/新建通过 ``onSessionChange(newId)`` 回调触发；删除当前
+ *   活跃会话通过 ``onDeleteActiveSession(deletedId)`` 回调触发。
+ * - 仅 ``useChatStore.setSessions`` 用于更新会话列表（不涉及当前会话）。
  */
-export function SessionSidebar({ onSessionChange, activeSessionId, refreshTrigger }: Props) {
+export function SessionSidebar({
+  onSessionChange,
+  onDeleteActiveSession,
+  activeSessionId,
+  refreshTrigger,
+}: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { setSessionId, loadMessages, resetSession } = useChatStore()
-  const sessions = useChatStore((s) => s.sessions)
   const setSessions = useChatStore((s) => s.setSessions)
+  const sessions = useChatStore((s) => s.sessions)
   // 记录上次刷新时的 activeSessionId，避免首次挂载时多余请求
   const lastRefreshedForIdRef = useRef<string | null>(null)
 
@@ -58,32 +70,19 @@ export function SessionSidebar({ onSessionChange, activeSessionId, refreshTrigge
     setLoading(true)
     try {
       const result = await createSession()
-      setSessionId(result.session_id)
-      loadMessages([])
+      // 单入口：仅通知父组件切换到新会话，不直接改 store
       onSessionChange(result.session_id)
-      await fetchSessions()
     } catch {
-      resetSession()
-      onSessionChange(useChatStore.getState().sessionId)
+      // 新建失败时刷新列表，避免 UI 出现"幽灵"按钮状态
+      await fetchSessions()
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSelectSession = async (session: SessionInfo) => {
+  const handleSelectSession = (session: SessionInfo) => {
     if (session.session_id === activeSessionId) return
-    setSessionId(session.session_id)
-    // 清除旧会话的临时状态
-    useSessionStore.getState().clearAgentActions()
-    useSessionStore.getState().setActiveAgent(null)
-    // 从服务端恢复确认状态
-    useSessionStore.getState().syncConfirmStatus(session.session_id)
-    try {
-      const msgs = await getSessionMessages(session.session_id)
-      loadMessages(msgs)
-    } catch {
-      loadMessages([])
-    }
+    // 单入口：仅通知父组件切换；store 副作用（清空消息/同步确认状态等）由 Home 集中处理
     onSessionChange(session.session_id)
   }
 
@@ -92,10 +91,12 @@ export function SessionSidebar({ onSessionChange, activeSessionId, refreshTrigge
     try {
       await deleteSession(session.session_id)
       if (session.session_id === activeSessionId) {
-        resetSession()
-        onSessionChange(useChatStore.getState().sessionId)
+        // 当前活跃会话被删：通知父组件决定下一个活跃会话
+        onDeleteActiveSession?.(session.session_id)
+      } else {
+        // 非当前活跃会话：仅刷新列表
+        await fetchSessions()
       }
-      await fetchSessions()
     } catch {
       /* ignore */
     }
