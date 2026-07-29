@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Wrench } from 'lucide-react'
 import { fetchSkills, SkillInfo } from '../features/skill/api'
+import { useAuthStore } from '../hooks/useAuthStore'
 
 export function SkillCenter() {
   const [skills, setSkills] = useState<SkillInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeCategory, setActiveCategory] = useState<string>('all')
+  const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
     let cancelled = false
@@ -15,14 +17,20 @@ export function SkillCenter() {
         const data = await fetchSkills()
         if (!cancelled) setSkills(data)
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
+        const msg = err instanceof Error ? err.message : '加载失败'
+        if (msg.includes('401') || msg.includes('未登录') || msg.includes('登录')) {
+          logout()
+          if (!cancelled) setError('登录已过期，请重新登录')
+        } else {
+          if (!cancelled) setError(msg)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [logout])
 
   const categories = ['all', ...new Set(skills.map(s => s.category || 'general'))]
   const filtered = activeCategory === 'all' ? skills : skills.filter(s => (s.category || 'general') === activeCategory)

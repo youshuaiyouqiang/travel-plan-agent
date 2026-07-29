@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Edit2, Trash2, ArrowLeft, Copy } from 'lucide-react'
 import { fetchAgents, deleteCustomAgent, cloneCustomAgent, AgentInfo } from '../features/agent/api'
+import { useAuthStore } from '../hooks/useAuthStore'
 
 export function AgentCenter() {
   const navigate = useNavigate()
@@ -12,6 +13,7 @@ export function AgentCenter() {
   }>({ builtin: [], custom: [], public: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const logout = useAuthStore((s) => s.logout)
 
   const load = async () => {
     setLoading(true)
@@ -20,7 +22,13 @@ export function AgentCenter() {
       const data = await fetchAgents()
       setAgents(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载失败')
+      const msg = err instanceof Error ? err.message : '加载失败'
+      if (msg.includes('401') || msg.includes('未登录') || msg.includes('登录')) {
+        logout()
+        setError('登录已过期，请重新登录')
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }

@@ -5,13 +5,13 @@ import os
 import secrets
 from typing import Literal
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 
 from application.dto.request import RegisterRequest, LoginRequest
 from application.dto.response import AuthResponse
 from application.exceptions import ValidationException, UnauthorizedException
 from domain.user.auth.auth import UserStore
-from domain.user.auth.token import generate_token
+from domain.user.auth.token import generate_token, verify_token
 
 logger = logging.getLogger(__name__)
 
@@ -95,4 +95,20 @@ async def login(req: LoginRequest, response: Response) -> AuthResponse:
     token = generate_token(user.user_id)
     _set_auth_cookies(response, token, secure=not _IS_DEV)
     logger.info("User logged in: user_id=%s username=%s", user.user_id, user.username)
+    return AuthResponse(user_id=user.user_id, username=user.username)
+
+
+@router.get("/me", response_model=AuthResponse)
+async def me(request: Request) -> AuthResponse:
+    """获取当前登录用户信息。"""
+    cookie_token = request.cookies.get("auth_token")
+    if not cookie_token:
+        raise UnauthorizedException("未登录")
+    user_id = verify_token(cookie_token)
+    if not user_id:
+        raise UnauthorizedException("登录已过期")
+    user_store = _get_user_store()
+    user = user_store.get_by_id(user_id)
+    if not user:
+        raise UnauthorizedException("用户不存在")
     return AuthResponse(user_id=user.user_id, username=user.username)

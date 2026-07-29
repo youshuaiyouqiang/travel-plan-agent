@@ -57,3 +57,21 @@ export async function login(username: string, password: string): Promise<AuthRes
   }
   return data
 }
+
+export async function fetchMe(): Promise<AuthResponse | null> {
+  // 获取当前登录用户信息，未登录返回 null。
+  let res: Response
+  try {
+    res = await authClient().request(`${API_BASE}/auth/me`)
+  } catch {
+    return null
+  }
+  if (!res.ok) {
+    return null
+  }
+  const data = await res.json().catch(() => null)
+  if (!data || !data.user_id) {
+    return null
+  }
+  return data as AuthResponse
+}
