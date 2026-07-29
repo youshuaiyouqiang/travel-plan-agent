@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Edit2, Trash2, ArrowLeft, Copy } from 'lucide-react'
 import { fetchAgents, deleteCustomAgent, cloneCustomAgent, AgentInfo } from '../features/agent/api'
 import { useAuthStore } from '../hooks/useAuthStore'
+import { isApiError } from '../features/auth/errors'
 
 export function AgentCenter() {
   const navigate = useNavigate()
@@ -22,13 +23,13 @@ export function AgentCenter() {
       const data = await fetchAgents()
       setAgents(data)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '加载失败'
-      if (msg.includes('401') || msg.includes('未登录') || msg.includes('登录')) {
+      // 401 鉴权过期：调用 logout 让 PrivateRoute 把用户踢回 /login
+      if (isApiError(err) && err.status === 401) {
         logout()
         setError('登录已过期，请重新登录')
-      } else {
-        setError(msg)
+        return
       }
+      setError(err instanceof Error ? err.message : '加载失败')
     } finally {
       setLoading(false)
     }

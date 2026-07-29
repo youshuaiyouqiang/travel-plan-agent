@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Wrench } from 'lucide-react'
 import { fetchSkills, SkillInfo } from '../features/skill/api'
 import { useAuthStore } from '../hooks/useAuthStore'
+import { isApiError } from '../features/auth/errors'
 
 export function SkillCenter() {
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -17,13 +18,13 @@ export function SkillCenter() {
         const data = await fetchSkills()
         if (!cancelled) setSkills(data)
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '加载失败'
-        if (msg.includes('401') || msg.includes('未登录') || msg.includes('登录')) {
+        if (cancelled) return
+        if (isApiError(err) && err.status === 401) {
           logout()
-          if (!cancelled) setError('登录已过期，请重新登录')
-        } else {
-          if (!cancelled) setError(msg)
+          setError('登录已过期，请重新登录')
+          return
         }
+        setError(err instanceof Error ? err.message : '加载失败')
       } finally {
         if (!cancelled) setLoading(false)
       }
