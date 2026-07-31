@@ -61,6 +61,11 @@ warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
 exclude = ["frontend/", "data/", "tests/"]
+# numpy 2.5+ 的 .pyi 使用 PEP 695 type 语句（要求 Py3.12+），
+# 在 Py3.14 运行时环境下 mypy 解析 stub 报 [syntax] 错误。stub 本身
+# 与项目代码无关，使用项目内 stubs/numpy/__init__.pyi 覆盖；详见 project
+# memory "Python 3.14 + numpy stub"。
+mypy_path = "stubs"
 
 # ===== Pytest =====
 [tool.pytest.ini_options]

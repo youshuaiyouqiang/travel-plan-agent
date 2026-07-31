@@ -311,6 +311,24 @@ class SqliteStockDataSource:
             for r in rows
         ]
 
+    # Task 10：启动期缓存回填的"是否已有数据"判定
+    # 用 ``SELECT 1 ... LIMIT 1`` 比 COUNT(*) 快（命中即停），返回 bool 语义清晰。
+    async def has_limit_stocks(self, trade_date: str) -> bool:
+        """判定指定交易日的 limit_stocks_daily 表是否有任何行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            True 当且仅当 limit_stocks_daily 中存在 trade_date 的任意行。
+        """
+        _validate_table("limit_stocks_daily")
+        row = self._conn.execute(
+            "SELECT 1 FROM limit_stocks_daily WHERE trade_date = ? LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        return row is not None
+
     # ── 内部辅助 ────────────────────────────────────────
 
     @staticmethod

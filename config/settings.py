@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     # 由 ``YUNHE_ENVIRONMENT`` 环境变量控制；默认 ``development``。
     environment: str = "development"
 
+    # ===== 股票复盘（Task 10） =====
+    # 启动期 limit_stocks_daily 缓存回填窗口（自然日数）。
+    # lifespan 启动时检查最近 N 天，缺失的日期自动调用 fetcher 回填。
+    # 取值范围 [1, 60]；超过 60 会被 clamp。
+    stock_warmup_window_days: int = Field(
+        default=15, ge=1, le=60,
+        description="启动期股票缓存回填窗口（自然日数）",
+    )
+
     @staticmethod
     def _root() -> Path:
         return Path(__file__).resolve().parents[1]

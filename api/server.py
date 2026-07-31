@@ -37,6 +37,8 @@ _HOTSPOT_CLEANUP_TASK: asyncio.Task | None = None
 # Task 6：股票复盘后台任务（早盘 11:30 / 收盘 16:30 轮询）
 _STOCK_MORNING_TASK: asyncio.Task | None = None
 _STOCK_CLOSE_TASK: asyncio.Task | None = None
+# Task 10：启动期股票缓存回填后台任务（不阻塞 ready）
+_STOCK_WARMUP_TASK: asyncio.Task | None = None
 _POOL_REFRESH_INTERVAL = 1800
 
 # P3.1：``resolve_admin_user_id`` 已迁移到 ``app.py`` 组合根，此处保留
@@ -97,13 +99,40 @@ async def _periodic_stock_close_fetch() -> None:
     await run_stock_close_fetch()
 
 
+async def _run_stock_cache_warmup(app: FastAPI) -> None:
+    """启动期股票缓存回填（Task 10）：后台任务包装。
+
+    拉取默认 data_source + pipeline，回填最近 ``settings.stock_warmup_window_days``
+    天缺失的 limit_stocks_daily 记录。失败仅 log warning，整体不抛。
+    """
+    from application.stock.warmup import run_stock_cache_warmup
+
+    data_source = getattr(app.state, "stock_data_source", None)
+    if data_source is None:
+        logger.warning("stock_warmup: app.state.stock_data_source missing; skip")
+        return
+
+    try:
+        backfilled = await run_stock_cache_warmup(
+            data_source,
+            window_days=settings.stock_warmup_window_days,
+        )
+        logger.info(
+            "Stock cache warmup task done: backfilled=%d window=%d",
+            backfilled,
+            settings.stock_warmup_window_days,
+        )
+    except Exception:  # noqa: BLE001 — 边界 catch-all
+        logger.warning("Stock cache warmup task failed", exc_info=True)
+
+
 # ── 生命周期 ──────────────────────────────────────────────
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _BACKGROUND_TASK, _MEMORY_TASK, _HOTSPOT_REFRESH_TASK, _HOTSPOT_CLEANUP_TASK
-    global _STOCK_MORNING_TASK, _STOCK_CLOSE_TASK  # Task 6
+    global _STOCK_MORNING_TASK, _STOCK_CLOSE_TASK, _STOCK_WARMUP_TASK  # Task 6/10
     logger.info("Server starting: warming up trending pool")
     try:
         count = await refresh_pool()
@@ -131,6 +160,12 @@ async def lifespan(app: FastAPI):
     # Task 6：股票复盘调度（组合根/lifespan 改动 — AGENTS.md §8.7）
     _STOCK_MORNING_TASK = asyncio.create_task(_periodic_stock_morning_fetch())
     _STOCK_CLOSE_TASK = asyncio.create_task(_periodic_stock_close_fetch())
+    # Task 10：股票缓存回填——后台任务，不阻塞 lifespan ready
+    # 失败仅 log warning；最坏情况 15 个 fetcher × ~2s 跑在后台
+    try:
+        _STOCK_WARMUP_TASK = asyncio.create_task(_run_stock_cache_warmup(app))
+    except Exception as e:
+        logger.warning("Stock cache warmup schedule failed: %s", e)
     yield
     for task in (
         _BACKGROUND_TASK,
@@ -139,6 +174,7 @@ async def lifespan(app: FastAPI):
         _HOTSPOT_CLEANUP_TASK,
         _STOCK_MORNING_TASK,
         _STOCK_CLOSE_TASK,
+        _STOCK_WARMUP_TASK,
     ):
         if task:
             task.cancel()
