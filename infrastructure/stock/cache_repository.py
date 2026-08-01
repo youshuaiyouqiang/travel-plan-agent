@@ -3,6 +3,7 @@
 Task 3 最小实现：仅实现 limit_stocks_daily 表的 upsert/select。
 Task 4 扩展：实现 review_reports 表的 save_review_report。
 Task 5 扩展：实现 watchlist_stocks 表的 add/remove + review_reports 查询。
+Task 20 扩展：实现 stock_fetch_log 表的 record_fetch / is_recently_succeeded。
 
 设计要点：
 - 表名全部走 ALLOWED_TABLES 白名单；任何动态表名不在白名单内必须抛 ValueError
@@ -44,6 +45,7 @@ ALLOWED_TABLES: frozenset[str] = frozenset(
         "emotion_daily",
         "watchlist_stocks",
         "review_reports",
+        "stock_fetch_log",  # Task 20：单股抓取日志
     }
 )
 
@@ -639,3 +641,92 @@ class CacheRepository:
         from datetime import datetime, timezone
 
         return datetime.now(timezone.utc).isoformat()
+
+    # ── stock_fetch_log（Task 20：单股抓取日志） ─────────
+
+    def record_fetch(
+        self,
+        *,
+        trade_date: str,
+        stock_code: str,
+        table_name: str,
+        status: str,
+        error_message: str | None = None,
+    ) -> None:
+        """记录一次抓取结果（成功或失败），upsert 语义。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            stock_code: 股票代码。
+            table_name: 数据表名（当前仅 'stock_daily'）。
+            status: 'success' 或 'failed'（与表 CHECK 约束对齐）。
+            error_message: 错误详情（status='success' 时清空为 None）。
+
+        Raises:
+            ValueError: 当 stock_fetch_log 不在白名单时。
+        """
+        _validate_table("stock_fetch_log")
+        # success 时强制清空 error_message，避免旧错误误导后续判定
+        cleaned_error: str | None = None if status == "success" else error_message
+        self._conn.execute(
+            "INSERT INTO stock_fetch_log "
+            "(trade_date, stock_code, table_name, status, last_attempt_at, error_message) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(trade_date, stock_code, table_name) DO UPDATE SET "
+            "status = excluded.status, "
+            "last_attempt_at = excluded.last_attempt_at, "
+            "error_message = excluded.error_message",
+            (
+                trade_date,
+                stock_code,
+                table_name,
+                status,
+                self._now_iso(),
+                cleaned_error,
+            ),
+        )
+        self._conn.commit()
+
+    def is_recently_succeeded(
+        self,
+        *,
+        trade_date: str,
+        stock_code: str,
+        table_name: str,
+        within_seconds: int,
+    ) -> bool:
+        """查询 (date, code, table) 是否在 TTL 内 status='success'。
+
+        判定规则：
+        - 无 log 行 → False（必须抓取）
+        - status='failed' → False（即使在 TTL 内也允许重试）
+        - status='success' 且 last_attempt_at 在 TTL 内 → True（跳过）
+        - status='success' 但 last_attempt_at 超过 TTL → False（重抓）
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            stock_code: 股票代码。
+            table_name: 数据表名。
+            within_seconds: TTL 窗口（秒）；负数视为 0（永不过期）。
+
+        Returns:
+            True = 应跳过抓取；False = 需重新抓取。
+        """
+        _validate_table("stock_fetch_log")
+        from datetime import datetime, timedelta, timezone
+
+        # TTL 边界：now - within_seconds 之后才算"在 TTL 内"
+        ttl_boundary = (
+            datetime.now(timezone.utc) - timedelta(seconds=max(0, within_seconds))
+        ).isoformat()
+        row = self._conn.execute(
+            "SELECT status, last_attempt_at FROM stock_fetch_log "
+            "WHERE trade_date = ? AND stock_code = ? AND table_name = ?",
+            (trade_date, stock_code, table_name),
+        ).fetchone()
+        if row is None:
+            return False
+        if row["status"] != "success":
+            return False
+        # last_attempt_at 是 ISO8601 字符串，比较字典序即可（UTC ISO 可字典序比时间）
+        return row["last_attempt_at"] >= ttl_boundary

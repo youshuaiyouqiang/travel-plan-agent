@@ -28,15 +28,15 @@ from infrastructure.persistence.migrations.registry import MIGRATIONS
 # ── 注册表完整性 ──────────────────────────────────────────
 
 
-def test_registry_has_exactly_21_versions():
-    """注册表必须恰好包含 21 个迁移（Task 2 新增 v021 股票 8 表）。"""
-    assert len(MIGRATIONS) == 21
+def test_registry_has_exactly_22_versions():
+    """注册表必须恰好包含 22 个迁移（Task 20 新增 v022 stock_fetch_log）。"""
+    assert len(MIGRATIONS) == 22
 
 
-def test_registry_versions_are_1_to_21_continuous():
-    """版本号必须连续 1..21。"""
+def test_registry_versions_are_1_to_22_continuous():
+    """版本号必须连续 1..22。"""
     versions = [m.version for m in MIGRATIONS]
-    assert versions == list(range(1, 22))
+    assert versions == list(range(1, 23))
 
 
 def test_registry_versions_are_unique():
@@ -91,58 +91,58 @@ def tmp_db(tmp_path, monkeypatch):
         os.unlink(db_path)
 
 
-def test_empty_db_upgrades_to_version_21(tmp_db):
-    """空库 init_db 后 current_version 必须为 21。"""
+def test_empty_db_upgrades_to_version_22(tmp_db):
+    """空库 init_db 后 current_version 必须为 22。"""
     init_db()
     status = get_migration_status()
-    assert status["current_version"] == 21
+    assert status["current_version"] == 22
     assert status["pending_count"] == 0
 
 
 def test_repeated_init_db_is_idempotent(tmp_db):
-    """已升级库重复 init_db 不报错，版本仍为 21。"""
+    """已升级库重复 init_db 不报错，版本仍为 22。"""
     init_db()
     init_db()
     init_db()
     status = get_migration_status()
-    assert status["current_version"] == 21
+    assert status["current_version"] == 22
     assert status["pending_count"] == 0
 
 
-def test_all_21_versions_recorded_in_schema_migrations(tmp_db):
-    """schema_migrations 表必须记录全部 21 个版本。"""
+def test_all_22_versions_recorded_in_schema_migrations(tmp_db):
+    """schema_migrations 表必须记录全部 22 个版本。"""
     init_db()
     conn = get_connection()
     rows = conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
     versions = [row["version"] for row in rows]
-    assert versions == list(range(1, 22))
+    assert versions == list(range(1, 23))
 
 
 # ── 降级与再升级 ──────────────────────────────────────────
 
 
-def test_downgrade_from_21_to_15_then_upgrade_restores_21(tmp_db):
-    """从版本 21 降级到 15，再升级应恢复到 21。"""
+def test_downgrade_from_22_to_15_then_upgrade_restores_22(tmp_db):
+    """从版本 22 降级到 15，再升级应恢复到 22。"""
     init_db()
-    assert get_migration_status()["current_version"] == 21
+    assert get_migration_status()["current_version"] == 22
 
-    # 降级到 15（保留 1..15，删除 16..21）
+    # 降级到 15（保留 1..15，删除 16..22）
     downgrade(15)
     status_after_downgrade = get_migration_status()
     assert status_after_downgrade["current_version"] == 15
-    assert status_after_downgrade["pending_count"] == 6
+    assert status_after_downgrade["pending_count"] == 7
 
     # 再升级
     init_db()
     status_after_upgrade = get_migration_status()
-    assert status_after_upgrade["current_version"] == 21
+    assert status_after_upgrade["current_version"] == 22
     assert status_after_upgrade["pending_count"] == 0
 
 
-def test_downgrade_to_0_then_full_upgrade_restores_21(tmp_db):
-    """从版本 21 全部降级到 0，再全量升级应恢复到 21。"""
+def test_downgrade_to_0_then_full_upgrade_restores_22(tmp_db):
+    """从版本 22 全部降级到 0，再全量升级应恢复到 22。"""
     init_db()
-    assert get_migration_status()["current_version"] == 21
+    assert get_migration_status()["current_version"] == 22
 
     # 全部降级
     downgrade(0)
@@ -152,16 +152,16 @@ def test_downgrade_to_0_then_full_upgrade_restores_21(tmp_db):
     # 全量升级
     init_db()
     status_after_upgrade = get_migration_status()
-    assert status_after_upgrade["current_version"] == 21
+    assert status_after_upgrade["current_version"] == 22
 
 
 def test_migration_status_reports_pending_correctly(tmp_db):
     """get_migration_status 在部分升级时正确报告 pending。"""
     init_db()
     # 降级三个版本
-    downgrade(18)
+    downgrade(19)
     status = get_migration_status()
-    assert status["current_version"] == 18
+    assert status["current_version"] == 19
     assert status["pending_count"] == 3
     pending_versions = [p["version"] for p in status["pending"]]
-    assert pending_versions == [19, 20, 21]
+    assert pending_versions == [20, 21, 22]

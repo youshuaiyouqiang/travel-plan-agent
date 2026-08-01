@@ -1,6 +1,7 @@
 """迁移版本 21–25。
 
-当前仅含 v21（股票复盘 8 张数据表）；22–25 预留，待后续 Task 补充。
+当前含 v21（股票复盘 8 张数据表）和 v22（stock_fetch_log 单股抓取日志）。
+23–25 预留，待后续 Task 补充。
 历史迁移（v1–v20）的 SQL 文本与版本号不得修改。
 """
 
@@ -155,11 +156,63 @@ def _downgrade_21(conn: Any) -> None:
     logger.warning("Migration 21 downgrade: dropped 8 stock review tables")
 
 
+def _downgrade_22(conn: Any) -> None:
+    """回滚迁移 22 — 删除 stock_fetch_log 表。"""
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS stock_fetch_log;
+        """
+    )
+    conn.commit()
+    logger.warning("Migration 22 downgrade: dropped stock_fetch_log")
+
+
+def _upgrade_22(conn: Any) -> None:
+    """单股抓取日志表（stock_fetch_log）。
+
+    用途（Task 20）：
+    - 记录每只股每次抓取的状态（success / failed）+ last_attempt_at
+    - warmup 重启后：若 log 标记 success 且在 TTL 内（默认 24h）→ 跳过
+      重新 akshare 调用，避免对前次成功的股再走一遍失败率高的 akshare
+    - 仅用于 stock_daily_fetcher；其他 4 个 fetcher 仍是 per-date 模式
+      （has_* + 行数对齐已足够）
+
+    设计要点：
+    - 复合主键 (trade_date, stock_code, table_name) 防重复
+    - last_attempt_at 索引按 trade_date + 时间优化 TTL 查询
+    - status 用 CHECK 约束限定为 success / failed
+    - error_message 仅 failed 状态有值（success 时清空）
+    """
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS stock_fetch_log (
+            trade_date TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('success', 'failed')),
+            last_attempt_at TEXT NOT NULL,
+            error_message TEXT,
+            PRIMARY KEY (trade_date, stock_code, table_name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_stock_fetch_log_attempt
+            ON stock_fetch_log(trade_date, last_attempt_at DESC);
+        """
+    )
+    conn.commit()
+    logger.info("Migration 22: created stock_fetch_log table and index")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=21,
         description="Stock review: 8 tables (market_index/stock/limit_stocks/board_ladder/sector/emotion/watchlist/review_reports)",
         upgrade=_upgrade_21,
         downgrade=_downgrade_21,
+    ),
+    Migration(
+        version=22,
+        description="stock_fetch_log table: per-(date, code, table) fetch status with TTL index",
+        upgrade=_upgrade_22,
+        downgrade=_downgrade_22,
     ),
 )

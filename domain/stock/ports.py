@@ -102,3 +102,65 @@ class StockDataSource(Protocol):
     # 用于与 count_limit_stocks 比对：n_stock < n_limit 即"部分缺失"
     # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
     async def count_stock_daily(self, trade_date: str) -> int: ...
+
+
+class StockFetchLogPort(Protocol):
+    """单股抓取日志端口（Task 20）——记录每只股每次抓取的状态。
+
+    用途：
+    - 写路径（fetcher）：每次抓取后 record_fetch 记录成功/失败
+    - 读路径（fetcher 启动时）：is_recently_succeeded 判定是否跳过
+
+    业务背景：
+    - stock_daily_fetcher 对 99 只涨停股串行调 akshare，akshare 失败率
+      高（1-2s/fail）→ 单日 warmup 容易只成功 80/99
+    - 重启后若不查 log 会重抓全部 99 只；引入 TTL 内的 success 记录可
+      让 fetcher 跳过已成功的 80 只，只重抓 19 只 → 节省 ~80% akshare
+      调用，整体 warmup 从 ~3 分钟降到 ~36s
+
+    边界（AGENTS.md §8.1）：
+    - 端口输入/输出 DTO 由 domain 定义（trade_date / stock_code /
+      table_name / status / within_seconds）；infrastructure 实现时
+      不得暴露 SQLite / akshare 细节
+    - 真实实现见 infrastructure.stock.cache_repository.CacheRepository
+    - AkshareClient 复盘链路只读缓存，不调此端口
+
+    Args/Returns 字段说明：
+    - table_name: 当前仅 'stock_daily'；预留 multi-table 扩展
+    - status: 'success' 或 'failed'（与 stock_fetch_log.status CHECK 对齐）
+    - within_seconds: TTL 窗口（默认 24h = 86400s）
+    """
+
+    async def is_recently_succeeded(
+        self,
+        *,
+        trade_date: str,
+        stock_code: str,
+        table_name: str,
+        within_seconds: int,
+    ) -> bool:
+        """查询 (trade_date, stock_code, table_name) 是否在 TTL 内成功抓取。
+
+        判定规则：
+        - 无 log 行 → False（必须抓取）
+        - status='failed' → False（即使在 TTL 内也允许重试）
+        - status='success' 且 last_attempt_at 在 TTL 内 → True（跳过）
+        - status='success' 但 last_attempt_at 超过 TTL → False（重抓）
+        """
+
+    async def record_fetch(
+        self,
+        *,
+        trade_date: str,
+        stock_code: str,
+        table_name: str,
+        status: str,
+        error_message: str | None = None,
+    ) -> None:
+        """记录一次抓取结果（成功或失败）。
+
+        行为：
+        - INSERT OR REPLACE 语义：同 (date, code, table) 第二次写覆盖
+        - status='success' 时 error_message 应为 None（清空旧错误）
+        - last_attempt_at 自动取当前 UTC ISO8601 时间戳
+        """
