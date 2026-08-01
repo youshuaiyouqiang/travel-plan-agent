@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Protocol
 
@@ -69,7 +70,10 @@ async def run(trade_date: str, repo: _SectorFetcherRepo) -> int:
 
 
 async def _fetch(trade_date: str) -> list[SectorDaily]:
-    """懒加载 akshare_client 并调用 fetch_sector_daily。"""
+    """懒加载 akshare_client 并调用 fetch_sector_daily。
+
+    Task 17：用 ``asyncio.to_thread`` 包装同步 akshare 调用，避免阻塞事件循环。
+    """
     from infrastructure.stock.akshare_client import fetch_sector_daily
 
-    return fetch_sector_daily(trade_date)
+    return await asyncio.to_thread(fetch_sector_daily, trade_date)

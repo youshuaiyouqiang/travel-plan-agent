@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Protocol
 
@@ -91,7 +92,11 @@ async def run(trade_date: str, repo: _StockFetcherRepo) -> int:
 
 
 async def _fetch(stock_code: str, trade_date: str) -> list[StockDaily]:
-    """懒加载 akshare_client 并调用 fetch_stock_daily。"""
+    """懒加载 akshare_client 并调用 fetch_stock_daily。
+
+    Task 17：用 ``asyncio.to_thread`` 包装同步 akshare 调用，避免阻塞事件循环。
+    99 只股票 × ~1s 的同步 IO 不能拖垮 uvicorn 的 startup 事件循环。
+    """
     from infrastructure.stock.akshare_client import fetch_stock_daily
 
-    return fetch_stock_daily(stock_code, trade_date)
+    return await asyncio.to_thread(fetch_stock_daily, stock_code, trade_date)

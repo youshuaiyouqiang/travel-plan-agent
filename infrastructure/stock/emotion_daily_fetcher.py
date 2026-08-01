@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Protocol
 
@@ -120,7 +121,10 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
 
 
 async def _fetch(trade_date: str) -> EmotionRawData:
-    """懒加载 akshare_client 并调用 fetch_emotion_daily。"""
+    """懒加载 akshare_client 并调用 fetch_emotion_daily。
+
+    Task 17：用 ``asyncio.to_thread`` 包装同步 akshare 调用，避免阻塞事件循环。
+    """
     from infrastructure.stock.akshare_client import fetch_emotion_daily
 
-    return fetch_emotion_daily(trade_date)
+    return await asyncio.to_thread(fetch_emotion_daily, trade_date)

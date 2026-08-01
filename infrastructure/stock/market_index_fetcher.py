@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -61,7 +62,10 @@ async def run(trade_date: str, repo: Any) -> int:
 
 
 async def _fetch(trade_date: str) -> list[MarketIndexRow]:
-    """懒加载 akshare_client 并调用 fetch_market_index。"""
+    """懒加载 akshare_client 并调用 fetch_market_index。
+
+    Task 17：用 ``asyncio.to_thread`` 包装同步 akshare 调用，避免阻塞事件循环。
+    """
     from infrastructure.stock.akshare_client import fetch_market_index
 
-    return fetch_market_index(trade_date)
+    return await asyncio.to_thread(fetch_market_index, trade_date)
