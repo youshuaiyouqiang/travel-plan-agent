@@ -48,6 +48,42 @@ def _get_data_source() -> Any:
 # ── 辅助：DTO → dict / 异常处理 ──────────────────────────
 
 
+def _normalize_trade_date(date_str: object) -> str | None:
+    """归一化日期参数到 YYYYMMDD（与 DB / fetcher 一致）。
+
+    接受 "YYYYMMDD"（推荐）/ "YYYY-MM-DD" / "YYYY/MM/DD" 形式；
+    非法格式（其他分隔符、长度非 8、含非数字、None/空）返回 None，
+    由调用方决定如何处理（handler 通常返回 is_error=True）。
+
+    Args:
+        date_str: 任意日期字符串（也可能不是 str，先做 str() 转换）。
+
+    Returns:
+        归一化后的 "YYYYMMDD"；非法时返回 None。
+    """
+    if date_str is None:
+        return None
+    s = str(date_str).strip()
+    if not s:
+        return None
+    # 接受两种规范格式：YYYYMMDD 或 YYYY-MM-DD
+    # 其他写法（含 "/"、长度非 8、含非数字）一律拒绝
+    if "-" in s:
+        parts = s.split("-")
+        if (
+            len(parts) == 3
+            and len(parts[0]) == 4
+            and len(parts[1]) == 2
+            and len(parts[2]) == 2
+            and all(p.isdigit() for p in parts)
+        ):
+            return "".join(parts)
+        return None
+    if len(s) == 8 and s.isdigit():
+        return s
+    return None
+
+
 def _dumps(value: Any) -> str:
     """序列化 Pydantic v2 DTO 列表为紧凑 JSON。失败时退化为 repr。"""
     try:
@@ -75,26 +111,26 @@ async def _call(coro: Any) -> dict:
 
 
 async def _get_market_snapshot(arguments: dict) -> dict:
-    trade_date = str(arguments.get("trade_date", "")).strip()
+    trade_date = _normalize_trade_date(arguments.get("trade_date"))
     if not trade_date:
-        return {"is_error": True, "content": "missing trade_date"}
+        return {"is_error": True, "content": "invalid trade_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_market_snapshot(trade_date))
 
 
 async def _get_emotion_indicators(arguments: dict) -> dict:
-    trade_date = str(arguments.get("trade_date", "")).strip()
+    trade_date = _normalize_trade_date(arguments.get("trade_date"))
     if not trade_date:
-        return {"is_error": True, "content": "missing trade_date"}
+        return {"is_error": True, "content": "invalid trade_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_emotion_indicators(trade_date))
 
 
 async def _get_emotion_indicators_trend(arguments: dict) -> dict:
-    end_date = str(arguments.get("end_date", "")).strip()
+    end_date = _normalize_trade_date(arguments.get("end_date"))
     days = int(arguments.get("days", 10) or 10)
     if not end_date:
-        return {"is_error": True, "content": "missing end_date"}
+        return {"is_error": True, "content": "invalid end_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_emotion_indicators_trend(end_date, days))
 
@@ -137,9 +173,9 @@ async def _get_sector_leaders(arguments: dict) -> dict:
 
 
 async def _get_sector_divergence(arguments: dict) -> dict:
-    trade_date = str(arguments.get("trade_date", "")).strip()
+    trade_date = _normalize_trade_date(arguments.get("trade_date"))
     if not trade_date:
-        return {"is_error": True, "content": "missing trade_date"}
+        return {"is_error": True, "content": "invalid trade_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_sector_divergence(trade_date))
 
@@ -166,26 +202,26 @@ async def _get_stock_daily(arguments: dict) -> dict:
 
 
 async def _get_signal_stocks(arguments: dict) -> dict:
-    trade_date = str(arguments.get("trade_date", "")).strip()
+    trade_date = _normalize_trade_date(arguments.get("trade_date"))
     if not trade_date:
-        return {"is_error": True, "content": "missing trade_date"}
+        return {"is_error": True, "content": "invalid trade_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_signal_stocks(trade_date))
 
 
 async def _get_limit_stocks(arguments: dict) -> dict:
-    trade_date = str(arguments.get("trade_date", "")).strip()
+    trade_date = _normalize_trade_date(arguments.get("trade_date"))
     if not trade_date:
-        return {"is_error": True, "content": "missing trade_date"}
+        return {"is_error": True, "content": "invalid trade_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_limit_stocks(trade_date))
 
 
 async def _get_correlation(arguments: dict) -> dict:
-    end_date = str(arguments.get("end_date", "")).strip()
+    end_date = _normalize_trade_date(arguments.get("end_date"))
     days = int(arguments.get("days", 5) or 5)
     if not end_date:
-        return {"is_error": True, "content": "missing end_date"}
+        return {"is_error": True, "content": "invalid end_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_correlation(end_date, days))
 
@@ -197,24 +233,24 @@ def get_stock_specs() -> list[ToolSpec]:
     return [
         ToolSpec(
             name="get_market_snapshot",
-            description="拉取大盘快照（上证/深证/创业板三大指数 + 两市成交额 + 量能环比 + MA20 位置）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取大盘快照（上证/深证/创业板三大指数 + 两市成交额 + 量能环比 + MA20 位置）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
         ),
         ToolSpec(
             name="get_emotion_indicators",
-            description="拉取当日情绪指标（涨停数 / 跌停数 / 炸板率 / 最高连板 / 昨日涨停今日溢价）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取当日情绪指标（涨停数 / 跌停数 / 炸板率 / 最高连板 / 昨日涨停今日溢价）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
@@ -226,7 +262,7 @@ def get_stock_specs() -> list[ToolSpec]:
             parameters={
                 "type": "object",
                 "properties": {
-                    "end_date": {"type": "string", "description": "截止日期 YYYY-MM-DD"},
+                    "end_date": {"type": "string", "description": "截止日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                     "days": {"type": "integer", "description": "天数,默认10,范围1-60", "default": 10},
                 },
                 "required": ["end_date"],
@@ -240,36 +276,36 @@ def get_stock_specs() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="get_sector_rotation",
-            description="拉取当日板块轮动表现（按涨跌幅排序）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取当日板块轮动表现（按涨跌幅排序）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
         ),
         ToolSpec(
             name="get_sector_heat_distribution",
-            description="拉取板块涨停时段分布（用于分析板块高潮/退潮节奏）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取板块涨停时段分布（用于分析板块高潮/退潮节奏）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
         ),
         ToolSpec(
             name="get_resistant_sectors",
-            description="拉取抗跌板块（大盘下跌时相对抗跌的板块）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取抗跌板块（大盘下跌时相对抗跌的板块）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
@@ -288,12 +324,12 @@ def get_stock_specs() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="get_sector_divergence",
-            description="拉取板块高潮后分歧数据。参数 trade_date=YYYY-MM-DD。",
+            description="拉取板块高潮后分歧数据。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
@@ -331,36 +367,36 @@ def get_stock_specs() -> list[ToolSpec]:
         ),
         ToolSpec(
             name="get_signal_stocks",
-            description="拉取今日新信号股（系统检测到的潜在机会）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取今日新信号股（系统检测到的潜在机会）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
         ),
         ToolSpec(
             name="get_limit_stocks",
-            description="拉取当日涨停股池（含连板数、炸板、首封/末封时间、有效涨停判定）。参数 trade_date=YYYY-MM-DD。",
+            description="拉取当日涨停股池（含连板数、炸板、首封/末封时间、有效涨停判定）。参数 trade_date=YYYYMMDD。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "trade_date": {"type": "string", "description": "交易日期 YYYY-MM-DD"},
+                    "trade_date": {"type": "string", "description": "交易日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                 },
                 "required": ["trade_date"],
             },
         ),
         ToolSpec(
             name="get_correlation",
-            description="庄股/抱团股识别（周复盘专用）。参数 end_date=YYYY-MM-DD, days=回看天数(默认5)。",
+            description="庄股/抱团股识别（周复盘专用）。参数 end_date=YYYYMMDD, days=回看天数(默认5)。",
             category="Stock",
             parameters={
                 "type": "object",
                 "properties": {
-                    "end_date": {"type": "string", "description": "截止日期 YYYY-MM-DD"},
+                    "end_date": {"type": "string", "description": "截止日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                     "days": {"type": "integer", "description": "回看天数,默认5,范围1-30", "default": 5},
                 },
                 "required": ["end_date"],
