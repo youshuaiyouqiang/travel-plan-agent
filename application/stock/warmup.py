@@ -108,6 +108,65 @@ async def find_missing_limit_dates(
     return missing
 
 
+async def find_missing_stock_data_dates(
+    data_source: StockDataSource,
+    *,
+    window_days: int,
+    today: date | None = None,
+    trading_calendar: set[str] | None = None,
+) -> list[str]:
+    """查找缺失股票数据回填的候选交易日（5 张表任一缺失即回填）。
+
+    Task 16: 替代 ``find_missing_limit_dates`` 单一表判定。覆盖 5 张表:
+    - limit_stocks_daily
+    - market_index_daily
+    - emotion_daily
+    - sector_daily
+    - stock_daily
+
+    任一张表缺失则该日进 missing 列表（union over 5 tables）。
+
+    Args:
+        data_source: 满足 ``StockDataSource`` 协议的数据源（需实现 5 个
+            ``has_*`` 方法）。
+        window_days: 回填窗口（自然日）；会被 clamp 到 [1, 60]。
+        today: 测试注入用；``None`` 时取 ``date.today()``。
+        trading_calendar: 可选交易日历（YYYYMMDD 集合）；``None`` 时仅按
+            weekday 过滤。
+
+    Returns:
+        YYYYMMDD 字符串列表，按"由近及远"排序。
+    """
+    effective_today = today or date.today()
+    candidates = _candidate_dates(effective_today, window_days)
+
+    # 周末过滤
+    candidates = [d for d in candidates if _is_weekday(d)]
+
+    # 交易日历过滤（可选）
+    if trading_calendar:
+        candidates = [
+            d for d in candidates if _format_yyyymmdd(d) in trading_calendar
+        ]
+
+    # 5 张表任一缺失即回填
+    has_checks = (
+        data_source.has_limit_stocks,
+        data_source.has_market_index,
+        data_source.has_emotion_daily,
+        data_source.has_sector_daily,
+        data_source.has_stock_daily,
+    )
+    missing: list[str] = []
+    for d in candidates:
+        trade_date = _format_yyyymmdd(d)
+        for has_fn in has_checks:
+            if not await has_fn(trade_date):
+                missing.append(trade_date)
+                break
+    return missing
+
+
 async def _load_calendar_lazy() -> set[str]:
     """Lazy load 交易日历：调用 scheduler 已有实现；失败时返回空集合。
 
@@ -138,9 +197,17 @@ async def run_stock_cache_warmup(
 
     Returns:
         成功回填的日期数（fetcher 单日失败不计入）。pipeline 未注册时返回 0。
+
+    Task 16 revision: use ``find_missing_stock_data_dates``; refill if
+    ANY of 5 tables is missing (previous ``find_missing_limit_dates``
+    only checked limit_stocks, so the other 4 tables were never
+    backfilled).
     """
     # Lazy load 交易日历；失败 / 仍空 → 回退 weekday 过滤
-    calendar = await _load_calendar_lazy()
+    try:
+        calendar = await _load_calendar_lazy()
+    except Exception:  # noqa: BLE001 — 边界 catch-all
+        calendar = None
     if not calendar:
         # 明确给调用方一个信号：calendar 加载失败时的回退路径
         logger.info(
@@ -148,11 +215,12 @@ async def run_stock_cache_warmup(
             "falling back to weekday-only filtering"
         )
 
-    missing = await find_missing_limit_dates(
+    # Task 16: 5 张表任一缺失即回填（替代只查 limit_stocks）
+    missing = await find_missing_stock_data_dates(
         data_source,
         window_days=window_days,
         today=today,
-        trading_calendar=calendar or None,
+        trading_calendar=calendar,
     )
 
     if not missing:

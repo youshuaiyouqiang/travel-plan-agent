@@ -173,13 +173,15 @@ class TestWarmupEndToEnd:
 
     @pytest.mark.asyncio
     async def test_warmup_skips_already_populated_dates(self, tmp_db):
-        """已有部分数据：warmup 只回填缺的日期。"""
+        """Task 16: 5 张表任一缺失即回填。仅 limit_stocks 7-29 预填
+        → 其它 4 张表 7-29 仍空 → 7-29 也进 missing → 回填 3 天。
+        """
         from infrastructure.persistence.connection import get_connection
 
         conn = get_connection()
         repo = CacheRepository(conn=conn)
         ds = SqliteStockDataSource(conn=conn)
-        # 预先填充 7-29
+        # 预先填充 7-29 (只 limit_stocks)
         repo.upsert_limit_stocks(
             trade_date="20260729",
             stocks=[
@@ -203,8 +205,8 @@ class TestWarmupEndToEnd:
             n = await warmup_mod.run_stock_cache_warmup(
                 ds, window_days=3, today=date(2026, 7, 29)
             )
-            # 7-29 已有 → 只回填 7-28, 7-27
-            assert n == 2
-            assert pipe.calls == ["20260728", "20260727"]
+            # Task 16: 其它 4 张表空 → 7-29 也进 missing → 回填 3 天
+            assert n == 3
+            assert pipe.calls == ["20260729", "20260728", "20260727"]
         finally:
             pipeline_mod.set_default_pipeline(None)

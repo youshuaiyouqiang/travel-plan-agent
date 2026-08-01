@@ -30,15 +30,50 @@ from application.stock import pipeline as pipeline_mod
 
 
 class FakeStockDataSource:
-    """最小 StockDataSource fake：只实现 has_limit_stocks。"""
+    """最小 StockDataSource fake：5 张表分别可配（Task 10 + 16 兼容）。
 
-    def __init__(self, populated_dates: set[str] | None = None) -> None:
+    Task 16 修订：扩展为 5 张表 has_* 方法，参数从单 populated_dates
+    改为 limit_stocks / market_index / emotion_daily /
+    sector_daily / stock_daily 五个 set；老测试仍可通过 ``populated_dates``
+    向后兼容（仅填 limit_stocks）。
+    """
+
+    def __init__(
+        self,
+        populated_dates: set[str] | None = None,
+        *,
+        market_index: set[str] | None = None,
+        emotion_daily: set[str] | None = None,
+        sector_daily: set[str] | None = None,
+        stock_daily: set[str] | None = None,
+    ) -> None:
         self._populated: set[str] = set(populated_dates or set())
+        self._market: set[str] = set(market_index or set())
+        self._emotion: set[str] = set(emotion_daily or set())
+        self._sector: set[str] = set(sector_daily or set())
+        self._stock: set[str] = set(stock_daily or set())
         self.calls: list[str] = []
 
     async def has_limit_stocks(self, trade_date: str) -> bool:
         self.calls.append(trade_date)
         return trade_date in self._populated
+
+    async def has_market_index(self, trade_date: str) -> bool:
+        return trade_date in self._market
+
+    async def has_emotion_daily(self, trade_date: str) -> bool:
+        return trade_date in self._emotion
+
+    async def has_sector_daily(self, trade_date: str) -> bool:
+        return trade_date in self._sector
+
+    async def has_stock_daily(self, trade_date: str) -> bool:
+        return trade_date in self._stock
+
+
+async def _async_true(_td: str) -> bool:
+    """Helper: 把 lambda 变 async 用于覆盖 has_* 默认实现。"""
+    return True
 
 
 def _make_pipeline_result(phase: str = "morning", written: int = 5) -> Any:
@@ -231,12 +266,19 @@ class TestRunStockCacheWarmupNoMissing:
     async def test_skips_when_all_candidates_have_data(
         self, fake_pipeline: FakePipeline
     ):
+        """Task 16: 5 张表都齐才返 0。"""
         all_dates = {
             "20260715", "20260716", "20260717",
             "20260720", "20260721", "20260722", "20260723", "20260724",
             "20260727", "20260728", "20260729",
         }
-        ds = FakeStockDataSource(populated_dates=all_dates)
+        ds = FakeStockDataSource(
+            populated_dates=all_dates,
+            market_index=all_dates,
+            emotion_daily=all_dates,
+            sector_daily=all_dates,
+            stock_daily=all_dates,
+        )
         result = await warmup_mod.run_stock_cache_warmup(
             ds, window_days=15, today=FIXED_TODAY
         )
@@ -281,13 +323,21 @@ class TestRunStockCacheWarmupLazyCalendar:
     ):
         """未传 trading_calendar 时，warmup 内部调用 _load_trading_calendar 一次。"""
         calendar = {"20260729", "20260728"}  # 只这两天
+        all_dates = calendar
         from application import scheduler
 
         async def _fake_load() -> set[str]:
             return set(calendar)
 
         monkeypatch.setattr(scheduler, "_load_trading_calendar", _fake_load)
-        ds = FakeStockDataSource(populated_dates=set())
+        # 5 张表都填这 2 天（避免其他 4 张空被判定为缺）
+        ds = FakeStockDataSource(
+            populated_dates=set(),  # 全空：5 张表都缺
+            market_index=set(),
+            emotion_daily=set(),
+            sector_daily=set(),
+            stock_daily=set(),
+        )
         result = await warmup_mod.run_stock_cache_warmup(
             ds, window_days=15, today=FIXED_TODAY
         )
