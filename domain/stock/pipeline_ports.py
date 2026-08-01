@@ -48,3 +48,6 @@ class AkshareClientPort(Protocol):
     """akshare 客户端端口——fetcher 需要 akshare 时通过此端口取数据。"""
 
     async def get_limit_stocks(self, trade_date: str) -> list[Any]: ...
+
+    # Task 13：大盘指数 fetcher 通过此端口拉 3 个指数
+    async def get_market_index(self, trade_date: str) -> list[Any]: ...

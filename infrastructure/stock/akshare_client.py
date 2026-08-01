@@ -22,7 +22,7 @@ import akshare as ak
 import pandas as pd
 import requests
 
-from domain.stock.models import LimitStock
+from domain.stock.models import LimitStock, MarketIndexRow
 from domain.stock.ports import StockDataSource
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,100 @@ def fetch_zt_pool(trade_date: str) -> list[LimitStock]:
     return result
 
 
+# Task 13：大盘指数 3 个代码（上证/深证/创业板）
+MARKET_INDEX_CODES: tuple[str, ...] = (
+    "sh000001",  # 上证指数
+    "sz399001",  # 深证成指
+    "sz399006",  # 创业板指
+)
+
+
+def _to_yyyymmdd(date_str: str) -> str | None:
+    """'YYYY-MM-DD' 或 'YYYY/MM/DD' → 'YYYYMMDD'；非法返回 None。"""
+    if not date_str:
+        return None
+    s = str(date_str).strip().replace("-", "").replace("/", "")
+    return s if len(s) == 8 and s.isdigit() else None
+
+
+def fetch_market_index(trade_date: str) -> list[MarketIndexRow]:
+    """抓取 3 个大盘指数（上证/深证/创业板）的指定日数据。
+
+    akshare 函数：``ak.stock_zh_index_daily(symbol=...)``，返回 DataFrame
+    （含 date/open/close/high/low/volume 等列）。对每个指数分别拉一次后
+    过滤到 ``trade_date`` 那天。
+
+    失败时抛 AkshareFetchError，保留原始异常链（__cause__）。
+    """
+    target = _to_yyyymmdd(trade_date)
+    if target is None:
+        raise AkshareFetchError(
+            f"fetch_market_index invalid trade_date={trade_date!r}"
+        )
+
+    rows: list[MarketIndexRow] = []
+    for code in MARKET_INDEX_CODES:
+        try:
+            df: pd.DataFrame = ak.stock_zh_index_daily(symbol=code)
+        except _AKSHARE_EXC as e:
+            raise AkshareFetchError(
+                f"fetch_market_index failed for symbol={code} date={trade_date}"
+            ) from e
+
+        if df is None or len(df) == 0:
+            logger.warning(
+                "fetch_market_index: empty df for symbol=%s date=%s",
+                code, trade_date,
+            )
+            continue
+
+        # 找到 trade_date 那一行
+        # akshare 返回的 date 列是 Timestamp 或 'YYYY-MM-DD' 字符串
+        match = df[df["date"].astype(str).str.replace("-", "").str.replace("/", "") == target]
+        if len(match) == 0:
+            logger.warning(
+                "fetch_market_index: no row for symbol=%s date=%s",
+                code, trade_date,
+            )
+            continue
+
+        r = match.iloc[0]
+        try:
+            row = MarketIndexRow(
+                trade_date=target,
+                index_code=code,
+                open=_to_float(r.get("open")),
+                close=_to_float(r.get("close")),
+                high=_to_float(r.get("high")),
+                low=_to_float(r.get("low")),
+                volume=_to_float(r.get("volume")),
+                pct_chg=_to_float(r.get("pct_chg")),
+            )
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "fetch_market_index: parse failed symbol=%s date=%s err=%s",
+                code, trade_date, e,
+            )
+            continue
+        rows.append(row)
+
+    return rows
+
+
+def _to_float(v: Any) -> float | None:
+    """安全地把值转 float；NaN/None/空字符串 → None。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    # NaN / inf
+    if f != f or f in (float("inf"), float("-inf")):
+        return None
+    return f
+
+
 class AkshareClient:
     """akshare 数据源客户端——StockDataSource 协议的 akshare 实现。
 
@@ -113,6 +207,15 @@ class AkshareClient:
     async def get_limit_stocks(self, trade_date: str) -> list[LimitStock]:
         """从 akshare 抓取涨停股池。"""
         return fetch_zt_pool(trade_date)
+
+    # ── Task 13：大盘指数 fetcher ──
+    async def get_market_index(self, trade_date: str) -> list[MarketIndexRow]:
+        """从 akshare 抓取 3 个指数（上证/深证/创业板）的指定日数据。
+
+        Returns:
+            MarketIndexRow 列表（通常 3 条）。akshare 失败/空数据时返回 []。
+        """
+        return fetch_market_index(trade_date)
 
     # ── Task 3+ 补全的占位方法（NotImplementedError 而非 ...） ──
     async def get_market_snapshot(self, trade_date: str) -> Any:  # type: ignore[override]

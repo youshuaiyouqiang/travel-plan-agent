@@ -57,6 +57,24 @@ class MarketSnapshot(BaseModel):
     ma20_status: str | None  # "above" / "below" / None
 
 
+class MarketIndexRow(BaseModel):
+    """大盘指数单日行（上证/深证/创业板之一）。
+
+    Task 13：market_index_fetcher 写入 market_index_daily 表的单条记录。
+    字段与 v021 迁移 market_index_daily 表一致。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    trade_date: str
+    index_code: str  # sh000001 / sz399001 / sz399006
+    open: float | None
+    close: float | None
+    high: float | None
+    low: float | None
+    volume: float | None
+    pct_chg: float | None
+
+
 class StockDaily(BaseModel):
     """个股日线 OHLCV。"""
 

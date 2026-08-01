@@ -20,7 +20,12 @@ import sqlite3
 import uuid
 from typing import Any
 
-from domain.stock.models import LimitStock, ReviewReport, WatchlistStock
+from domain.stock.models import (
+    LimitStock,
+    MarketIndexRow,
+    ReviewReport,
+    WatchlistStock,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +141,73 @@ class CacheRepository:
                 last_limit_time=row["last_limit_time"],
                 open_count=row["open_count"],
                 is_valid_limit_up=bool(row["is_valid_limit_up"]),
+            )
+            for row in rows
+        ]
+
+    # ── market_index_daily ─────────────────────────────────
+    # Task 13：大盘指数 fetcher 写路径
+
+    def upsert_market_index(
+        self, trade_date: str, indices: list[MarketIndexRow]
+    ) -> None:
+        """批量 upsert 大盘指数（上证/深证/创业板）单日行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            indices: MarketIndexRow DTO 列表。
+
+        Raises:
+            ValueError: 当 market_index_daily 不在白名单时（防御性校验）。
+        """
+        _validate_table("market_index_daily")
+        # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
+        sql = (
+            "INSERT OR REPLACE INTO market_index_daily "
+            "(trade_date, index_code, open, close, high, low, volume, pct_chg) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        for r in indices:
+            self._conn.execute(
+                sql,
+                (
+                    trade_date,
+                    r.index_code,
+                    r.open,
+                    r.close,
+                    r.high,
+                    r.low,
+                    r.volume,
+                    r.pct_chg,
+                ),
+            )
+        self._conn.commit()
+
+    def select_market_index(self, trade_date: str) -> list[MarketIndexRow]:
+        """查询某日的大盘指数行（上证/深证/创业板）。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            MarketIndexRow DTO 列表；无数据时为空列表。
+        """
+        _validate_table("market_index_daily")
+        rows = self._conn.execute(
+            "SELECT trade_date, index_code, open, close, high, low, "
+            "volume, pct_chg FROM market_index_daily WHERE trade_date = ?",
+            (trade_date,),
+        ).fetchall()
+        return [
+            MarketIndexRow(
+                trade_date=row["trade_date"],
+                index_code=row["index_code"],
+                open=row["open"],
+                close=row["close"],
+                high=row["high"],
+                low=row["low"],
+                volume=row["volume"],
+                pct_chg=row["pct_chg"],
             )
             for row in rows
         ]

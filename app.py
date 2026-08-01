@@ -410,9 +410,18 @@ def build_orchestrator() -> AppContainer:
     # application 层仅持协议（AGENTS.md §8.1 / §8.3 零容忍）
     akshare_client: Any = AkshareClient()
     limit_fetcher_adapter: Any = LimitFetcherAdapter(client=akshare_client)
+    # Task 13：大盘指数 fetcher 适配器（与 limit_fetcher_adapter 同构）
+    from infrastructure.stock.market_index_fetcher_adapter import (
+        MarketIndexFetcherAdapter,
+    )
+
+    market_index_fetcher_adapter: Any = MarketIndexFetcherAdapter()
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
-        fetchers=[limit_fetcher_adapter],
+        fetchers=[
+            limit_fetcher_adapter,
+            market_index_fetcher_adapter,
+        ],
         correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
     )
     # 接缝 4：注册为进程内默认 pipeline，scheduler 函数内惰性取用

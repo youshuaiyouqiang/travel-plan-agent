@@ -329,6 +329,23 @@ class SqliteStockDataSource:
         ).fetchone()
         return row is not None
 
+    # Task 13：大盘指数数据回填的"是否已有数据"判定
+    async def has_market_index(self, trade_date: str) -> bool:
+        """判定指定交易日的 market_index_daily 表是否有任何行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            True 当且仅当 market_index_daily 中存在 trade_date 的任意行。
+        """
+        _validate_table("market_index_daily")
+        row = self._conn.execute(
+            "SELECT 1 FROM market_index_daily WHERE trade_date = ? LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        return row is not None
+
     # ── 内部辅助 ────────────────────────────────────────
 
     @staticmethod
