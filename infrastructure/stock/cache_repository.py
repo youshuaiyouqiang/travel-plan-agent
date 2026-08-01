@@ -25,6 +25,7 @@ from domain.stock.models import (
     LimitStock,
     MarketIndexRow,
     ReviewReport,
+    SectorDaily,
     WatchlistStock,
 )
 
@@ -292,6 +293,72 @@ class CacheRepository:
                 phase=row["phase"],
                 phase_confidence=row["phase_confidence"],
                 phase_reason=row["phase_reason"],
+            )
+            for row in rows
+        ]
+
+    # ── sector_daily ──────────────────────────────────────
+    # Task 14：板块日线 fetcher 写路径
+
+    def upsert_sector_daily(
+        self, trade_date: str, rows: list[SectorDaily]
+    ) -> None:
+        """批量 upsert 板块日线（一天多行，每板块一行）。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            rows: SectorDaily DTO 列表（约 100+ 个行业板块）。
+
+        Raises:
+            ValueError: 当 sector_daily 不在白名单时（防御性校验）。
+        """
+        _validate_table("sector_daily")
+        # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
+        sql = (
+            "INSERT OR REPLACE INTO sector_daily ("
+            "trade_date, sector_code, sector_name, pct_chg, "
+            "leading_stock_codes, limit_up_count"
+            ") VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        for r in rows:
+            self._conn.execute(
+                sql,
+                (
+                    trade_date,
+                    r.sector_code,
+                    r.sector_name,
+                    r.pct_chg,
+                    json.dumps(r.leading_stock_codes, ensure_ascii=False),
+                    r.limit_up_count,
+                ),
+            )
+        self._conn.commit()
+
+    def select_sector_daily(self, trade_date: str) -> list[SectorDaily]:
+        """查询某日的所有板块日线行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            SectorDaily DTO 列表；无数据时为空列表。
+        """
+        _validate_table("sector_daily")
+        rows = self._conn.execute(
+            "SELECT trade_date, sector_code, sector_name, pct_chg, "
+            "leading_stock_codes, limit_up_count "
+            "FROM sector_daily WHERE trade_date = ? "
+            "ORDER BY pct_chg DESC",
+            (trade_date,),
+        ).fetchall()
+        return [
+            SectorDaily(
+                trade_date=row["trade_date"],
+                sector_code=row["sector_code"],
+                sector_name=row["sector_name"],
+                pct_chg=row["pct_chg"],
+                leading_stock_codes=json.loads(row["leading_stock_codes"] or "[]"),
+                limit_up_count=row["limit_up_count"],
             )
             for row in rows
         ]

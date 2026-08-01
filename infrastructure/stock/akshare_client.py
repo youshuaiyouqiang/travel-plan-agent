@@ -22,7 +22,12 @@ import akshare as ak
 import pandas as pd
 import requests
 
-from domain.stock.models import EmotionRawData, LimitStock, MarketIndexRow
+from domain.stock.models import (
+    EmotionRawData,
+    LimitStock,
+    MarketIndexRow,
+    SectorDaily,
+)
 from domain.stock.ports import StockDataSource
 
 logger = logging.getLogger(__name__)
@@ -281,6 +286,65 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
     )
 
 
+def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
+    """抓取所有板块的单日涨跌幅（约 100+ 个行业板块）。
+
+    akshare 函数：``ak.stock_board_industry_name_em()``，返回 DataFrame
+    包含列：``板块名称``、``板块代码``、``涨跌幅``、``领涨股``、``领涨股代码`` 等。
+    该接口为**全量截面**（不带日期参数），fetcher 写入时用调用方传入
+    的 ``trade_date`` 作为统一日期标签（与 akshare 实际返回的当天数据对齐）。
+
+    Returns:
+        SectorDaily 列表。akshare 失败/空数据时返回 []。
+    """
+    target = _to_yyyymmdd(trade_date)
+    if target is None:
+        raise AkshareFetchError(
+            f"fetch_sector_daily invalid trade_date={trade_date!r}"
+        )
+
+    try:
+        df: pd.DataFrame = ak.stock_board_industry_name_em()
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            f"fetch_sector_daily stock_board_industry_name_em failed date={trade_date}"
+        ) from e
+
+    if df is None or len(df) == 0:
+        logger.warning("fetch_sector_daily: empty df date=%s", trade_date)
+        return []
+
+    rows: list[SectorDaily] = []
+    for _, r in df.iterrows():
+        name = r.get("板块名称")
+        code = r.get("板块代码")
+        # 缺核心字段 → 跳过
+        if not name or not code:
+            continue
+        leader_code = r.get("领涨股代码")
+        leading = [leader_code] if leader_code else []
+        try:
+            rows.append(
+                SectorDaily(
+                    trade_date=target,
+                    sector_code=str(code),
+                    sector_name=str(name),
+                    pct_chg=_to_float(r.get("涨跌幅")),
+                    leading_stock_codes=leading,
+                    # limit_up_count 在 Task 14 阶段由 fetcher 填 0；
+                    # 后续可由板块龙头 fetcher 二次加工（避免 N+1 akshare 调用）
+                    limit_up_count=0,
+                )
+            )
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "fetch_sector_daily: parse failed name=%s code=%s err=%s",
+                name, code, e,
+            )
+            continue
+    return rows
+
+
 class AkshareClient:
     """akshare 数据源客户端——StockDataSource 协议的 akshare 实现。
 
@@ -311,6 +375,15 @@ class AkshareClient:
             由 emotion_daily_fetcher.run 捕获并 log warning 返 0。
         """
         return fetch_emotion_daily(trade_date)
+
+    # ── Task 14：板块日线 fetcher ──
+    async def fetch_sector_daily(self, trade_date: str) -> list[SectorDaily]:
+        """从 akshare 抓取所有行业板块当日涨跌幅。
+
+        Returns:
+            SectorDaily 列表。akshare 失败时抛 AkshareFetchError。
+        """
+        return fetch_sector_daily(trade_date)
 
     # ── Task 3+ 补全的占位方法（NotImplementedError 而非 ...） ──
     async def get_market_snapshot(self, trade_date: str) -> Any:  # type: ignore[override]

@@ -22,6 +22,23 @@ class CacheWritePort(Protocol):
         self, *, trade_date: str, stocks: list[Any]
     ) -> None: ...
 
+    # Task 13：大盘指数 fetcher 写路径（market_index_daily）
+    def upsert_market_index(
+        self, *, trade_date: str, indices: list[Any]
+    ) -> None: ...
+
+    # Task 12：情绪指标 fetcher 写路径（emotion_daily）
+    # fetcher 一次写入一天一行（DTO 列表通常 1 个元素；扩展性预留多 segment）
+    def upsert_emotion_daily(
+        self, *, trade_date: str, rows: list[Any]
+    ) -> None: ...
+
+    # Task 14：板块日线 fetcher 写路径（sector_daily）
+    # fetcher 一次写入一天多行（约 100+ 个板块，每板块一行）
+    def upsert_sector_daily(
+        self, *, trade_date: str, rows: list[Any]
+    ) -> None: ...
+
 
 class Fetcher(Protocol):
     """Fetcher 端口——单次抓取+写入的执行单元。
@@ -55,3 +72,7 @@ class AkshareClientPort(Protocol):
     # Task 12：情绪指标 fetcher 通过此端口拉市场活动统计
     # 返回的 DTO 由调用方（emotion_daily_fetcher）解析为 emotion_daily 字段
     async def fetch_emotion_daily(self, trade_date: str) -> Any: ...
+
+    # Task 14：板块日线 fetcher 通过此端口拉所有板块涨跌幅
+    # 返回的 list[SectorDaily] 由调用方（sector_daily_fetcher）直接写入 cache
+    async def fetch_sector_daily(self, trade_date: str) -> list[Any]: ...

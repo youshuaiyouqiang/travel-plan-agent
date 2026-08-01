@@ -363,6 +363,23 @@ class SqliteStockDataSource:
         ).fetchone()
         return row is not None
 
+    # Task 14：板块日线数据回填的"是否已有数据"判定
+    async def has_sector_daily(self, trade_date: str) -> bool:
+        """判定指定交易日的 sector_daily 表是否有任何行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            True 当且仅当 sector_daily 中存在 trade_date 的任意行。
+        """
+        _validate_table("sector_daily")
+        row = self._conn.execute(
+            "SELECT 1 FROM sector_daily WHERE trade_date = ? LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        return row is not None
+
     # Task 12：取 trade_date 之前最近一个交易日的 emotion_daily
     async def get_emotion_indicators_before(
         self, trade_date: str
