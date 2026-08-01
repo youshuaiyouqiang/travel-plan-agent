@@ -1,25 +1,35 @@
 # 云合 API 接口文档（前端开发参考）
 
-> 本文档专为前端开发者编写，包含所有 60 个接口的请求/响应格式、TypeScript 类型定义、代码示例和常见错误处理。
+> 本文档专为前端开发者编写，包含全部 **79 个**接口的请求 / 响应格式、TypeScript 类型定义、代码示例和错误处理。
+>
+> 业务基线：[docs/superpowers/specs/2026-07-16-product-and-news-agent-design.md](../superpowers/specs/2026-07-16-product-and-news-agent-design.md) ·
+> 开发规范：[AGENTS.md](../../AGENTS.md) ·
+> 模块实施计划：[docs/superpowers/plans/](../superpowers/plans/)
 
-## 接口总览（60 个）
+## 接口总览（79 个）
 
-- **认证**：`POST /api/auth/register` · `POST /api/auth/login`
-- **对话**：`POST /api/chat` · `POST /api/chat/stream`（SSE 流式）
-- **会话**：`GET /api/sessions` · `POST /api/sessions` · `DELETE /api/sessions/{session_id}` · `GET /api/sessions/{session_id}/messages`
-- **方案确认**：`POST /api/session/{session_id}/confirm-plan` · `POST /api/session/{session_id}/revoke-confirm` · `GET /api/session/{session_id}/confirm-status`
-- **智能体**：`GET /api/agents` · `POST /api/agents/custom` · `GET/PUT/DELETE /api/agents/custom/{agent_id}` · `POST /api/agents/custom/{agent_id}/clone`
-- **技能**：`GET /api/skills` · `GET /api/skills/{skill_name}`
-- **MCP**：`GET /api/mcp`（等价 `/api/mcp/servers`）· `GET /api/mcp/{server_id}` · `GET /api/mcp/{server_id}/tools`
-- **行程**：`POST/GET /api/itineraries` · `POST /api/itineraries/compare` · `GET/PUT/DELETE /api/itineraries/{itinerary_id}` · `PATCH/DELETE /api/itineraries/{itinerary_id}/activities/{activity_id}` · `PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/cost` · `GET /api/itineraries/{itinerary_id}/expense-summary` · `POST/GET/DELETE /api/itineraries/{itinerary_id}/shares[/{token}]` · `POST /api/itineraries/{itinerary_id}/share`
-- **相册**：`POST/GET/DELETE/PATCH /api/itineraries/{itinerary_id}/photos[/{photo_id}]` · `POST /api/itineraries/{itinerary_id}/photos/{photo_id}/cover` · `GET /api/itineraries/{itinerary_id}/photos/map` · `POST /api/itineraries/{itinerary_id}/travelogue` · `GET /api/album/{file_path}`
-- **地理编码**：`POST /api/geocode` · `POST /api/geocode/intl`
-- **记忆**：`GET /api/memories` · `DELETE /api/memories/{memory_type}/{memory_id}`
-- **新闻/热门**：`GET /api/news/trending`（公开）· `GET/POST/DELETE /api/news/favorites[/{favorite_id}]`
-- **反馈**：`POST /api/feedback`
-- **系统**：`GET /health` · `GET /health/metrics`
-- **分享**：`GET /api/share/{token}`（公开）
-- **调试（开发环境）**：`GET /debug/trace/{session_id}` · `GET /debug/session/{session_id}` · `GET /debug/mcp` · `GET /debug/mcp/select` · `GET /debug/task/{session_id}`
+| 模块 | 前缀 | 端点数 | 鉴权 |
+|------|------|--------|------|
+| 认证 | `/api/v1/auth` | 3 | 注册 / 登录公开；`/me` Cookie |
+| 对话（SSE） | `/api/v1/chat` | 2 | Cookie |
+| 会话 | `/api/v1/sessions` | 5 | Cookie |
+| 方案确认 | `/api/v1/session` | 3 | Cookie |
+| 智能体 | `/api/v1/agents` | 6 | Cookie |
+| 技能 | `/api/v1/skills` | 2 | Cookie |
+| MCP | `/api/v1/mcp` | 3 | Cookie（`/` 与 `/servers` 同 handler）|
+| 行程 | `/api/v1/itineraries` | 9 | Cookie |
+| 旅行草稿 / 存档 | `/api/v1/travel` | 8 | Cookie |
+| 记忆 | `/api/v1/memories` | 2 | Cookie |
+| 新闻 | `/api/v1/news` | 6 | Cookie（`/trending` 公开）|
+| 新闻来源治理 | `/api/v1/admin/news` | 5 | 管理员 Cookie |
+| 股票复盘 | `/api/v1/stock` | 14 | Cookie |
+| 地理编码 | `/api/v1/geocode` | 2 | Cookie |
+| 分享 | `/api/v1/share` | 1 | 公开 |
+| 反馈 | `/api/v1/feedback` | 1 | Cookie |
+| 健康检查 / 指标 | `/api/v1/health` | 2 | 公开 |
+| 调试（开发环境） | `/api/v1/debug` | 5 | Cookie |
+
+> **接口前缀**：`/api/v1` 与 `/api` 双向挂载，等价；前端可任选其一。**推荐 `/api/v1`**。
 
 ---
 
@@ -30,112 +40,110 @@
 | 基础地址 | `http://localhost:8000`（开发环境） |
 | Content-Type | `application/json`（除文件上传外） |
 | 字符编码 | UTF-8 |
-| 单文件上传 | `multipart/form-data` |
-
-> **接口前缀**：所有接口同时挂载在 `/api` 与 `/api/v1` 两个前缀下，二者完全等价（例如 `POST /api/chat` 与 `POST /api/v1/chat` 均可访问），前端使用任一前缀均可。
-
-### 项目启动
-
-```bash
-# 后端（端口 8000）
-uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
-
-# 前端（端口 5173，Vite 自动代理 /api → localhost:8000）
-cd frontend && npm run dev
-```
+| 项目启动 | 见 [README.md](../../README.md#快速开始) |
 
 ---
 
-## 鉴权机制
+## 鉴权机制（两套模式）
 
-### Token 获取
+### 模式 A：浏览器（Cookie + CSRF，**主路径**）
 
-用户注册或登录成功后，响应中返回 `token` 字段。前端应将其存入 `localStorage`：
+> 详见 [AGENTS.md](../../AGENTS.md) §4。**所有浏览器端代码必须走此模式**。
 
-```typescript
-// 登录成功后
-const { token, user_id, username } = await login(username, password);
-localStorage.setItem('yunhe_token', token);
-localStorage.setItem('yunhe_user_id', user_id);
-```
+登录 / 注册成功后，服务器同时下发两个 cookie：
 
-### Token 使用
+| Cookie | HttpOnly | 用途 |
+|--------|----------|------|
+| `auth_token` | ✅ | 长期认证凭据，浏览器自动随请求发送；JS 不可读 |
+| `csrf_token` | ❌ | 独立随机值，JS 可读；与 `auth_token` **不同值** |
 
-**除了标注"公开"的接口外，所有请求必须在 Header 中携带 Token：**
+不安全方法（POST/PUT/PATCH/DELETE）必须额外携带 `X-CSRF-Token` header，值等于 `csrf_token` cookie（double-submit 模式）。
 
-```typescript
-// 方式一：axios 全局拦截器（推荐）
-axios.interceptors.request.use(config => {
-  const token = localStorage.getItem('yunhe_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// 方式二：fetch 手动携带
-fetch('/api/sessions', {
-  headers: {
-    'Authorization': `Bearer ${localStorage.getItem('yunhe_token')}`,
-    'Content-Type': 'application/json',
-  },
-});
-```
-
-### Token 过期处理
-
-401 响应表示 Token 无效或过期，前端应统一处理跳转登录页：
+**统一客户端**（`frontend/src/features/auth/client.ts`）：
 
 ```typescript
-axios.interceptors.response.use(
-  response => response,
-  error => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('yunhe_token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
+import { AuthClient } from '@/features/auth/client'
+
+const http = new AuthClient()
+
+// GET：自动 credentials: 'include'
+const res = await http.request('/api/v1/sessions')
+
+// POST/PUT/PATCH/DELETE：自动从 csrf_token cookie 读取并注入 X-CSRF-Token
+const res = await http.request('/api/v1/itineraries', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ title: '东京5日游', destination: '东京' }),
+})
+
+// 统一 401 处理
+if (res.status === 401) {
+  // 调用方自行决定：清除本地状态 / 跳转登录
+  await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' })
+  window.location.href = '/login'
+}
 ```
 
-### 公开接口（无需 Token）
+**禁止**：
 
-以下路径无需携带 Token：
+- ❌ 持久化 `auth_token` 到 localStorage / sessionStorage
+- ❌ 自建 axios / fetch 实例直接调 API（绕过 CSRF）
+- ❌ 尝试读取 `auth_token` cookie（HttpOnly，JS 拿不到）
+
+### 模式 B：非浏览器（Bearer Token，**仅脚本 / CLI 场景**）
+
+> 出于向后兼容，非浏览器客户端（脚本 / CLI / 服务端）仍可使用 Bearer Token。
+> **浏览器主路径已移除 Bearer**（[AGENTS.md](../../AGENTS.md) §4）。
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/sessions
+```
+
+> ⚠ 新增非浏览器 Bearer 凭据时，必须有专用签发 / 撤销 / 审计 / 测试方案，**不能复用登录响应**。
+
+### 公开接口（无需鉴权）
 
 | 路径 | 说明 |
 |------|------|
-| `POST /api/auth/register` | 用户注册 |
-| `POST /api/auth/login` | 用户登录 |
-| `GET /api/news/trending` | 热门推荐 |
-| `GET /api/shared/{token}` | 查看分享行程 |
-| `GET /health` | 健康检查 |
-| `GET /metrics` | Prometheus 指标 |
-| `/debug/*` | 调试接口（开发环境） |
+| `POST /api/v1/auth/register` | 用户注册 |
+| `POST /api/v1/auth/login` | 用户登录 |
+| `GET /api/v1/news/trending` | 旅行热门 |
+| `GET /api/v1/share/{token}` | 查看分享行程 |
+| `GET /api/v1/health` | 健康检查 |
+| `GET /api/v1/health/metrics` | Prometheus 指标 |
+| `GET /metrics` | Prometheus 指标（兼容路径） |
 
 ---
 
 ## 通用 TypeScript 类型
 
 ```typescript
-// ===== 通用类型 =====
-
-/** 用户信息 */
-interface UserInfo {
-  user_id: string;
-  username: string;
-  token: string;
-}
-
-/** 错误响应（所有 4xx/5xx 统一格式） */
-interface ErrorResponse {
+// ===== 通用响应 =====
+interface ApiError {
   detail: string;
+  code?: string;       // 业务错误码（如 CORRELATION_WEEKLY_ONLY）
+  trace_id?: string;   // 错误追踪
 }
 
-/** 分页查询参数 */
 interface PaginationParams {
-  limit?: number;   // 默认 10
-  offset?: number;  // 默认 0
+  limit?: number;      // 默认 10
+  offset?: number;     // 默认 0
+}
+
+// ===== 通用 SSE 事件 =====
+type SSEEventType =
+  | 'thinking'
+  | 'tool_status'
+  | 'chunk'
+  | 'actions'
+  | 'evidence'         // 新闻研判：证据卡片（chat.py:168-178）
+  | 'done'
+  | 'error';
+
+interface SSEEvent {
+  type: SSEEventType;
+  data: string | object;
+  trace_id?: string;
 }
 ```
 
@@ -146,7 +154,7 @@ interface PaginationParams {
 ### 1.1 用户注册
 
 ```
-POST /api/auth/register
+POST /api/v1/auth/register
 ```
 
 **公开接口**
@@ -157,351 +165,236 @@ interface RegisterRequest {
   password: string;   // 必填，至少 6 位
 }
 
-// 请求
-const res = await axios.post<UserInfo>('/api/auth/register', {
-  username: 'zhangsan',
-  password: '123456',
-});
+// 调用
+const res = await http.request('/api/v1/auth/register', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ username: 'zhangsan', password: '123456' }),
+})
+// → Set-Cookie: auth_token=...; csrf_token=...; HttpOnly; SameSite=Lax
 
-// 成功响应
-{
-  "user_id": "ee3d2c304e265393",
-  "username": "zhangsan",
-  "token": "3a3c205da3b2aedd..."
+// 响应（响应体不再含 token，token 只能从 cookie 取得）
+interface AuthResponse {
+  user_id: string;
+  username: string;
 }
 ```
 
 | 状态码 | 说明 |
 |--------|------|
-| 200 | 注册成功，返回用户信息和 Token |
-| 400 | 用户名长度不符（需要 2-32 位）/ 密码过短（需 ≥6 位）/ 用户名已存在 |
-
----
+| 200 | 注册成功，cookie 已下发 |
+| 400 | 用户名长度不符 / 密码过短 / 用户名已存在 |
 
 ### 1.2 用户登录
 
 ```
-POST /api/auth/login
+POST /api/v1/auth/login
 ```
 
 **公开接口**
 
-```typescript
-// 请求
-const res = await axios.post<UserInfo>('/api/auth/login', {
-  username: 'zhangsan',
-  password: '123456',
-});
+请求体同注册；响应同注册。失败返回 401。
 
-// 成功响应（格式同注册）
-{
-  "user_id": "ee3d2c304e265393",
-  "username": "zhangsan",
-  "token": "3a3c205da3b2aedd..."
-}
+### 1.3 当前用户
+
+```
+GET /api/v1/auth/me
 ```
 
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 登录成功 |
-| 401 | 用户名或密码错误 |
+**Cookie 鉴权**；返回 `{ user_id, username }`。未登录返回 401。
 
 ---
 
-## 2. 对话模块
+## 2. 对话模块（SSE）
 
-> **这是前端最主要使用的模块**。支持同步和 SSE 流式两种模式。推荐使用流式接口以获得更好的用户体验。
+> 推荐使用流式接口。`/api/v1/chat` 同步接口在响应体结构上与 SSE 的 `done` 事件对齐。
 
-### 2.1 发送消息（同步）
+### 2.1 同步对话
 
 ```
-POST /api/chat
+POST /api/v1/chat
 ```
 
 ```typescript
 interface ChatRequest {
-  session_id: string;         // 必填，会话 ID
-  message: string;            // 必填，用户消息，1-8000 字符
-  user_id?: string;           // 可选，Token 鉴权时后端自动填充，无需手动传入
-  agent_id?: string;          // 可选，指定使用的智能体 ID（travel / yunhe / 自定义 ID）
+  session_id: string;       // 必填
+  message: string;          // 必填，1-8000 字符
+  user_id?: string;         // 可选，Cookie 鉴权时由后端自动填充
+  agent_id?: string;        // 可选；news_analysis_locked 会话下无效
 }
 
 interface ChatResponse {
-  status: string;             // "completed"
-  reply: string;              // AI 回复内容
-}
-
-// 请求
-const res = await axios.post<ChatResponse>('/api/chat', {
-  session_id: 'current-session-id',
-  message: '帮我规划一个北京3日游',
-  agent_id: 'travel',         // 可选，不传则使用默认智能体（yunhe）
-});
-
-// 成功响应
-{
-  "status": "completed",
-  "reply": "为您规划北京3日游行程如下..."
+  status: 'completed';
+  reply: string;
 }
 ```
 
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 对话完成 |
-| 429 | 请求过于频繁（全局限流：60次/分钟/用户） |
-
----
-
-### 2.2 流式对话（SSE — 推荐）
+### 2.2 流式对话（SSE — **推荐**）
 
 ```
-POST /api/chat/stream
+POST /api/v1/chat/stream
 ```
 
-**请求体与 `/api/chat` 完全相同。**
-
-**这是核心对话接口，响应为 Server-Sent Events (SSE) 流。**
+**请求体**与 `/api/v1/chat` 完全相同。响应为 `text/event-stream`。
 
 #### SSE 事件类型
 
-| 事件 type | data 内容 | 触发时机 | 前端处理建议 |
-|-----------|-----------|----------|-------------|
-| `thinking` | `"thinking"` | Agent 开始推理 | 显示"思考中..."动画 |
-| `tool_status` | 文本，如 `"正在搜索机票..."`、`"正在查询天气..."`、`"正在估算自驾费用..."` | 工具开始执行 | 显示工具调用状态指示器 |
-| `chunk` | 文本片段 | AI 逐词输出 | **追加**到消息内容末尾 |
-| `actions` | JSON 对象数组 | Agent 输出操作卡片 | 渲染操作按钮（见下方说明） |
-| `done` | `"completed"` + `trace_id` | 对话正常结束 | 停止流式渲染，保存完整回复 |
-| `error` | 错误信息 + `trace_id` | 发生错误 | 显示错误提示 |
+| `type` | `data` | 触发时机 | 前端处理 |
+|--------|--------|----------|----------|
+| `thinking` | `"thinking"` | Agent 开始推理 | 显示"思考中..." |
+| `tool_status` | 文本（`"正在搜索机票..."`）| 工具开始执行 | 显示工具状态指示器 |
+| `chunk` | 文本片段 | AI 逐词输出 | **追加**到消息末尾 |
+| `actions` | JSON 对象数组 | 操作卡片 | 渲染按钮 |
+| `evidence` | JSON 对象数组 | **新闻研判**：证据卡片（`chat.py:168`）| 渲染证据列表 |
+| `done` | `"completed"` + `trace_id` | 正常结束 | 停止流式，保存完整回复 |
+| `error` | 错误信息 + `trace_id` | 异常 | 显示错误 |
 
-#### `actions` 事件详解（v1.1 更新）
+#### `evidence` 事件（新闻研判专用）
 
-旅行智能体在生成行程后，会推送 `actions` 事件，前端据此渲染操作按钮：
+仅 `news_analysis_locked` 会话触发；在 `chunk` 之前推送。`data` 是 `EvidenceCard[]`：
+
+```typescript
+interface EvidenceCard {
+  source_id: string;
+  source_name: string;
+  url: string;
+  claim: string;
+  status: 'verified' | 'conflicted' | 'unverified_leads';
+}
+```
+
+> 空数组也推送——前端应明确"无证据"而非误读为"事件丢失"。
+
+#### `actions` 事件
 
 ```typescript
 interface AgentActionCard {
-  type: string;             // 操作类型，如 'generate_itinerary'
-  label: string;            // 按钮显示文本
-  itinerary_id?: number;    // 关联行程 ID
-  session_id?: string;      // 关联会话 ID
-  plan_type?: string;       // 方案类型：'sightseeing' | 'budget'（v1.1 新增）
+  type: string;             // 'generate_itinerary' / 'confirm_draft' / ...
+  label: string;
+  itinerary_id?: number;
+  session_id?: string;
+  plan_type?: 'sightseeing' | 'budget';
 }
-
-// actions 事件 data 格式
-// data: [{"type":"generate_itinerary","label":"查看行程","itinerary_id":42,"plan_type":"sightseeing"}]
 ```
 
-**多方案锚点协议**：LLM 回复末尾会注入 HTML 注释锚点 `<!--MULTI_PLAN:plan1=sightseeing,plan2=budget-->`，前端解析锚点后渲染"景点打卡型/经济实惠型"双按钮；若已确认方案，则显示确认状态卡片 + 撤销按钮。
+**多方案锚点协议**：旅行 Agent 在 LLM 回复末尾注入 HTML 注释 `<!--MULTI_PLAN:plan1=sightseeing,plan2=budget-->`；前端解析后渲染"景点打卡型 / 经济实惠型"双按钮。
 
 #### 前端实现示例
 
 ```typescript
-/**
- * 流式对话 — 推荐实现
- * 使用 fetch + ReadableStream 处理 SSE
- */
 async function chatStream(
   sessionId: string,
   message: string,
-  agentId?: string,
-  onChunk?: (text: string) => void,        // 收到文本片段回调
-  onThinking?: () => void,                   // 开始思考回调
-  onToolStatus?: (status: string) => void,   // 工具状态回调
-  onDone?: () => void,                       // 完成回调
-  onError?: (error: string) => void,         // 出错回调
+  onEvent: (event: SSEEvent) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const token = localStorage.getItem('yunhe_token');
-  let fullReply = '';
-
-  const response = await fetch('/api/chat/stream', {
+  const res = await http.request('/api/v1/chat/stream', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      message: message,
-      agent_id: agentId,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || '请求失败');
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId, message }),
+    signal,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || '请求失败')
   }
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let full = ''
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';  // 保留不完整的行
-
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
     for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const jsonStr = line.slice(6).trim();
-      if (!jsonStr) continue;
-
+      if (!line.startsWith('data: ')) continue
+      const jsonStr = line.slice(6).trim()
+      if (!jsonStr) continue
       try {
-        const event: SSEEvent = JSON.parse(jsonStr);
-        switch (event.type) {
-          case 'thinking':
-            onThinking?.();
-            break;
-          case 'tool_status':
-            onToolStatus?.(event.data);
-            break;
-          case 'chunk':
-            fullReply += event.data;
-            onChunk?.(event.data);
-            break;
-          case 'done':
-            onDone?.();
-            break;
-          case 'error':
-            onError?.(event.data);
-            break;
-        }
-      } catch (e) {
-        // 非 JSON 行忽略
-      }
+        const event = JSON.parse(jsonStr) as SSEEvent
+        if (event.type === 'chunk') full += event.data as string
+        onEvent(event)
+      } catch { /* 非 JSON 行忽略 */ }
     }
   }
-
-  return fullReply;
-}
-
-// 在 React 组件中使用
-const [reply, setReply] = useState('');
-const [status, setStatus] = useState<'idle' | 'thinking' | 'tool' | 'streaming'>('idle');
-const [toolStatus, setToolStatus] = useState('');
-
-const handleSend = async (message: string) => {
-  setStatus('thinking');
-  setReply('');
-  try {
-    await chatStream(
-      sessionId, message, 'travel',
-      (chunk) => {
-        setStatus('streaming');
-        setReply(prev => prev + chunk);
-      },
-      () => setStatus('thinking'),
-      (status) => { setStatus('tool'); setToolStatus(status); },
-      () => setStatus('idle'),
-      (error) => { setStatus('idle'); alert(error); },
-    );
-  } catch (err) {
-    setStatus('idle');
-  }
-};
-```
-
-#### TypeScript 类型定义
-
-```typescript
-interface SSEEvent {
-  type: 'thinking' | 'tool_status' | 'chunk' | 'actions' | 'done' | 'error';
-  data: string;
-  trace_id?: string;  // done 和 error 事件携带
+  return full
 }
 ```
 
-#### 注意事项
-
-- **流式连接默认不超时**，如果用户切换页面应及时 `reader.cancel()` 或 `AbortController.abort()`
-- `done` 事件后流会自动关闭
-- 如果 LLM 响应很快（如命中缓存），可能直接收到 `done` 而没有 `chunk`，前端应兼容此情况
+> **新闻研判工作流**（前端封装在 `features/news/analysis.ts`）：
+>
+> 1. `POST /api/v1/news/hotspots/{news_id}/analysis-sessions` 创建锚定会话
+> 2. 后端自动发出一条分析 prompt 触发新闻 Agent
+> 3. 前端在 SSE 流中接收 `evidence` + `chunk` 事件
+> 4. **新闻 Agent 永不向用户反问**（[AGENTS.md](../../AGENTS.md) §3）
 
 ---
 
 ## 3. 会话模块
 
-> 会话（Session）是对话的容器。用户在左侧栏选择一个会话，对话消息绑定在该会话下。
-
-### 3.1 获取会话列表
+### 3.1 会话列表
 
 ```
-GET /api/sessions
+GET /api/v1/sessions
 ```
 
 ```typescript
 interface SessionItem {
   session_id: string;
-  title: string;           // 会话标题（通常是第一条用户消息的摘要）
-  created_at: string;      // ISO 8601
-  updated_at: string;      // ISO 8601
-  message_count: number;   // 消息数量
-}
-
-// 请求
-const res = await axios.get<{ sessions: SessionItem[] }>('/api/sessions');
-
-// 响应
-{
-  "sessions": [
-    {
-      "session_id": "abc123",
-      "title": "东京5日游",
-      "created_at": "2026-06-01T10:00:00",
-      "updated_at": "2026-06-01T12:00:00",
-      "message_count": 8
-    }
-  ]
+  user_id: string;
+  mode: 'yunhe_default' | 'agent_locked' | 'news_analysis_locked';
+  locked_agent_id: string | null;
+  news_id: string | null;          // 仅 news_analysis_locked
 }
 ```
-
-列表按 `updated_at` 降序排列，最近活跃的会话在前。
-
----
 
 ### 3.2 创建会话
 
 ```
-POST /api/sessions
+POST /api/v1/sessions
 ```
 
 ```typescript
-// 请求（无请求体）
-const res = await axios.post<{ session_id: string; user_id: string }>('/api/sessions');
+interface CreateSessionRequest {
+  mode?: 'yunhe_default' | 'agent_locked';   // 默认 yunhe_default
+  locked_agent_id?: string;                  // agent_locked 必填
+}
 
 // 响应
 {
-  "session_id": "a1b2c3d4e5f6",
-  "user_id": "ee3d2c304e265393"
+  code: 0,
+  message: 'success',
+  data: { session_id, user_id, mode, locked_agent_id, news_id }
 }
 ```
 
-**使用流程**：页面加载时自动创建一个新会话，获得 `session_id` 后用于后续对话请求。
+> ⚠ 用户 API **不接受** `mode=news_analysis_locked`——该模式仅由新闻服务内部创建。
 
----
-
-### 3.3 删除会话
+### 3.3 切换会话模式
 
 ```
-DELETE /api/sessions/{session_id}
+PATCH /api/v1/sessions/{session_id}/mode
 ```
 
 ```typescript
-const res = await axios.delete(`/api/sessions/${sessionId}`);
-
-// 响应
-{ "detail": "已删除" }
+interface UpdateSessionModeRequest {
+  mode: 'yunhe_default' | 'agent_locked';
+  locked_agent_id?: string;
+}
 ```
 
-**注意**：删除会话会同时删除该会话下的所有消息，不可恢复。
-
----
-
-### 3.4 获取会话消息历史
+### 3.4 删除会话
 
 ```
-GET /api/sessions/{session_id}/messages
+DELETE /api/v1/sessions/{session_id}
+```
+
+### 3.5 获取会话消息历史
+
+```
+GET /api/v1/sessions/{session_id}/messages
 ```
 
 ```typescript
@@ -510,395 +403,149 @@ interface ChatMessage {
   content: string;
   timestamp: string;
 }
-
-// 请求
-const res = await axios.get<{ messages: ChatMessage[] }>(
-  `/api/sessions/${sessionId}/messages`
-);
-
-// 响应
-{
-  "messages": [
-    { "role": "user", "content": "帮我规划一个东京5日游", "timestamp": "2026-06-01T10:00:00" },
-    { "role": "assistant", "content": "好的，为您规划东京5日游...", "timestamp": "2026-06-01T10:01:00" }
-  ]
-}
 ```
-
-**用途**：用户点击某个历史会话时，加载该会话的完整对话记录。
 
 ---
 
-### 3.5 确认方案
+## 4. 方案确认模块（多方案对比）
+
+> 旅行 Agent 生成多方案后，前端双按钮 / 确认 / 撤销状态机。**仅锁定 sightseeing / budget 两套方案**。
+
+### 4.1 确认方案
 
 ```
-POST /api/session/{session_id}/confirm-plan
+POST /api/v1/session/{session_id}/confirm-plan
 ```
-
-> 多方案对比功能：当旅行智能体生成两套行程方案（景点打卡型 + 经济实惠型）后，用户选择确认其中一套。
-
-**幂等**：重复确认同一方案返回 200，确认不同方案返回 409。
 
 ```typescript
 interface ConfirmPlanRequest {
-  plan_type: 'sightseeing' | 'budget';  // 必填，确认哪套方案
-  itinerary_id?: string;               // 可选，关联行程 ID（同步更新行程确认状态）
+  plan_type: 'sightseeing' | 'budget';
+  itinerary_id: string;            // 必填
 }
 
 interface ConfirmPlanResponse {
-  confirmed_plan: string;         // 'sightseeing' 或 'budget'
+  confirmed_plan: 'sightseeing' | 'budget';
   itinerary_id: string;
-  confirmed_at: string;           // ISO 8601
-}
-
-// 请求
-const res = await axios.post<ConfirmPlanResponse>(
-  `/api/session/${sessionId}/confirm-plan`,
-  { plan_type: 'sightseeing', itinerary_id: '42' }
-);
-
-// 成功响应
-{
-  "confirmed_plan": "sightseeing",
-  "itinerary_id": "42",
-  "confirmed_at": "2026-07-04T10:30:00"
+  confirmed_at: string;
 }
 ```
 
 | 状态码 | 说明 |
 |--------|------|
-| 200 | 确认成功（首次确认或重复确认同一方案） |
-| 409 | 已确认其他方案（需先撤销再确认新方案） |
+| 200 | 首次确认 / 重复确认同一方案（**幂等**）|
+| 409 | 已确认其他方案（需先撤销）|
+| 404 | 会话不属于当前用户（**不暴露存在性**）|
 
-**前端处理**：确认成功后，方案按钮区从"双按钮"切换为"已确认状态卡片 + 撤销按钮"。
-
----
-
-### 3.6 撤销方案确认
+### 4.2 撤销方案
 
 ```
-POST /api/session/{session_id}/revoke-confirm
+POST /api/v1/session/{session_id}/revoke-confirm
 ```
 
-```typescript
-interface RevokeConfirmResponse {
-  message: string;  // "确认已撤销，可重新选择方案"
-}
+请求体：`{ itinerary_id: string }`；响应：`{ code: 0, message: 'success', data: {...} }`。
 
-// 请求
-const res = await axios.post<RevokeConfirmResponse>(
-  `/api/session/${sessionId}/revoke-confirm`,
-  { itinerary_id: '42' }  // 可选，同步清除行程确认状态
-);
-
-// 成功响应
-{
-  "message": "确认已撤销，可重新选择方案"
-}
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 撤销成功 |
-| 404 | 当前无确认方案可撤销 |
-
-**前端处理**：撤销后恢复双按钮选择界面。
-
----
-
-### 3.7 查询方案确认状态
+### 4.3 查询确认状态
 
 ```
-GET /api/session/{session_id}/confirm-status
+GET /api/v1/session/{session_id}/confirm-status
 ```
 
 ```typescript
 interface ConfirmStatusResponse {
-  confirmed_plan: string | null;   // 'sightseeing' / 'budget' / null（未确认）
-  confirmed_at: string | null;     // ISO 8601 或 null
-  itinerary_id?: number;           // 关联行程 ID
-}
-
-// 请求
-const res = await axios.get<ConfirmStatusResponse>(
-  `/api/session/${sessionId}/confirm-status`
-);
-
-// 未确认
-{
-  "confirmed_plan": null,
-  "confirmed_at": null
-}
-
-// 已确认景点打卡型
-{
-  "confirmed_plan": "sightseeing",
-  "confirmed_at": "2026-07-04T10:30:00",
-  "itinerary_id": 42
+  confirmed_plan: 'sightseeing' | 'budget' | null;
+  confirmed_at: string | null;
+  itinerary_id?: number;
 }
 ```
-
-**前端使用**：切换会话时调用此接口，恢复确认状态的 UI 展示。
 
 ---
 
-## 4. 智能体模块
+## 5. 智能体模块
 
-> 智能体（Agent）是对话背后的"大脑"。系统内置 `travel`（旅行助手）和 `yunhe`（通用助手），用户可创建自定义智能体。
-
-### 4.1 获取智能体列表
+### 5.1 智能体列表
 
 ```
-GET /api/agents
+GET /api/v1/agents
 ```
 
 ```typescript
 interface AgentConfig {
-  id: string;              // 智能体唯一标识
-  name: string;            // 显示名称
-  description: string;     // 描述
-  icon: string;            // emoji 图标，如 "✈️"
-  skills: string[];        // 关联技能列表，如 ["amap-maps"]
-  mcp_servers: string[];   // 关联 MCP 服务器列表
-  system_prompt: string;   // 系统提示词（仅自定义智能体）
-  welcome_message: string; // 开场欢迎语
-  temperature: number;     // 温度参数 0.0-2.0
-  is_public: boolean;      // 是否公开
-  source: 'builtin' | 'custom'; // 来源
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  skills: string[];
+  mcp_servers: string[];
+  system_prompt: string;     // 仅自定义 Agent
+  welcome_message: string;
+  temperature: number;
+  is_public: boolean;
+  source: 'builtin' | 'custom';
+  status?: string;            // 'draft' | 'published'
 }
-
-// 请求
-const res = await axios.get<{
-  builtin: AgentConfig[];
-  custom: AgentConfig[];
-  public: AgentConfig[];
-}>('/api/agents');
-
-// 响应示例
-{
-  "builtin": [
-    {
-      "id": "travel",
-      "name": "旅行规划助手",
-      "description": "处理行程规划、景点推荐、机票酒店搜索等",
-      "icon": "✈️",
-      "skills": ["amap-maps", "fliggy-travel", "q-weather"],
-      "mcp_servers": [],
-      "system_prompt": "",
-      "welcome_message": "你好！我是旅行规划助手，告诉我你想去哪里？",
-      "temperature": 0.7,
-      "is_public": true,
-      "source": "builtin"
-    },
-    {
-      "id": "yunhe",
-      "name": "云合",
-      "description": "通用智能体，日常问答/知识查询/写作/委派任务",
-      "icon": "☁️",
-      "skills": [],
-      "mcp_servers": [],
-      "system_prompt": "",
-      "welcome_message": "你好！我是云合，有什么可以帮你的？",
-      "temperature": 0.7,
-      "is_public": true,
-      "source": "builtin"
-    },
-    {
-      "id": "academic",
-      "name": "学术搜索助手",
-      "description": "论文搜索、引用分析、创新点挖掘、可行性评估",
-      "icon": "📚",
-      "skills": [],
-      "mcp_servers": ["arxiv-search", "web-search"],
-      "system_prompt": "",
-      "welcome_message": "你好！我是学术搜索助手，帮你搜索论文、分析引用。告诉我你的研究主题？",
-      "temperature": 0.7,
-      "is_public": true,
-      "source": "builtin"
-    }
-  ],
-  "custom": [
-    /* 当前用户自定义的智能体 */
-  ],
-  "public": [
-    /* 社区公开的智能体（可克隆） */
-  ]
-}
-```
-
-**前端使用**：
-- `builtin`：在对话界面顶部显示智能体选择器，切换不同智能体
-- `custom`：在"我的智能体"页面展示，支持编辑
-- `public`：在"智能体市场"页面展示，支持克隆到自己的工作区
-
----
-
-### 4.2 创建自定义智能体
-
-```
-POST /api/agents/custom
-```
-
-```typescript
-interface CreateAgentRequest {
-  name: string;              // 必填，1-64 字符
-  system_prompt: string;     // 必填，1-8000 字符，定义智能体行为
-  description?: string;      // 选填，最多 500 字符
-  icon?: string;             // 选填，emoji，默认 "🤖"
-  skills?: string[];         // 选填，最多 20 个技能名
-  mcp_servers?: string[];    // 选填，最多 20 个 MCP 服务名
-  welcome_message?: string;  // 选填，最多 500 字符
-  temperature?: number;      // 选填，0.0-2.0，默认 0.7
-  is_public?: boolean;       // 选填，默认 false
-}
-
-// 请求
-const res = await axios.post<AgentConfig>('/api/agents/custom', {
-  name: '美食推荐师',
-  description: '专门推荐各地美食和餐厅',
-  icon: '🍔',
-  system_prompt: '你是一个专业的美食推荐师...',
-  skills: ['amap-maps'],
-  welcome_message: '你好！想吃什么？告诉我你的口味偏好！',
-  temperature: 0.8,
-});
-
-// 响应：返回创建的智能体完整配置对象
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 创建成功 |
-| 400 | 参数校验失败（名称/提示词长度不合法） |
-
----
-
-### 4.3 获取自定义智能体详情
-
-```
-GET /api/agents/custom/{agent_id}
-```
-
-```typescript
-const res = await axios.get<AgentConfig>(`/api/agents/custom/${agentId}`);
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 成功 |
-| 404 | 智能体不存在 |
-
----
-
-### 4.4 更新自定义智能体
-
-```
-PUT /api/agents/custom/{agent_id}
-```
-
-```typescript
-// 请求：所有字段均可选，只传需要更新的字段
-const res = await axios.put<AgentConfig>(`/api/agents/custom/${agentId}`, {
-  name: '新名称',
-  system_prompt: '更新的提示词',
-  is_public: true,
-});
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 更新成功 |
-| 403 | 无权修改（仅创建者可修改自己的智能体） |
-| 404 | 智能体不存在 |
-
----
-
-### 4.5 删除自定义智能体
-
-```
-DELETE /api/agents/custom/{agent_id}
-```
-
-```typescript
-const res = await axios.delete(`/api/agents/custom/${agentId}`);
 
 // 响应
-{ "status": "deleted" }
+{ builtin: AgentConfig[], custom: AgentConfig[], public: AgentConfig[] }
 ```
 
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 删除成功 |
-| 403 | 无权删除 |
-| 404 | 智能体不存在 |
+**内置 Agent**（`application/builtin_agents/*.yaml`）：
+
+| id | 名称 | 触发关键词示例 |
+|----|------|----------------|
+| `yunhe` | 云合 | 默认调度；日常问答 / 知识 / 写作 / 委派 |
+| `travel` | 旅行规划助手 | 旅行 / 行程 / 景点 / 机票 / 自驾 |
+| `academic` | 学术搜索助手 | 论文 / arXiv / 引用 / 创新点 |
+| `news` | 新闻助手 | 热点 / 研判 / 多源验证（**仅锁定会话**）|
+| `stock` | 股市复盘助手 | 复盘 / 大盘 / 板块轮动 / 涨停 / 龙头 |
+
+### 5.2-5.6 自定义 Agent CRUD
+
+```
+POST   /api/v1/agents/custom                      // 创建
+GET    /api/v1/agents/custom/{agent_id}            // 详情
+PUT    /api/v1/agents/custom/{agent_id}            // 更新（仅创建者）
+DELETE /api/v1/agents/custom/{agent_id}            // 删除（仅创建者）
+POST   /api/v1/agents/custom/{agent_id}/clone      // 克隆到工作区
+```
+
+请求 / 响应字段同 `AgentConfig`；权限失败返回 403 / 404（不暴露存在性）。
 
 ---
 
-### 4.6 克隆智能体
+## 6. 技能模块
 
 ```
-POST /api/agents/custom/{agent_id}/clone
-```
-
-```typescript
-const res = await axios.post<AgentConfig>(`/api/agents/custom/${agentId}/clone`);
-
-// 克隆后的智能体名称会自动加 "(克隆)" 后缀
-// 状态为 "draft"，is_public = false
-```
-
-**用途**：从"智能体市场"克隆公开智能体到"我的智能体"工作区。
-
----
-
-## 5. 技能模块
-
-### 5.1 获取技能列表
-
-```
-GET /api/skills
+GET /api/v1/skills                       // 列表
+GET /api/v1/skills/{skill_name}          // 详情
 ```
 
 ```typescript
 interface SkillInfo {
-  name: string;          // 技能唯一名，如 "amap-maps"
-  display_name: string;  // 显示名称，如 "高德地图"
+  name: string;          // 'amap-maps' / 'q-weather' / 'stock-review' / ...
+  display_name: string;
   description: string;
   version: string;
 }
-
-const res = await axios.get<{ skills: SkillInfo[] }>('/api/skills');
 ```
 
-**用途**：创建自定义智能体时，展示可选的技能列表（多选框）。
+**内置 Skill**（`infrastructure/skills/builtin/`）：
+
+| 名称 | 用途 |
+|------|------|
+| `amap-maps` | 高德地图 POI / 路线 / 静态图 |
+| `q-weather` | 和风天气实况 / 预报 |
+| `stock-review` | 股票复盘工具集（akshare + SQLite 缓存）|
+
+> 飞猪旅行 Skill（`fliggy-travel`）代码骨架仍存在但**不再推荐**用于下单；仅保留信息查询。
 
 ---
 
-### 5.2 获取技能详情
+## 7. MCP 服务器模块
 
 ```
-GET /api/skills/{skill_name}
-```
-
-```typescript
-const res = await axios.get<SkillDetail>(`/api/skills/${skillName}`);
-// 返回技能的完整配置，包含 instructions、参数等
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 404 | 技能不存在 |
-
----
-
-## 6. MCP 服务器模块
-
-> MCP（Model Context Protocol）服务器提供外部工具能力，如 Web 搜索。前端可展示可用的 MCP 服务列表。
-
-### 6.1 获取 MCP 服务器列表
-
-```
-GET /api/mcp/servers
+GET /api/v1/mcp                          // 列表（等价 /mcp/servers）
+GET /api/v1/mcp/{server_id}              // 详情
+GET /api/v1/mcp/{server_id}/tools        // 工具列表
 ```
 
 ```typescript
@@ -915,1096 +562,615 @@ interface MCPToolInfo {
   description: string;
   proxy_name: string;
   input_schema: object;
-  adapter_available: boolean;  // 适配器是否可用
+  adapter_available: boolean;
 }
-
-const res = await axios.get<{ servers: MCPServerInfo[] }>('/api/mcp/servers');
 ```
 
 ---
 
-### 6.2 获取 MCP 服务器详情
+## 8. 行程模块
 
-```
-GET /api/mcp/servers/{server_id}
-```
+> 行程是规划快照（**非报销凭证**）。无相册 / 实际花费 / 打卡 / 行程比较。
 
-返回单个 MCP 服务器的完整配置和工具列表。
-
----
-
-### 6.3 获取 MCP 服务器工具列表
-
-```
-GET /api/mcp/servers/{server_id}/tools
-```
+### 8.1 行程数据结构
 
 ```typescript
-const res = await axios.get<{
-  server_id: string;
-  tools: MCPToolInfo[];
-}>(`/api/mcp/servers/${serverId}/tools`);
-```
-
----
-
-## 7. 行程模块
-
-> 行程是最核心的资源。AI 对话的结果通常会生成一个行程对象，包含多天的活动和花费详情。
-
-### 7.1 行程数据结构
-
-```typescript
-// —— 完整的行程对象 ——
 interface Itinerary {
-  id: number;
-  user_id: string;
-  title: string;           // 行程标题，如 "东京5日游"
-  destination: string;     // 目的地
-  start_date: string;      // 开始日期，ISO 8601（可选）
-  end_date: string;        // 结束日期
-  budget: string;          // 预算描述文本，如 "约8000元/人"
-  status: string;          // 状态：planning / in_progress / completed
-  session_id: string;      // 关联会话 ID
-  raw_content: string;     // 原始 AI 生成内容（Markdown）
-  created_at: string;
-  updated_at: string;
-  days: DayPlan[];         // 每日计划
-  // —— 多方案对比字段（v1.1 新增） ——
-  plans_json?: string;           // JSON 序列化的 Plan[] 数组
-  confirmed_plan?: string | null; // 已确认方案标识：'sightseeing' / 'budget' / null
-  confirmed_at?: string | null;   // 确认时间，ISO 8601
-  recommended_plan?: string | null; // 推荐方案标识
-}
-
-interface DayPlan {
-  day_index: number;       // 第几天，从 0 开始
-  date: string;
-  title: string;           // 当天标题，如 "浅草·秋叶原"
-  summary: string;         // 当天摘要
-  activities: Activity[];  // 活动列表
-}
-
-interface Activity {
-  id: number;
-  time_slot: string;       // 时间段，如 "09:00-12:00"
-  title: string;           // 活动标题
-  location: string;        // 地点
-  description: string;     // 详细描述
-  cost: number;            // 预算花费（元）
-  actual_cost: number;     // 实际花费（元），初始为 0
-  tips: string;            // 小贴士
-  image_url: string;       // 图片 URL
-  checked_in: boolean;     // 是否已打卡
-}
-
-// —— 多方案对比类型（v1.1 新增） ——
-
-/** 方案类型枚举 */
-type PlanType = 'sightseeing' | 'budget' | 'single';
-
-/** 出行方式枚举 */
-type TransportMode = 'flight' | 'train' | 'drive';
-
-/** 费用分项 */
-interface CostBreakdown {
-  transport: number;       // 交通费用
-  hotel: number;           // 住宿费用
-  food: number;            // 餐饮费用
-  tickets: number;         // 门票费用
-  shopping: number;        // 购物预估
-  other: number;           // 其他费用
-  total: number;           // 总计
-}
-
-/** 出行方式选项 */
-interface TransportOption {
-  mode: TransportMode;     // 出行方式
-  label: string;           // 显示名称，如 "飞机"、"高铁"、"自驾"
-  price_range: string;     // 价格区间，如 "800-1500元"
-  duration: string;        // 耗时，如 "2h"
-  pros: string[];          // 优势
-  cons: string[];          // 劣势
-}
-
-/** 单套方案 */
-interface Plan {
-  plan_type: PlanType;       // 方案类型
-  plan_label: string;        // 方案显示名，如 "景点打卡型"、"经济实惠型"
-  transport: TransportOption; // 出行方式
-  cost_breakdown: CostBreakdown; // 费用明细
-  version: number;           // 方案版本号
-}
-
-/** 多方案行程（统一模型） */
-interface MultiPlanItinerary {
   id: string;
-  session_id: string;
   user_id: string;
-  destination: string;
-  plans: Plan[];                // 方案列表（1=单方案，2=双方案对比）
-  recommended_plan: string | null; // 推荐方案标识
-  confirmed_plan: string | null;   // 已确认方案标识
-  confirmed_at: string | null;     // 确认时间
-}
-```
-
----
-
-### 7.2 创建行程
-
-```
-POST /api/itineraries
-```
-
-```typescript
-interface CreateItineraryRequest {
   title: string;
   destination: string;
   start_date?: string;
   end_date?: string;
-  budget?: string;
-  session_id?: string;
-  raw_content?: string;     // AI 生成的原始 Markdown 内容
-  status?: string;          // 默认 "planning"
-  days?: DayPlan[];         // 天数和活动详情
+  budget?: string;             // 描述文本
+  status: 'planning' | 'in_progress' | 'completed';
+  session_id: string;
+  raw_content: string;         // AI 生成的 Markdown
+  plans_json?: string;         // 多方案（sightseeing / budget）
+  confirmed_plan?: 'sightseeing' | 'budget' | null;
+  confirmed_at?: string | null;
+  recommended_plan?: string | null;
+  days: DayPlan[];
 }
 
-const res = await axios.post<Itinerary>('/api/itineraries', {
-  title: '东京5日游',
-  destination: '东京',
-  start_date: '2026-07-01',
-  end_date: '2026-07-05',
-  budget: '约8000元/人',
-  session_id: 'abc123',
-});
+interface DayPlan {
+  day_index: number;
+  date: string;
+  title: string;
+  summary: string;
+  activities: Activity[];       // ⚠ 不含 checked_in / actual_cost
+}
+
+interface Activity {
+  id: number;
+  time_slot: string;
+  title: string;
+  location: string;
+  description: string;
+  image_url: string;
+  cost: number;                // 预算花费
+  tips: string;
+}
 ```
+
+### 8.2 端点
+
+```
+POST   /api/v1/itineraries                                // 创建
+GET    /api/v1/itineraries                                // 列表
+GET    /api/v1/itineraries/{itinerary_id}                 // 详情
+PUT    /api/v1/itineraries/{itinerary_id}                 // 更新
+DELETE /api/v1/itineraries/{itinerary_id}                 // 删除
+DELETE /api/v1/itineraries/{itinerary_id}/activities/{id} // 删除活动
+POST   /api/v1/itineraries/{itinerary_id}/share           // 创建分享
+GET    /api/v1/itineraries/{itinerary_id}/shares          // 分享列表
+DELETE /api/v1/itineraries/{itinerary_id}/shares/{token}  // 删除分享
+```
+
+> 已移除：`/compare`、`/checkin`、`/cost`、`/photos/*`、`/travelogue`、`/album/*`（见 [AGENTS.md](../../AGENTS.md) §3）。
 
 ---
 
-### 7.3 获取行程列表
+## 9. 旅行草稿 / 存档（travel）
+
+> 用户在对话中编辑的字段 → 草稿；点击"更新信息" → 唯一外部查询入口；点击"确认行程" → 不可变存档。
+> 详见 [docs/superpowers/plans/2026-07-17-travel-planning.md](../superpowers/plans/2026-07-17-travel-planning.md)。
+
+### 9.1 草稿生命周期
 
 ```
-GET /api/itineraries
+POST   /api/v1/travel/drafts                                              // 创建
+GET    /api/v1/travel/drafts/{draft_id}                                   // 读取
+PATCH  /api/v1/travel/drafts/{draft_id}/activities/{activity_id}          // 手工编辑（记入 manual_edit_fields）
+POST   /api/v1/travel/drafts/{draft_id}/refresh-preview                   // ⚠ 唯一外部数据入口
+POST   /api/v1/travel/drafts/{draft_id}/refresh-apply                     // 应用用户勾选的变更
+POST   /api/v1/travel/drafts/{draft_id}/confirm                           // 确认（创建不可变存档）
 ```
+
+### 9.2 存档
+
+```
+GET    /api/v1/travel/archives/{archive_id}                               // 读取
+POST   /api/v1/travel/archives/{archive_id}/new-draft                     // 基于存档创建新草稿
+```
+
+### 9.3 数据结构
 
 ```typescript
-const res = await axios.get<{ itineraries: ItinerarySummary[] }>('/api/itineraries');
-
-// 响应（列表视图，不含 days 详情）
-interface ItinerarySummary {
-  id: number;
-  title: string;
-  destination: string;
-  start_date: string;
-  end_date: string;
-  budget: string;
-  status: string;
+interface TravelDraft {
+  id: string;
+  user_id: string;
+  session_id: string;
+  plan: object;                            // 完整 plan（含 days / activities）
+  manual_edit_fields: string[];            // 手工编辑字段（Agent 不得覆盖）
+  is_read_only: boolean;                   // 已确认后为 true
+  source_archive_id: string | null;
   created_at: string;
   updated_at: string;
 }
-```
 
-**注意**：列表接口返回的行程**不包含 `days` 详情**，需点击进入详情页后用 7.4 接口加载。
-
----
-
-### 7.4 获取行程详情
-
-```
-GET /api/itineraries/{itinerary_id}
-```
-
-```typescript
-// 此接口返回完整的行程对象，包含所有 days 和 activities
-const res = await axios.get<Itinerary>(`/api/itineraries/${itineraryId}`);
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 404 | 行程不存在 |
-
----
-
-### 7.5 更新行程
-
-```
-PUT /api/itineraries/{itinerary_id}
-```
-
-```typescript
-// 请求体与创建接口相同，所有字段可选
-const res = await axios.put<Itinerary>(`/api/itineraries/${itineraryId}`, {
-  title: '东京深度游',       // 只更新标题
-  status: 'in_progress',      // 修改状态
-});
-```
-
----
-
-### 7.6 删除行程
-
-```
-DELETE /api/itineraries/{itinerary_id}
-```
-
-```typescript
-const res = await axios.delete(`/api/itineraries/${itineraryId}`);
-// { "detail": "已删除" }
-```
-
----
-
-### 7.7 行程对比
-
-```
-POST /api/itineraries/compare
-```
-
-```typescript
-interface CompareRequest {
-  ids: number[];   // 必填，2-4 个行程 ID
-}
-
-interface CompareResult {
-  id: number;
-  title: string;
-  destination: string;
-  budget_total: number;
-  actual_total: number;
-  days_count: number;
-  activities_count: number;
-  days: { day_index: number; title: string; budget: number; actual: number; activities: Activity[] }[];
-}
-
-const res = await axios.post<{ itineraries: CompareResult[] }>(
-  '/api/itineraries/compare',
-  { ids: [1, 2, 3] }
-);
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 400 | ID 数量不在 2-4 范围内 |
-
----
-
-### 7.8 花费统计
-
-```
-GET /api/itineraries/{itinerary_id}/expense-summary
-```
-
-```typescript
-interface ExpenseSummary {
-  itinerary_id: string;
-  title: string;
-  budget_text: string;
-  budget_total: number;
-  actual_total: number;
-  remaining: number;         // 剩余预算
-  days: {
-    day_index: number;
-    title: string;
-    budget: number;
-    actual: number;
-    activities: {
-      id: number;
-      title: string;
-      budget: number;
-      actual: number;
-      checked_in: boolean;
-    }[];
-  }[];
-}
-
-const res = await axios.get<ExpenseSummary>(
-  `/api/itineraries/${itineraryId}/expense-summary`
-);
-```
-
----
-
-### 7.9 活动打卡
-
-```
-PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/checkin
-```
-
-```typescript
-interface CheckinRequest {
-  checked_in?: boolean;  // 默认 true；传 false 取消打卡
-}
-
-const res = await axios.patch<Activity>(
-  `/api/itineraries/${itineraryId}/activities/${activityId}/checkin`,
-  { checked_in: true }
-);
-```
-
----
-
-### 7.10 删除活动
-
-```
-DELETE /api/itineraries/{itinerary_id}/activities/{activity_id}
-```
-
-```typescript
-const res = await axios.delete(
-  `/api/itineraries/${itineraryId}/activities/${activityId}`
-);
-// { "detail": "已删除" }
-```
-
----
-
-### 7.11 更新活动实际花费
-
-```
-PATCH /api/itineraries/{itinerary_id}/activities/{activity_id}/cost
-```
-
-```typescript
-const res = await axios.patch<Activity>(
-  `/api/itineraries/${itineraryId}/activities/${activityId}/cost`,
-  { actual_cost: 150 }  // 单位：元
-);
-```
-
----
-
-### 7.12 创建分享链接
-
-```
-POST /api/itineraries/{itinerary_id}/share
-```
-
-```typescript
-interface CreateShareRequest {
-  expires_at?: string;  // 可选，过期时间，ISO 8601
-}
-
-interface ShareResponse {
-  token: string;
-  itinerary_id: string;
-}
-
-const res = await axios.post<ShareResponse>(
-  `/api/itineraries/${itineraryId}/share`,
-  { expires_at: '2026-12-31T23:59:59' }  // 可选
-);
-
-// 前端生成分享链接：`${window.location.origin}/shared/${res.data.token}`
-```
-
----
-
-### 7.13 获取分享链接列表
-
-```
-GET /api/itineraries/{itinerary_id}/shares
-```
-
-```typescript
-interface ShareInfo {
-  token: string;
-  created_at: string;
-  view_count: number;
-}
-
-const res = await axios.get<{ shares: ShareInfo[] }>(
-  `/api/itineraries/${itineraryId}/shares`
-);
-```
-
----
-
-### 7.14 删除分享链接
-
-```
-DELETE /api/itineraries/{itinerary_id}/shares/{token}
-```
-
-```typescript
-const res = await axios.delete(
-  `/api/itineraries/${itineraryId}/shares/${token}`
-);
-```
-
----
-
-### 7.15 查看分享行程
-
-```
-GET /api/shared/{token}
-```
-
-**公开接口，无需鉴权。** 用于分享页面的独立访问。
-
-```typescript
-interface SharedItinerary {
-  itinerary: Itinerary;       // 完整行程对象
-  share_info: {
-    view_count: number;        // 浏览次数
-    created_at: string;
-  };
-}
-
-const res = await axios.get<SharedItinerary>(`/api/shared/${shareToken}`);
-```
-
-**注意**：分享页面的图片 URL 需要通过 `/api/album/{file_path}?token={token}` 加载（见 8.8）。
-
----
-
-## 8. 相册模块
-
-> 每个行程可以上传多张照片，系统自动提取 EXIF 地理位置并在行程地图上标记。
-
-### 8.1 上传照片
-
-```
-POST /api/itineraries/{itinerary_id}/photos
-```
-
-**Content-Type**: `multipart/form-data`
-
-```typescript
-interface PhotoItem {
-  id: number;
-  file_name: string;         // 原始文件名
-  file_size: number;         // 字节
-  mime_type: string;         // 如 "image/jpeg"
-  description: string;       // 照片描述
-  day_index: number;         // 关联第几天，默认 0
-  storage_path: string;      // 服务端存储路径
-  thumbnail_path: string;    // 缩略图路径
-  latitude: number | null;   // EXIF 经纬度
-  longitude: number | null;
-  ai_description: string;    // AI 生成的照片描述
-  tags: string[];            // 标签
-  is_cover: boolean;         // 是否封面
-  created_at: string;
-}
-
-// 前端实现
-const formData = new FormData();
-files.forEach(file => formData.append('files', file));  // 支持多文件
-formData.append('description', '东京塔夜景');
-formData.append('day_index', '1');
-
-const res = await axios.post<{ photos: PhotoItem[] }>(
-  `/api/itineraries/${itineraryId}/photos`,
-  formData,
-  { headers: { 'Content-Type': 'multipart/form-data' } }
-);
-```
-
-**注意**：
-- 支持同时上传多张照片（`files` 字段传数组）
-- 上传后系统会自动：提取 EXIF 地理位置 → 生成缩略图 → AI 生成描述
-
----
-
-### 8.2 获取照片列表
-
-```
-GET /api/itineraries/{itinerary_id}/photos
-```
-
-```typescript
-// 可选查询参数
-interface PhotoListParams {
-  day_index?: number;   // 筛选某天的照片
-  tag?: string;         // 按标签筛选
-}
-
-interface PhotoListResponse {
-  itinerary_id: string;
-  photos: PhotoItem[];
-  total: number;
-  tags: string[];       // 所有可用标签（用于筛选器）
-  cover: PhotoItem | null;  // 当前封面照片
-}
-
-const res = await axios.get<PhotoListResponse>(
-  `/api/itineraries/${itineraryId}/photos`,
-  { params: { day_index: 1, tag: '景点' } }
-);
-```
-
----
-
-### 8.3 删除照片
-
-```
-DELETE /api/itineraries/{itinerary_id}/photos/{photo_id}
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 删除成功 |
-| 403 | 无权删除此照片 |
-| 404 | 照片不存在 |
-
----
-
-### 8.4 更新照片信息
-
-```
-PATCH /api/itineraries/{itinerary_id}/photos/{photo_id}
-```
-
-```typescript
-const res = await axios.patch<PhotoItem>(
-  `/api/itineraries/${itineraryId}/photos/${photoId}`,
-  {
-    description: '更新后的描述',
-    day_index: 2,
-    tags: ['景点', '新标签'],
-  }
-);
-```
-
----
-
-### 8.5 设置封面照片
-
-```
-POST /api/itineraries/{itinerary_id}/photos/{photo_id}/cover
-```
-
-```typescript
-// 无请求体
-const res = await axios.post<PhotoItem>(
-  `/api/itineraries/${itineraryId}/photos/${photoId}/cover`
-);
-// 返回设置为封面后的照片对象
-```
-
----
-
-### 8.6 获取照片地理位置
-
-```
-GET /api/itineraries/{itinerary_id}/photos/map
-```
-
-```typescript
-interface PhotoMarker {
-  photo_id: number;
-  latitude: number;
-  longitude: number;
-  description: string;
-  day_index: number;
-  thumbnail_path: string;
-}
-
-const res = await axios.get<{
-  itinerary_id: string;
-  markers: PhotoMarker[];
-}>(`/api/itineraries/${itineraryId}/photos/map`);
-```
-
-**用途**：在行程地图上用照片缩略图标记拍摄地点（Leaflet 自定义 marker）。
-
----
-
-### 8.7 生成游记
-
-```
-POST /api/itineraries/{itinerary_id}/travelogue
-```
-
-```typescript
-const res = await axios.post<{
-  itinerary_id: string;
-  content: string;           // Markdown 格式游记
-}>(`/api/itineraries/${itineraryId}/travelogue`);
-```
-
-**用途**：基于行程数据和上传照片，AI 自动生成一篇游记（Markdown 格式，可在前端用 Markdown 渲染器展示）。
-
----
-
-### 8.8 获取相册图片文件
-
-```
-GET /api/album/{file_path}
-```
-
-**关键**：前端 `<img>` 标签无法携带 `Authorization` Header，需要通过 URL 参数传递 Token：
-
-```tsx
-// 推荐方案：封装图片组件
-function AlbumImage({ filePath, token }: { filePath: string; token: string }) {
-  const src = `/api/album/${filePath}?token=${encodeURIComponent(token)}`;
-  return <img src={src} alt="" />;
-}
-
-// 或者使用 thumbnail_path
-const thumbnailUrl = `/api/album/${photo.thumbnail_path}?token=${token}`;
-```
-
-**响应**：图片文件的二进制数据（JPEG/PNG/WebP 等）。
-
----
-
-## 9. 地理编码模块
-
-> 将地址文本转换为经纬度坐标，用于地图标记。
-
-### 9.1 国内地址批量编码
-
-```
-POST /api/geocode
-```
-
-```typescript
-interface GeocodeRequest {
-  addresses: string[];    // 最多 20 个地址
-}
-
-interface GeocodeResult {
-  address: string;        // 原始地址
-  lng: number;            // 经度
-  lat: number;            // 纬度
-  formatted: string;      // 格式化后的地址
-}
-
-const res = await axios.post<{ results: GeocodeResult[] }>('/api/geocode', {
-  addresses: ['北京市海淀区', '上海市浦东新区'],
-});
-
-// 响应
-{
-  "results": [
-    { "address": "北京市海淀区", "lng": 116.29845, "lat": 39.95989, "formatted": "北京市海淀区" },
-    { "address": "上海市浦东新区", "lng": 121.54434, "lat": 31.22125, "formatted": "上海市浦东新区" }
-  ]
+interface TravelArchive {
+  id: string;
+  user_id: string;
+  source_draft_id: string;
+  confirmed_at: string;
+  plan: object;                            // 不可变 plan 快照
 }
 ```
-
-**限制**：最多 20 个地址，使用高德地图 API。
-
----
-
-### 9.2 国际地址编码
-
-```
-POST /api/geocode/intl
-```
-
-```typescript
-interface IntlGeocodeRequest {
-  address: string;        // 必填
-  city?: string;          // 城市名（辅助定位）
-}
-
-const res = await axios.post<GeocodeResult>('/api/geocode/intl', {
-  address: '东京塔',
-  city: '东京',
-});
-```
-
-**查找策略**：先查内置坐标库 → 再调用 Nominatim（OpenStreetMap）。
 
 ---
 
 ## 10. 记忆模块
 
-> 系统自动从对话中提取用户偏好和旅行经验，分为短期记忆和长期记忆。
-
-### 10.1 获取用户记忆
-
 ```
-GET /api/memories
+GET    /api/v1/memories                              // 列表（短期 + 长期 + summary）
+DELETE /api/v1/memories/{memory_type}/{memory_id}    // memory_type: short_term | long_term
 ```
 
 ```typescript
 interface MemoryItem {
   id: number;
-  category: string;            // preference / fact / experience 等
-  category_label: string;      // 中文分类名
-  content: string;             // 记忆内容
+  category: 'preference' | 'fact' | 'experience';
+  category_label: string;             // 中文：偏好 / 事实 / 经验
+  content: string;
   experience_tag: string | null;
-  extraction_count: number;    // 被提取次数
+  extraction_count: number;
   last_accessed_at: string;
   created_at: string;
 }
 
 interface MemoryResponse {
-  long_term: MemoryItem[];     // 长期记忆
-  short_term: MemoryItem[];    // 短期记忆
+  long_term: MemoryItem[];
+  short_term: MemoryItem[];
   summary: {
-    total_ltm: number;         // 长期记忆总数
-    total_stm: number;         // 短期记忆总数
+    total_ltm: number;
+    total_stm: number;
     preferences: number;
     facts: number;
     experiences: number;
   };
 }
-
-const res = await axios.get<MemoryResponse>('/api/memories');
 ```
 
 ---
 
-### 10.2 删除记忆
+## 11. 新闻模块
+
+> 热点池 / 研判 / 收藏三部分。锚点仅含元数据，**不存新闻全文**（[AGENTS.md](../../AGENTS.md) §3）。
+
+### 11.1 旅行热门（公开）
 
 ```
-DELETE /api/memories/{memory_type}/{memory_id}
+GET /api/v1/news/trending?refresh=false
+```
+
+### 11.2 热点池
+
+```
+GET /api/v1/news/hotspots
 ```
 
 ```typescript
-// memory_type: "short_term" | "long_term"
-const res = await axios.delete(`/api/memories/long_term/${memoryId}`);
+interface Hotspot {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  summary: string;
+  published_at: string;
+}
+```
+
+> **只读缓存**（`HotspotService.list_current`）。外部抓取由定时器 + `HotspotService.refresh` 负责；`GET /hotspots` 不得触发外部调用（[AGENTS.md](../../AGENTS.md) §3）。
+
+### 11.3 创建新闻锚定会话（深度研判入口）
+
+```
+POST /api/v1/news/hotspots/{news_id}/analysis-sessions
+```
+
+**前端调用此端点后，后端自动**：
+
+1. 创建 `news_analysis_locked` 会话
+2. **`locked_agent_id` 固定为 `news`**，不接受客户端传入
+3. 注入锚点元数据（标题 / 来源 / URL / 摘要 / 发布时间）
+4. 触发一次新闻 Agent 推研（**Agent 永不向用户反问**）
+
+```typescript
+interface AnalysisSessionResponse {
+  session_id: string;
+  mode: 'news_analysis_locked';
+  locked_agent_id: 'news';
+  news_id: string;
+  anchor: Hotspot;            // 锚点元数据
+}
+```
+
+### 11.4 新闻收藏
+
+```
+GET    /api/v1/news/favorites                // 列表
+POST   /api/v1/news/favorites                // 收藏（仅元数据；不存全文；不注入短期记忆）
+DELETE /api/v1/news/favorites/{favorite_id}  // 取消
+```
+
+```typescript
+interface NewsFavorite {
+  id: number;
+  title: string;
+  summary: string;
+  url: string;
+  source: string;
+  tag: string;
+  created_at: string;
+}
+```
+
+> 当前收藏不注入短期记忆（v1.2 行为变更；纯元数据存档）。
+
+---
+
+## 12. 新闻来源治理（管理员）
+
+> 单一系统管理员（启动期从 `YUNHE_ADMIN_USERNAME` 解析）。**所有端点要求当前用户 === admin_user_id**，否则 403。
+
+### 12.1 端点
+
+```
+GET    /api/v1/admin/news/sources                              // 列表（含全部状态）
+POST   /api/v1/admin/news/sources/register-builtin             // 注册内置白名单
+POST   /api/v1/admin/news/sources/{source_id}/review           // 审核（更新状态 + 写审计）
+GET    /api/v1/admin/news/source-audits                        // 审计记录
+GET    /api/v1/admin/news/source-inits                         // 初始化事件
+```
+
+### 12.2 审核请求
+
+```typescript
+interface SourceReviewRequest {
+  decision: 'pending' | 'enabled' | 'lead_only' | 'rejected' | 'blocked' | 'needs_review';
+  reason: string;                  // 1-500 字符
+}
+```
+
+### 12.3 数据结构
+
+```typescript
+interface NewsSource {
+  id: string;
+  name: string;
+  domain: string;
+  tier: 'mainstream' | 'aggregator' | 'official';
+  status: 'pending' | 'enabled' | 'lead_only' | 'rejected' | 'blocked' | 'needs_review';
+  scoring_mode: 'builtin_whitelist' | 'ai' | 'heuristic';
+  ai_score: number | null;          // 0-1
+  ai_reason: string | null;
+  ai_subscores: {                   // 六维评分（0-上限）
+    publisher_authority: number;    // 上限 0.30
+    domain_brand: number;           // 上限 0.20
+    topic_relevance: number;        // 上限 0.15
+    editorial_standard: number;     // 上限 0.15
+    accessibility: number;          // 上限 0.10
+    risk_signals: number;           // 上限 0.10
+  };
+  created_at: string;
+  updated_at: string;
+}
+```
+
+> 内置白名单 `scoring_mode=builtin_whitelist`，`ai_score=null`，`ai_reason='产品内置白名单'`。
+> 证据卡片规则：仅 `enabled` 来源产出 `verified` / `conflicted` 证据；其他仅作 `unverified_leads`。
+> 前端审核页 `/admin/news?source={source_id}` 自动滚动并高亮该来源。
+
+---
+
+## 13. 股票复盘模块
+
+> A 股五表缓存（`limit_stocks_daily` / `market_index_daily` / `emotion_daily` / `sector_daily` / `stock_daily`）。
+> 详见 [docs/superpowers/plans/2026-07-26-stock-review-agent.md](../superpowers/plans/2026-07-26-stock-review-agent.md)。
+
+### 13.1 端点（14 个）
+
+| # | 方法 | 路径 | 说明 |
+|---|------|------|------|
+| 1 | GET | `/api/v1/stock/market/snapshot` | 大盘快照（上证 / 深证 / 创业板 / 成交额 / MA20）|
+| 2 | GET | `/api/v1/stock/charts/emotion` | 情绪多日曲线（默认 10 日，1-60）|
+| 3 | GET | `/api/v1/stock/charts/sector` | 板块轮动多日曲线 |
+| 4 | GET | `/api/v1/stock/charts/watchlist` | 观察池多日趋势 |
+| 5 | GET | `/api/v1/stock/watchlist` | 观察池当前 |
+| 6 | POST | `/api/v1/stock/watchlist` | 增 / 删观察池 |
+| 7 | GET | `/api/v1/stock/signals` | 新信号股 |
+| 8 | GET | `/api/v1/stock/sectors` | 板块表现 |
+| 9 | GET | `/api/v1/stock/sector-leaders` | 板块龙头 |
+| 10 | POST | `/api/v1/stock/review` | **触发复盘**（异步；同 user+trade_date 幂等）|
+| 11 | GET | `/api/v1/stock/review/tasks/{task_id}` | 任务状态（轮询）|
+| 12 | GET | `/api/v1/stock/reports` | 复盘文列表（仅本人）|
+| 13 | GET | `/api/v1/stock/reports/{report_id}` | 复盘文详情（跨用户 404）|
+| 14 | GET | `/api/v1/stock/correlation` | 庄股 / 抱团（**仅周复盘模式**）|
+
+### 13.2 通用查询参数
+
+```typescript
+interface DateParams {
+  trade_date?: string;       // 8 位 YYYYMMDD
+  end_date?: string;         // charts 区间结束日
+  days?: number;             // 默认 10（emotion/sector/watchlist），7（correlation）
+  mode?: 'daily' | 'weekly'; // 仅 correlation
+}
+```
+
+### 13.3 关键响应
+
+```typescript
+interface MarketSnapshot {
+  trade_date: string;
+  sh_index: number;
+  sz_index: number;
+  cyb_index: number;
+  total_volume: number;
+  volume_change_pct: number;
+  consecutive_down_days: number;
+  ma20_status: 'above' | 'below' | 'near';
+}
+
+interface EmotionIndicators {
+  trade_date: string;
+  limit_up_count: number;
+  limit_down_count: number;
+  valid_limit_up_count: number;
+  broken_limit_ratio: number;
+  max_consecutive_boards: number;
+  yesterday_limit_up_today_premium: number;
+  total_volume: number;
+  volume_change_pct: number;
+  phase: string;                  // 情绪阶段
+  phase_confidence: number;
+  phase_reason: string;
+}
+
+interface WatchlistStock {
+  stock_code: string;
+  stock_name: string;
+  category: number;               // 1-5
+  entry_date: string;
+  entry_price: number | null;
+  status: 'active' | 'closed';
+  market_index_snapshot: object | null;
+  notes: string;
+}
+
+interface SignalStock {
+  trade_date: string;
+  stock_code: string;
+  stock_name: string;
+  signal_type: string;
+  pct_chg: number;
+  market_index_pct_chg: number;
+  entry_price: number;
+}
+```
+
+### 13.4 触发复盘
+
+```typescript
+// POST /api/v1/stock/review
+interface TriggerReviewRequest {
+  trade_date: string;             // 8 位 YYYYMMDD
+}
+
+// 响应（202 Accepted）
+{
+  task_id: string;
+  trade_date: string;
+  status: 'pending' | 'running';
+}
+
+// 轮询 GET /api/v1/stock/review/tasks/{task_id}
+interface ReviewTask {
+  task_id: string;
+  user_id: string;                 // ⚠ 跨用户访问 → 404
+  trade_date: string;
+  status: 'pending' | 'running' | 'completed' | 'degraded' | 'no_data' | 'failed';
+  report_id: string | null;        // completed 时填充
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+> 幂等：同 user + trade_date 在 `pending` / `running` 状态下返回**同一 `task_id`**。
+> 业务红线：身份来自 `request.state.user_id`；跨用户访问 `/reports/{id}` → 404（不暴露存在性）。
+
+### 13.5 庄股 / 抱团
+
+```typescript
+// GET /api/v1/stock/correlation?end_date=...&days=7&mode=weekly
+interface CorrelationResult {
+  end_date: string;
+  window_days: number;
+  individual_stocks: {
+    stock_code: string;
+    stock_name: string;
+    market_correlation: number;
+    sector_correlation: number;
+    is_independent: boolean;
+  }[];
+  clustered_groups: {
+    members: { stock_code: string; stock_name: string }[];
+    intra_correlation: number;
+  }[];
+}
+```
+
+| 状态码 | code | 说明 |
+|--------|------|------|
+| 409 | `CORRELATION_WEEKLY_ONLY` | `mode=daily` 时调用 |
+| 409 | `CORRELATION_NOT_READY` | 缓存未就绪 |
+
+### 13.6 观察池增 / 删
+
+```typescript
+// POST /api/v1/stock/watchlist
+interface WatchlistActionRequest {
+  action: 'add' | 'remove';
+  stock_code: string;              // 1-16 字符
+  stock_name?: string;
+  category?: number;              // 1-5
+  entry_date?: string;
+  entry_price?: number;
+  notes?: string;
+}
 ```
 
 ---
 
-## 11. 反馈模块
-
-### 11.1 提交对话质量反馈
+## 14. 地理编码模块
 
 ```
-POST /api/feedback
+POST /api/v1/geocode           // 国内批量（高德）
+POST /api/v1/geocode/intl      // 国际（Nominatim + 内置坐标库）
+```
+
+```typescript
+interface GeocodeRequest { addresses: string[]; }  // ≤ 20
+interface GeocodeResult {
+  address: string;
+  lng: number | null;
+  lat: number | null;
+  formatted: string;
+}
+
+interface IntlGeocodeRequest {
+  address: string;     // 必填
+  city?: string;       // 辅助定位
+}
+```
+
+> 国内走高德 `restapi.amap.com`；国际先查内置 `api/intl_coords.py`，未命中走 Nominatim（在线程池执行，避免阻塞事件循环）。
+
+---
+
+## 15. 分享模块（公开）
+
+```
+GET /api/v1/share/{token}
+```
+
+```typescript
+interface SharedItinerary {
+  itinerary: Itinerary;
+  share_info: { view_count: number; created_at: string };
+}
+```
+
+---
+
+## 16. 反馈模块
+
+```
+POST /api/v1/feedback
 ```
 
 ```typescript
 interface FeedbackRequest {
-  session_id: string;            // 必填
-  rating: 'good' | 'bad';       // 必填，👍 或 👎
-  issue_type?: 'inaccurate'     // 内容不准确
-              | 'tool_error'     // 工具调用错误
-              | 'delegation_error' // 智能体委派错误
-              | 'other';         // 其他，默认值
-  comment?: string;              // 反馈意见，最多 1000 字符
-  agent_id?: string;             // 关联的智能体 ID
-  message_snippet?: string;      // 问题消息片段，最多 500 字符
+  session_id: string;
+  rating: 'good' | 'bad';
+  issue_type?: 'inaccurate' | 'tool_error' | 'delegation_error' | 'other';
+  comment?: string;                  // ≤ 1000
+  agent_id?: string;
+  message_snippet?: string;          // ≤ 500
 }
-
-const res = await axios.post<{ status: string; id: string }>('/api/feedback', {
-  session_id: 'abc123',
-  rating: 'bad',
-  issue_type: 'inaccurate',
-  comment: '推荐的景点已经关闭了',
-  agent_id: 'travel',
-  message_snippet: '帮我规划...',
-});
-
-// 响应
-{ "status": "ok", "id": "fb_abc123" }
 ```
 
 ---
 
-## 12. 热门推荐
-
-### 12.1 获取热门旅行话题
+## 17. 健康检查 / 指标（公开）
 
 ```
-GET /api/news/trending
+GET /api/v1/health             // { status, details: { database, ... } }
+GET /api/v1/health/metrics     // Prometheus text format（兼容 /metrics）
 ```
 
-**公开接口**（注意真实路径为 `/api/news/trending`，而非 `/api/trending`），无需鉴权，可用于首页/未登录状态展示。
+> `status: healthy | degraded`；数据库异常时返回 `degraded`。
 
-```typescript
-interface TrendingItem {
-  title: string;       // 话题标题
-  tag: string;         // 标签，如 "热门"
-  summary: string;     // 摘要
-  content: string;     // 详细内容
-  img: string;         // 图片 URL
-  hotScore: string;    // 热度显示，如 "1.2万"
-  hotChange: string;   // 热度变化，如 "上升"
+---
+
+## 18. 调试接口（开发环境）
+
+> **生产环境应禁用**。鉴权：需登录 + 会话所有者（除 `/mcp` 系列）。
+
+```
+GET /api/v1/debug/trace/{session_id}       // 最近一次 LLM trace
+GET /api/v1/debug/session/{session_id}     // 会话快照
+GET /api/v1/debug/mcp                       // MCP 服务器列表
+GET /api/v1/debug/mcp/select?query=...      // MCP 工具检索
+GET /api/v1/debug/task/{session_id}        // 任务快照
+```
+
+---
+
+## 通用错误格式
+
+```json
+{
+  "detail": "错误描述信息",
+  "code": "CORRELATION_WEEKLY_ONLY",
+  "trace_id": "abc123"
 }
-
-const res = await axios.get<{ items: TrendingItem[] }>('/api/news/trending', {
-  params: { refresh: true },  // 强制刷新（默认使用缓存）
-});
 ```
 
-**注意**：
-- 数据每 30 分钟自动刷新一次
-- 传 `refresh=true` 会强制立即刷新（需等待，建议加 loading）
+| 状态码 | 含义 | 前端处理 |
+|--------|------|----------|
+| 400 | 请求参数错误 | 检查表单 |
+| 401 | 未登录 / Cookie 失效 | 跳转登录页 |
+| 403 | 无权限 | 提示"无权操作" |
+| 404 | 资源不存在 | 提示"资源不存在"（不暴露存在性）|
+| 409 | 业务冲突 | 提示具体原因（如"已确认其他方案"）|
+| 422 | 参数校验失败 | 显示字段错误 |
+| 429 | 限流 | Toast"操作太频繁"，不自动重试 |
+| 500 | 服务器内部错误 | Toast"服务繁忙，请稍后再试" |
+| 503 | 外部服务不可用 | Toast"外部服务暂不可用" |
+
+> **业务错误码**（`code` 字段）存放在 `YunheException.details.code`（dict），由 handler 翻译到响应。
 
 ---
 
-## 13. 系统监控
+## 限流规则
 
-### 13.1 健康检查
+全局：**每用户 + IP 每 60 秒 60 个请求**（按 API 前缀聚合）。
 
-```
-GET /health
-```
-
-**公开接口**，用于前端检测后端是否可用。
-
-```typescript
-const res = await axios.get<{
-  status: string;
-  details: { database: string };
-}>('/health');
-
-// 响应
-{ "status": "healthy", "details": { "database": "ok" } }
-```
-
----
-
-### 13.2 Prometheus 指标
-
-```
-GET /metrics
-```
-
-**公开接口**，返回 Prometheus 格式文本数据。前端通常不需要直接调用。
-
----
-
-## 14. 调试接口
-
-以下接口无需鉴权，仅在开发环境使用，**生产环境应禁用**。
-
-### 14.1 获取会话追踪
-
-```
-GET /debug/trace/{session_id}
-```
-
-返回会话的 LLM 调用链、工具执行记录等详细追踪信息。
-
-### 14.2 获取会话快照
-
-```
-GET /debug/session/{session_id}
-```
-
-返回会话的运行时状态快照。
-
-### 14.3 获取记忆快照
-
-```
-GET /debug/memory?query=&limit=10&session_id=default
-```
-
-### 14.4 MCP 服务器快照
-
-```
-GET /debug/mcp
-```
-
-### 14.5 MCP 工具选择
-
-```
-GET /debug/mcp/select?query=搜索&limit=4
-```
-
-### 14.6 获取任务快照
-
-```
-GET /debug/task/{session_id}
-```
+收到 429：建议显示 Toast"操作太频繁，请稍后再试"，**不自动重试**。
 
 ---
 
 ## 前端开发注意事项
 
-### CORS 代理配置
-
-开发环境通过 Vite 代理转发 API 请求，避免跨域问题：
+### Vite 代理（已配置）
 
 ```typescript
-// vite.config.ts
-export default defineConfig({
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-    },
-  },
-});
-```
-
-### 限流规则
-
-全局限流：**每个用户 + IP 每 60 秒最多 60 个请求**（按 API 前缀聚合）。
-
-收到 429 响应时，建议显示 Toast 提示"操作太频繁，请稍后再试"，不要自动重试。
-
-### 错误处理模板
-
-```typescript
-async function apiCall<T>(fn: () => Promise<AxiosResponse<T>>): Promise<T> {
-  try {
-    const res = await fn();
-    return res.data;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const status = error.response?.status;
-      const detail = error.response?.data?.detail || '未知错误';
-
-      switch (status) {
-        case 401:
-          // Token 过期 → 跳转登录
-          localStorage.removeItem('yunhe_token');
-          window.location.href = '/login';
-          break;
-        case 429:
-          // 限流 → 提示用户
-          console.warn('请求过于频繁');
-          break;
-        case 500:
-          console.error('服务器内部错误');
-          break;
-      }
-
-      throw new Error(detail);
-    }
-    throw error;
-  }
-}
+// vite.config.ts —— 已配置
+server: { proxy: { '/api': { target: 'http://localhost:8000', changeOrigin: true } } }
 ```
 
 ### 前端路由建议
 
 | 路由 | 页面 | 主要接口 |
 |------|------|----------|
-| `/` | 首页/对话 | `POST /api/chat/stream` + `GET /api/agents` + `GET /api/session/:id/confirm-status` |
-| `/login` / `/register` | 登录/注册 | `POST /api/auth/*` |
-| `/itineraries` | 行程列表 | `GET /api/itineraries` |
-| `/itineraries/:id` | 行程详情 | `GET /api/itineraries/:id` |
-| `/itineraries/:id/album` | 相册 | `GET /api/itineraries/:id/photos` |
-| `/compare` | 行程对比 | `POST /api/itineraries/compare` |
-| `/shared/:token` | 分享页 | `GET /api/shared/:token` |
-| `/agents` | 智能体管理 | `GET /api/agents` + CRUD |
-| `/memories` | 记忆面板 | `GET /api/memories` |
+| `/` | 首页 / 对话 | `chat/stream` + `agents` + `session/{id}/confirm-status` |
+| `/login` `/register` | 登录 / 注册 | `auth/*` |
+| `/news/admin` | 新闻来源治理 | `admin/news/*`（**管理员**）|
+| `/itineraries` | 行程列表 | `itineraries` + `travel/archives` |
+| `/itineraries/:id` | 行程详情 | `itineraries/:id` + `session/:id/confirm-status` |
+| `/itineraries/:id/edit` | 草稿编辑 | `travel/drafts/*` |
+| `/stock` | 股票复盘 | `stock/*`（含 `review` + `tasks/{id}` 轮询）|
+| `/shared/:token` | 分享页 | `share/:token` |
+| `/agents` | 智能体管理 | `agents` CRUD |
+| `/memories` | 记忆面板 | `memories` |
 
----
-
-## 15. 新闻收藏模块
-
-> 用户可以收藏感兴趣的新闻话题，系统会自动提取到短期记忆中，让智能体在对话中能引用用户关注的内容。
-
-### 15.1 获取新闻收藏列表
-
-```
-GET /api/news/favorites
-```
-
-**鉴权**：需登录
+### 错误处理模板
 
 ```typescript
-interface NewsFavorite {
-  id: number;
-  title: string;           // 新闻标题
-  summary: string;         // 摘要
-  content: string;          // 完整内容
-  url: string;             // 原始链接
-  source: string;          // 来源（如 "微博"、"知乎"）
-  tag: string;             // 标签（如 "热门"、"科技"）
-  created_at: string;      // 收藏时间
-}
-
-const res = await axios.get<{ favorites: NewsFavorite[] }>('/api/news/favorites');
-```
-
-**用途**：在收藏页面展示用户已收藏的新闻列表。
-
----
-
-### 15.2 收藏新闻
-
-```
-POST /api/news/favorites
-```
-
-**鉴权**：需登录
-
-```typescript
-interface NewsFavoriteRequest {
-  title: string;           // 必填，1-200 字符
-  summary?: string;         // 选填，最多 500 字符
-  content?: string;         // 选填，最多 5000 字符
-  url?: string;            // 选填，最多 1000 字符
-  source?: string;          // 选填，最多 32 字符
-  tag?: string;            // 选填，最多 32 字符
-}
-
-const res = await axios.post<{ status: string; title: string }>(
-  '/api/news/favorites',
-  {
-    title: '2026年夏季旅游热门目的地TOP10',
-    summary: '根据最新数据，2026年夏季...',
-    url: 'https://example.com/article/123',
-    source: '微博',
-    tag: '热门',
+async function apiCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await http.request(path, init)
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({}))) as ApiError
+    if (res.status === 401) {
+      window.location.href = '/login'
+    } else if (res.status === 429) {
+      // Toast
+    }
+    throw new Error(err.detail || '请求失败')
   }
-);
-
-// 响应
-{ "status": "ok", "title": "2026年夏季旅游热门目的地TOP10" }
-
-// 幂等处理：如果已收藏，返回
-{ "status": "already_favorited", "title": "..." }
-```
-
-**注意**：
-- 收藏成功后会自动写入 `short_term_memories`，让智能体在对话中能引用
-- 支持幂等操作，重复收藏同一标题会返回 `already_favorited`
-
----
-
-### 15.3 取消收藏
-
-```
-DELETE /api/news/favorites/{favorite_id}
-```
-
-**鉴权**：需登录
-
-```typescript
-const res = await axios.delete(`/api/news/favorites/${favoriteId}`);
-
-// 响应
-{ "detail": "已取消收藏" }
-```
-
-| 状态码 | 说明 |
-|--------|------|
-| 200 | 取消成功 |
-| 401 | 未登录 |
-| 403 | 无权删除（只能删除自己收藏的） |
-| 404 | 收藏记录不存在 |
-
----
-
-## 通用错误格式
-
-所有接口在出错时返回统一格式：
-
-```json
-{
-  "detail": "错误描述信息"
+  return res.json() as Promise<T>
 }
 ```
 
-常见 HTTP 状态码：
-
-| 状态码 | 说明 | 前端处理 |
-|--------|------|----------|
-| 400 | 请求参数错误 | 检查表单数据 |
-| 401 | 未登录或 Token 过期 | 跳转登录页 |
-| 403 | 无权限操作 | 提示"无权操作" |
-| 404 | 资源不存在 | 提示"资源不存在"或跳转 404 页 |
-| 429 | 请求频率超限 | 提示"操作太频繁"，等待后重试 |
-| 500 | 服务器内部错误 | 提示"服务繁忙，请稍后再试" |
-| 503 | 外部服务不可用 | 提示"外部服务暂不可用"（如高德 API 限流） |
-
 ---
 
-> **接口总数**：60 个 | **模块数**：15 | **最后更新**：2026-07-05（v1.2 新增学术智能体、自驾费用/天气工具、LLM 降级链；更新确认方案 plan_type 为 sightseeing/budget）
+## 变更记录
+
+| 版本 | 日期 | 主要变更 |
+|------|------|----------|
+| v1.0 | 2026-06 | 初版：60 个接口，Bearer Token，行程 / 相册 / 游记 |
+| v1.1 | 2026-07-05 | 新增学术智能体、自驾费用 / 天气工具、LLM 降级链；多方案 `sightseeing` / `budget` |
+| **v1.2** | **2026-08-01** | **全量重写**：79 端点；移除相册 / 游记 / 行程比较 / 打卡 / 实际花费 / 飞猪 / 情感 / 旧 Bearer 主路径；新增股票复盘（14 端点）+ 新闻来源治理（5 端点）+ 旅行草稿 / 存档（8 端点）+ Cookie + CSRF 主路径 / Bearer 非浏览器场景说明 + 组合根 / 架构守卫引用；`/auth/me` + `PATCH /sessions/{id}/mode` + `POST /news/hotspots/{id}/analysis-sessions`；SSE 新增 `evidence` 事件 |
