@@ -76,3 +76,9 @@ class AkshareClientPort(Protocol):
     # Task 14：板块日线 fetcher 通过此端口拉所有板块涨跌幅
     # 返回的 list[SectorDaily] 由调用方（sector_daily_fetcher）直接写入 cache
     async def fetch_sector_daily(self, trade_date: str) -> list[Any]: ...
+
+    # Task 15：个股 K 线 fetcher 通过此端口拉单只股的 K 线
+    # 返回的 list[StockDaily] 由调用方（stock_daily_fetcher）写入选定 trade_date
+    async def fetch_stock_daily(
+        self, stock_code: str, trade_date: str
+    ) -> list[Any]: ...

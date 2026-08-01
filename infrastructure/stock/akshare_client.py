@@ -27,6 +27,7 @@ from domain.stock.models import (
     LimitStock,
     MarketIndexRow,
     SectorDaily,
+    StockDaily,
 )
 from domain.stock.ports import StockDataSource
 
@@ -345,6 +346,81 @@ def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
     return rows
 
 
+def fetch_stock_daily(
+    stock_code: str, trade_date: str
+) -> list[StockDaily]:
+    """抓取单只股的多日 K 线（ak.stock_zh_a_hist）。
+
+    akshare 函数：``ak.stock_zh_a_hist(symbol=stock_code, period='daily',
+    end_date=YYYY-MM-DD)``。返回 DataFrame 列名（中文）：
+    ``日期`` / ``开盘`` / ``收盘`` / ``最高`` / ``最低`` / ``成交量`` /
+    ``成交额`` / ``振幅`` / ``涨跌幅`` / ``涨跌额`` / ``换手率``。
+
+    Args:
+        stock_code: 6 位股票代码（如 "000001"）。
+        trade_date: 交易日期（YYYYMMDD）；用于限定 end_date。
+
+    Returns:
+        StockDaily 列表（含指定日期及之前所有 K 线）。akshare 失败/空数据
+        时返回 []。
+    """
+    target = _to_yyyymmdd(trade_date)
+    if target is None:
+        raise AkshareFetchError(
+            f"fetch_stock_daily invalid trade_date={trade_date!r}"
+        )
+    end_date_dash = f"{target[:4]}-{target[4:6]}-{target[6:8]}"
+
+    try:
+        df: pd.DataFrame = ak.stock_zh_a_hist(
+            symbol=str(stock_code), period="daily", end_date=end_date_dash,
+        )
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            f"fetch_stock_daily stock_zh_a_hist failed code={stock_code} date={trade_date}"
+        ) from e
+
+    if df is None or len(df) == 0:
+        logger.warning(
+            "fetch_stock_daily: empty df code=%s date=%s", stock_code, trade_date
+        )
+        return []
+
+    rows: list[StockDaily] = []
+    for _, r in df.iterrows():
+        date_raw = r.get("日期")
+        if date_raw is None:
+            continue
+        if hasattr(date_raw, "strftime"):
+            norm_date = date_raw.strftime("%Y%m%d")
+        else:
+            s = str(date_raw).strip()
+            norm_date = s.replace("-", "").replace("/", "")
+            if len(norm_date) != 8:
+                continue
+        try:
+            rows.append(
+                StockDaily(
+                    trade_date=norm_date,
+                    stock_code=str(stock_code),
+                    open=_to_float(r.get("开盘")),
+                    close=_to_float(r.get("收盘")),
+                    high=_to_float(r.get("最高")),
+                    low=_to_float(r.get("最低")),
+                    volume=_to_float(r.get("成交量")),
+                    pct_chg=_to_float(r.get("涨跌幅")),
+                    turnover=_to_float(r.get("成交额")),
+                )
+            )
+        except (ValueError, TypeError) as e:
+            logger.warning(
+                "fetch_stock_daily: parse failed code=%s date=%s err=%s",
+                stock_code, norm_date, e,
+            )
+            continue
+    return rows
+
+
 class AkshareClient:
     """akshare 数据源客户端——StockDataSource 协议的 akshare 实现。
 
@@ -384,6 +460,17 @@ class AkshareClient:
             SectorDaily 列表。akshare 失败时抛 AkshareFetchError。
         """
         return fetch_sector_daily(trade_date)
+
+    # ── Task 15：个股 K 线 fetcher ──
+    async def fetch_stock_daily(
+        self, stock_code: str, trade_date: str
+    ) -> list[StockDaily]:
+        """从 akshare 抓取单只股的多日 K 线。
+
+        Returns:
+            StockDaily 列表。akshare 失败时抛 AkshareFetchError。
+        """
+        return fetch_stock_daily(stock_code, trade_date)
 
     # ── Task 3+ 补全的占位方法（NotImplementedError 而非 ...） ──
     async def get_market_snapshot(self, trade_date: str) -> Any:  # type: ignore[override]

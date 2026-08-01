@@ -38,19 +38,19 @@ def test_identify_resistant_stocks_basic() -> None:
     stocks = [
         StockDaily(
             trade_date="20260728", stock_code="001", open=10, close=9.5,
-            high=10, low=9.5, volume=1000, pct_chg=-0.5,
+            high=10, low=9.5, volume=1000, pct_chg=-0.5, turnover=0.0,
         ),  # 抗跌
         StockDaily(
             trade_date="20260728", stock_code="002", open=10, close=9,
-            high=10, low=9, volume=1000, pct_chg=-2.0,
+            high=10, low=9, volume=1000, pct_chg=-2.0, turnover=0.0,
         ),  # 跟跌（恰好等于大盘，不算"显著小于"）
         StockDaily(
             trade_date="20260728", stock_code="003", open=10, close=10.5,
-            high=10.5, low=10, volume=1000, pct_chg=1.0,
+            high=10.5, low=10, volume=1000, pct_chg=1.0, turnover=0.0,
         ),  # 上涨
         StockDaily(
             trade_date="20260728", stock_code="004", open=10, close=9.2,
-            high=10, low=9.2, volume=1000, pct_chg=-3.5,
+            high=10, low=9.2, volume=1000, pct_chg=-3.5, turnover=0.0,
         ),  # 跟跌更狠
     ]
     resistant = identify_resistant_stocks(stocks, market_pct_chg, threshold_ratio=0.5)
@@ -68,7 +68,7 @@ def test_identify_resistant_stocks_no_market_drop_returns_empty() -> None:
     stocks = [
         StockDaily(
             trade_date="20260728", stock_code="001", open=10, close=10.5,
-            high=10.5, low=10, volume=1000, pct_chg=0.5,
+            high=10.5, low=10, volume=1000, pct_chg=0.5, turnover=0.0,
         )
     ]
     assert identify_resistant_stocks(stocks, market_pct_chg=0.5) == []
@@ -89,11 +89,11 @@ def test_extract_post_divergence_resistant() -> None:
         "半导体": [
             StockDaily(
                 trade_date="20260728", stock_code="S1", open=100, close=98,
-                high=100, low=98, volume=1000, pct_chg=-1.0,
+                high=100, low=98, volume=1000, pct_chg=-1.0, turnover=0.0,
             ),  # 板块跌 3% 但个股只跌 1%，抗跌
             StockDaily(
                 trade_date="20260728", stock_code="S2", open=100, close=95,
-                high=100, low=95, volume=1000, pct_chg=-3.0,
+                high=100, low=95, volume=1000, pct_chg=-3.0, turnover=0.0,
             ),  # 跟跌
         ],
     }

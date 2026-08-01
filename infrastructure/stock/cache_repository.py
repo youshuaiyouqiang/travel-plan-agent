@@ -26,6 +26,7 @@ from domain.stock.models import (
     MarketIndexRow,
     ReviewReport,
     SectorDaily,
+    StockDaily,
     WatchlistStock,
 )
 
@@ -359,6 +360,76 @@ class CacheRepository:
                 pct_chg=row["pct_chg"],
                 leading_stock_codes=json.loads(row["leading_stock_codes"] or "[]"),
                 limit_up_count=row["limit_up_count"],
+            )
+            for row in rows
+        ]
+
+    # ── stock_daily ───────────────────────────────────────
+    # Task 15：个股 K 线 fetcher 写路径
+
+    def upsert_stock_daily(
+        self, trade_date: str, rows: list[StockDaily]
+    ) -> None:
+        """批量 upsert 个股 K 线（一天多行，每只股一行）。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。rows 中 trade_date 必须与之对齐。
+            rows: StockDaily DTO 列表（每只股一行）。
+
+        Raises:
+            ValueError: 当 stock_daily 不在白名单时（防御性校验）。
+        """
+        _validate_table("stock_daily")
+        sql = (
+            "INSERT OR REPLACE INTO stock_daily ("
+            "trade_date, stock_code, open, close, high, low, "
+            "volume, pct_chg, turnover"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        for r in rows:
+            self._conn.execute(
+                sql,
+                (
+                    trade_date,
+                    r.stock_code,
+                    r.open,
+                    r.close,
+                    r.high,
+                    r.low,
+                    r.volume,
+                    r.pct_chg,
+                    r.turnover,
+                ),
+            )
+        self._conn.commit()
+
+    def select_stock_daily(self, trade_date: str) -> list[StockDaily]:
+        """查询某日所有个股 K 线行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            StockDaily DTO 列表；无数据时为空列表。
+        """
+        _validate_table("stock_daily")
+        rows = self._conn.execute(
+            "SELECT trade_date, stock_code, open, close, high, low, "
+            "volume, pct_chg, turnover "
+            "FROM stock_daily WHERE trade_date = ?",
+            (trade_date,),
+        ).fetchall()
+        return [
+            StockDaily(
+                trade_date=row["trade_date"],
+                stock_code=row["stock_code"],
+                open=row["open"],
+                close=row["close"],
+                high=row["high"],
+                low=row["low"],
+                volume=row["volume"],
+                pct_chg=row["pct_chg"],
+                turnover=row["turnover"],
             )
             for row in rows
         ]

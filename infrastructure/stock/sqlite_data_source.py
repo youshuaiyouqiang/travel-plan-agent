@@ -190,6 +190,7 @@ class SqliteStockDataSource:
                 low=r["low"],
                 volume=r["volume"],
                 pct_chg=r["pct_chg"],
+                turnover=r["turnover"],
             )
             for r in rows
         ]
@@ -376,6 +377,23 @@ class SqliteStockDataSource:
         _validate_table("sector_daily")
         row = self._conn.execute(
             "SELECT 1 FROM sector_daily WHERE trade_date = ? LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        return row is not None
+
+    # Task 15：个股 K 线数据回填的"是否已有数据"判定
+    async def has_stock_daily(self, trade_date: str) -> bool:
+        """判定指定交易日的 stock_daily 表是否有任何行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            True 当且仅当 stock_daily 中存在 trade_date 的任意行。
+        """
+        _validate_table("stock_daily")
+        row = self._conn.execute(
+            "SELECT 1 FROM stock_daily WHERE trade_date = ? LIMIT 1",
             (trade_date,),
         ).fetchone()
         return row is not None

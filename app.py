@@ -430,6 +430,12 @@ def build_orchestrator() -> AppContainer:
     )
 
     sector_daily_fetcher_adapter: Any = SectorDailyFetcherAdapter()
+    # Task 15：个股 K 线 fetcher 适配器
+    from infrastructure.stock.stock_daily_fetcher_adapter import (
+        StockDailyFetcherAdapter,
+    )
+
+    stock_daily_fetcher_adapter: Any = StockDailyFetcherAdapter()
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
         fetchers=[
@@ -437,6 +443,7 @@ def build_orchestrator() -> AppContainer:
             market_index_fetcher_adapter,
             emotion_daily_fetcher_adapter,
             sector_daily_fetcher_adapter,
+            stock_daily_fetcher_adapter,
         ],
         correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
     )

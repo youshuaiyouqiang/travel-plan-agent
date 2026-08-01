@@ -98,7 +98,11 @@ class MarketIndexRow(BaseModel):
 
 
 class StockDaily(BaseModel):
-    """个股日线 OHLCV。"""
+    """个股日线 OHLCV。
+
+    Task 15：stock_daily_fetcher 写入 stock_daily 表的单条记录。
+    字段与 v021 迁移 stock_daily 表一致（含 turnover 成交额）。
+    """
 
     model_config = ConfigDict(extra="forbid")
     trade_date: str
@@ -109,6 +113,7 @@ class StockDaily(BaseModel):
     low: float | None
     volume: float | None
     pct_chg: float | None
+    turnover: float | None
 
 
 class WatchlistStock(BaseModel):
