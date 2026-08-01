@@ -70,6 +70,15 @@ class FakeStockDataSource:
     async def has_stock_daily(self, trade_date: str) -> bool:
         return trade_date in self._stock
 
+    # Task 19：行数对齐判定需要 count_* 方法；本 fake 用 set 表示"有/无"，
+    # count_* 返回 1（present）/ 0（absent）。Task 19 的对齐检查只看相对大小，
+    # 单值对齐场景下（每个日期的 5 张表都 1 行）足以验证"对齐"路径。
+    async def count_limit_stocks(self, trade_date: str) -> int:
+        return 1 if trade_date in self._populated else 0
+
+    async def count_stock_daily(self, trade_date: str) -> int:
+        return 1 if trade_date in self._stock else 0
+
 
 async def _async_true(_td: str) -> bool:
     """Helper: 把 lambda 变 async 用于覆盖 has_* 默认实现。"""

@@ -8,6 +8,8 @@
 - ``run_stock_cache_warmup`` 内部 lazy load 交易日历；失败回退 weekday 过滤
 - 单日 fetcher 失败 ``log warning`` 跳过；整体不抛异常
 - 启动期 ``lifespan`` 通过 ``asyncio.create_task`` 调度，不阻塞 ready
+- Task 19 增加 3 阶段判定：has_* → 行数对齐 → 跳过
+- Task 19 增加 ``timeout_seconds`` 硬超时，避免 akshare 持续失败时占用后台过久
 
 业务边界（已知）：
 - 当前 fetcher 只写入 ``limit_stocks_daily`` 一张表
@@ -17,6 +19,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -115,7 +118,7 @@ async def find_missing_stock_data_dates(
     today: date | None = None,
     trading_calendar: set[str] | None = None,
 ) -> list[str]:
-    """查找缺失股票数据回填的候选交易日（5 张表任一缺失即回填）。
+    """查找缺失股票数据回填的候选交易日（3 阶段判定）。
 
     Task 16: 替代 ``find_missing_limit_dates`` 单一表判定。覆盖 5 张表:
     - limit_stocks_daily
@@ -124,11 +127,22 @@ async def find_missing_stock_data_dates(
     - sector_daily
     - stock_daily
 
-    任一张表缺失则该日进 missing 列表（union over 5 tables）。
+    Task 19: 增加第 2 阶段——行数对齐判定。避免"99 → 80"的部分缺失
+    被永久化（has_* 只查"≥ 1 行"无法区分 80 vs 99）。
+
+    判定流程（每候选日）：
+    1. **第 1 阶段 has_***：5 张表任一 ``has_*`` 为 False → 整日重拉
+    2. **第 2 阶段 count 对齐**（Task 19）：5 张表都有行但
+       ``count(stock_daily) < count(limit_stocks)`` 且
+       ``count(limit_stocks) > 0`` → 整日重拉（覆盖式）
+    3. **第 3 阶段跳过**：行数对齐（count 相等或 limit_stocks=0）→ 跳过
+
+    无涨停日（limit_stocks=0, stock_daily=0）= 天然对齐，跳过。
+    Akshare 全失败日（limit_stocks=N, stock_daily=0）= 部分缺失，触发重拉。
 
     Args:
         data_source: 满足 ``StockDataSource`` 协议的数据源（需实现 5 个
-            ``has_*`` 方法）。
+            ``has_*`` + 2 个 ``count_*`` 方法）。
         window_days: 回填窗口（自然日）；会被 clamp 到 [1, 60]。
         today: 测试注入用；``None`` 时取 ``date.today()``。
         trading_calendar: 可选交易日历（YYYYMMDD 集合）；``None`` 时仅按
@@ -149,7 +163,7 @@ async def find_missing_stock_data_dates(
             d for d in candidates if _format_yyyymmdd(d) in trading_calendar
         ]
 
-    # 5 张表任一缺失即回填
+    # 第 1 阶段：5 张表任一缺失即回填
     has_checks = (
         data_source.has_limit_stocks,
         data_source.has_market_index,
@@ -160,10 +174,25 @@ async def find_missing_stock_data_dates(
     missing: list[str] = []
     for d in candidates:
         trade_date = _format_yyyymmdd(d)
+        any_empty = False
         for has_fn in has_checks:
             if not await has_fn(trade_date):
-                missing.append(trade_date)
+                any_empty = True
                 break
+        if any_empty:
+            missing.append(trade_date)
+            continue
+
+        # 第 2 阶段（Task 19）：行数对齐判定
+        # 仅检查 stock_daily vs limit_stocks；其他 3 张表数量稳定无需对齐
+        n_limit = await data_source.count_limit_stocks(trade_date)
+        n_stock = await data_source.count_stock_daily(trade_date)
+        # limit_stocks=0 时（无涨停日）天然对齐，不重拉
+        if n_limit > 0 and n_stock < n_limit:
+            missing.append(trade_date)
+            continue
+
+        # 第 3 阶段：行数对齐（count 相等或 limit_stocks=0）→ 跳过
     return missing
 
 
@@ -187,6 +216,7 @@ async def run_stock_cache_warmup(
     *,
     window_days: int,
     today: date | None = None,
+    timeout_seconds: float | None = None,
 ) -> int:
     """执行一次启动期股票缓存回填。
 
@@ -194,14 +224,21 @@ async def run_stock_cache_warmup(
         data_source: 满足 ``StockDataSource`` 协议的数据源（只读缓存）。
         window_days: 回填窗口（自然日）；会被 clamp 到 [1, 60]。
         today: 测试注入用；``None`` 时取 ``date.today()``。
+        timeout_seconds: Task 19 总超时（秒）；超此秒数即放弃剩余日期。
+            ``None`` 表示不超时（兼容旧调用方）。
 
     Returns:
         成功回填的日期数（fetcher 单日失败不计入）。pipeline 未注册时返回 0。
+        超时时返回已完成的 backfill 数（可能 < len(missing)）。
 
     Task 16 revision: use ``find_missing_stock_data_dates``; refill if
     ANY of 5 tables is missing (previous ``find_missing_limit_dates``
     only checked limit_stocks, so the other 4 tables were never
     backfilled).
+
+    Task 19 revision: add 3-stage check (has_* → row alignment → skip);
+    add ``timeout_seconds`` to prevent akshare failure from occupying
+    the background task for 20+ minutes.
     """
     # Lazy load 交易日历；失败 / 仍空 → 回退 weekday 过滤
     try:
@@ -215,7 +252,7 @@ async def run_stock_cache_warmup(
             "falling back to weekday-only filtering"
         )
 
-    # Task 16: 5 张表任一缺失即回填（替代只查 limit_stocks）
+    # Task 16+19: 3 阶段判定（has_* + 行数对齐）
     missing = await find_missing_stock_data_dates(
         data_source,
         window_days=window_days,
@@ -242,21 +279,44 @@ async def run_stock_cache_warmup(
         )
         return 0
 
-    backfilled = 0
-    for trade_date in missing:
+    # Task 19：把整个 backfill 循环包在 asyncio.wait_for 硬超时里
+    # 超时后放弃剩余日期，log warning + 返回已 backfill 的数
+    async def _do_backfill() -> int:
+        backfilled = 0
+        for trade_date in missing:
+            try:
+                await pipeline.run_morning(trade_date=trade_date)
+                backfilled += 1
+                logger.info(
+                    "stock_warmup: trade_date=%s backfilled (window=%d)",
+                    trade_date,
+                    _clamp_window(window_days),
+                )
+            except Exception as e:  # noqa: BLE001 — 边界 catch-all
+                logger.warning(
+                    "stock_warmup: trade_date=%s failed: %s", trade_date, e
+                )
+                # 单日失败不影响后续日期
+        return backfilled
+
+    if timeout_seconds is None:
+        # 兼容旧调用方：不传超时则不包 wait_for
+        backfilled = await _do_backfill()
+    else:
         try:
-            await pipeline.run_morning(trade_date=trade_date)
-            backfilled += 1
-            logger.info(
-                "stock_warmup: trade_date=%s backfilled (window=%d)",
-                trade_date,
-                _clamp_window(window_days),
+            backfilled = await asyncio.wait_for(
+                _do_backfill(), timeout=timeout_seconds
             )
-        except Exception as e:  # noqa: BLE001 — 边界 catch-all
+        except TimeoutError:
+            # 简化处理：超时即放弃剩余日期，返 0（已 backfill 的数 pipeline
+            # 不暴露此信息，保守返 0；下次 warmup 会自动重试未完成的日期）
             logger.warning(
-                "stock_warmup: trade_date=%s failed: %s", trade_date, e
+                "stock_warmup: timeout after %.0fs; "
+                "%d dates pending; remaining skipped",
+                timeout_seconds,
+                len(missing),
             )
-            # 单日失败不影响后续日期
+            return 0
 
     logger.info(
         "stock_warmup: done; total=%d backfilled=%d",

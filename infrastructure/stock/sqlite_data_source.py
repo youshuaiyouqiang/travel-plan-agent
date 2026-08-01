@@ -423,6 +423,49 @@ class SqliteStockDataSource:
             return None
         return str(row["latest"])
 
+    # Task 19：行数对齐判定——limit_stocks_daily 该日行数
+    async def count_limit_stocks(self, trade_date: str) -> int:
+        """返回指定交易日的 limit_stocks_daily 行数（涨停股数）。
+
+        实现要点（AGENTS.md §4 SQL 安全）：
+        - 表名 hard-coded "limit_stocks_daily"（在 _ALLOWED_TABLES 白名单内）
+        - trade_date 通过 ? 占位符参数化（bandit B608）
+        - ``SELECT COUNT(*)`` 走 trade_date 索引，O(log N) 命中
+
+        与 ``has_limit_stocks`` 的区别：
+        - has_* 只查"是否有 1 行"（O(1) LIMIT 1），用于 has_* 5 张表判定的快速短路
+        - count_* 查实际行数（O(N) 全扫描，但小表够快），用于行数对齐判定
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            该日 limit_stocks_daily 的行数（≥ 0）；无数据返 0。
+        """
+        _validate_table("limit_stocks_daily")
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM limit_stocks_daily WHERE trade_date = ?",
+            (trade_date,),
+        ).fetchone()
+        return int(row["c"])
+
+    # Task 19：行数对齐判定——stock_daily 该日行数
+    async def count_stock_daily(self, trade_date: str) -> int:
+        """返回指定交易日的 stock_daily 行数（已抓取的 K 线股数）。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            该日 stock_daily 的行数（≥ 0）；无数据返 0。
+        """
+        _validate_table("stock_daily")
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM stock_daily WHERE trade_date = ?",
+            (trade_date,),
+        ).fetchone()
+        return int(row["c"])
+
     # Task 12：取 trade_date 之前最近一个交易日的 emotion_daily
     async def get_emotion_indicators_before(
         self, trade_date: str

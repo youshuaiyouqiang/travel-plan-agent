@@ -86,6 +86,15 @@ class FakeStockDataSource:
         self.calls["stock"].append(trade_date)
         return trade_date in self._stock
 
+    # Task 19：行数对齐判定需要 count_* 方法。本 fake 用 set 表示"有/无"，
+    # count_* 返回 1（present）/ 0（absent）；对齐场景下所有"有"的日期都返 1，
+    # 与 count_limit_stocks 相同 → 触发对齐短路。
+    async def count_limit_stocks(self, trade_date: str) -> int:
+        return 1 if trade_date in self._limit else 0
+
+    async def count_stock_daily(self, trade_date: str) -> int:
+        return 1 if trade_date in self._stock else 0
+
 
 def _make_pipeline_result(phase: str = "morning", written: int = 5) -> Any:
     class _R:

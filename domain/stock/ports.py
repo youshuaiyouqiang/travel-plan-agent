@@ -89,3 +89,16 @@ class StockDataSource(Protocol):
     # 返回 str（YYYYMMDD）或 None（缓存完全为空）
     # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
     async def get_latest_trade_date_with_data(self) -> str | None: ...
+
+    # Task 19：行数对齐判定——避免"99 → 80"的部分缺失被永久化
+    # SQL: SELECT COUNT(*) FROM limit_stocks_daily WHERE trade_date = ?
+    # 返回该日 limit_stocks 表的实际行数（含未达涨停的失败/重抓等所有行）
+    # 0 = 该日无涨停股或完全空；≥1 = 有 N 条记录
+    # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
+    async def count_limit_stocks(self, trade_date: str) -> int: ...
+
+    # Task 19：行数对齐判定——stock_daily K 线行数
+    # SQL: SELECT COUNT(*) FROM stock_daily WHERE trade_date = ?
+    # 用于与 count_limit_stocks 比对：n_stock < n_limit 即"部分缺失"
+    # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
+    async def count_stock_daily(self, trade_date: str) -> int: ...

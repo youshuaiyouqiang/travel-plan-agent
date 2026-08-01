@@ -91,6 +91,15 @@ class Settings(BaseSettings):
         description="启动期股票缓存回填窗口（自然日数）",
     )
 
+    # Task 19：启动期股票缓存回填总超时（秒）。
+    # lifespan 启动时后台跑 warmup；超此秒数即放弃剩余日期、log warning 返回。
+    # 防止 akshare 持续失败时 warmup 占用后台 20+ 分钟。
+    # 取值范围 [10, 3600]；默认 300s（5 分钟）。
+    stock_warmup_timeout_seconds: int = Field(
+        default=300, ge=10, le=3600,
+        description="启动期股票缓存回填总超时（秒）",
+    )
+
     @staticmethod
     def _root() -> Path:
         return Path(__file__).resolve().parents[1]

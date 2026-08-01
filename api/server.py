@@ -100,10 +100,11 @@ async def _periodic_stock_close_fetch() -> None:
 
 
 async def _run_stock_cache_warmup(app: FastAPI) -> None:
-    """启动期股票缓存回填（Task 10）：后台任务包装。
+    """启动期股票缓存回填（Task 10 + Task 19）：后台任务包装。
 
     拉取默认 data_source + pipeline，回填最近 ``settings.stock_warmup_window_days``
-    天缺失的 limit_stocks_daily 记录。失败仅 log warning，整体不抛。
+    天缺失的股票数据（Task 19 行数对齐判定 + 硬超时）。
+    失败仅 log warning，整体不抛。
     """
     from application.stock.warmup import run_stock_cache_warmup
 
@@ -116,11 +117,13 @@ async def _run_stock_cache_warmup(app: FastAPI) -> None:
         backfilled = await run_stock_cache_warmup(
             data_source,
             window_days=settings.stock_warmup_window_days,
+            timeout_seconds=settings.stock_warmup_timeout_seconds,
         )
         logger.info(
-            "Stock cache warmup task done: backfilled=%d window=%d",
+            "Stock cache warmup task done: backfilled=%d window=%d timeout=%ds",
             backfilled,
             settings.stock_warmup_window_days,
+            settings.stock_warmup_timeout_seconds,
         )
     except Exception:  # noqa: BLE001 — 边界 catch-all
         logger.warning("Stock cache warmup task failed", exc_info=True)
@@ -166,7 +169,9 @@ async def lifespan(app: FastAPI):
         _STOCK_WARMUP_TASK = asyncio.create_task(_run_stock_cache_warmup(app))
     except Exception as e:
         logger.warning("Stock cache warmup schedule failed: %s", e)
+    logger.debug("Lifespan: all background tasks scheduled; yielding to uvicorn")
     yield
+    logger.debug("Lifespan: shutdown signal received")
     for task in (
         _BACKGROUND_TASK,
         _MEMORY_TASK,

@@ -529,6 +529,17 @@ class AkshareClient:
             "get_latest_trade_date_with_data 只由 SqliteStockDataSource 实现读缓存"
         )
 
+    # ── Task 19：行数对齐判定（akshare 不实现——SQLite 读缓存） ──
+    async def count_limit_stocks(self, trade_date: str) -> Any:  # type: ignore[override]
+        raise NotImplementedError(
+            "count_limit_stocks 只由 SqliteStockDataSource 实现读缓存"
+        )
+
+    async def count_stock_daily(self, trade_date: str) -> Any:  # type: ignore[override]
+        raise NotImplementedError(
+            "count_stock_daily 只由 SqliteStockDataSource 实现读缓存"
+        )
+
 
 # Protocol 形式确认：mypy/IDE 静态检查时类满足 StockDataSource 协议
 _ = StockDataSource  # noqa: F841 — 仅作 import 校验
