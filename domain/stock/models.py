@@ -43,6 +43,28 @@ class EmotionIndicators(BaseModel):
     phase_reason: str | None
 
 
+class EmotionRawData(BaseModel):
+    """akshare 拉取的"原始"情绪指标（fetcher 二次加工前的中间 DTO）。
+
+    Task 12：emotion_daily_fetcher 通过 AkshareClient.fetch_emotion_daily
+    取得本 DTO，再结合 limit_stocks_daily 聚合 + heuristics 算 valid /
+    broken_ratio / max_boards，并查询昨日 emotion_daily 算 volume_change_pct，
+    最终拼出 EmotionIndicators 写入 cache。
+
+    字段语义：
+    - limit_up_count / limit_down_count: akshare 截面涨停/跌停家数
+    - broken_count: 当日炸板数（fetcher 用此算 broken_limit_ratio）
+    - total_volume: 两市成交额（元）
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    trade_date: str
+    limit_up_count: int
+    limit_down_count: int
+    broken_count: int
+    total_volume: float
+
+
 class MarketSnapshot(BaseModel):
     """大盘快照（含三大指数 + 成交额）。"""
 

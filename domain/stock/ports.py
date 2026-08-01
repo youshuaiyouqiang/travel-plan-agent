@@ -65,3 +65,8 @@ class StockDataSource(Protocol):
     # SQL: SELECT 1 FROM market_index_daily WHERE trade_date = ? LIMIT 1
     # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
     async def has_market_index(self, trade_date: str) -> bool: ...
+
+    # Task 12：情绪指标数据回填"是否已有数据"判定端口方法
+    # SQL: SELECT 1 FROM emotion_daily WHERE trade_date = ? LIMIT 1
+    # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
+    async def has_emotion_daily(self, trade_date: str) -> bool: ...

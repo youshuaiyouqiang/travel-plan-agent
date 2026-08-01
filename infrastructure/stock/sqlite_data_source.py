@@ -346,6 +346,45 @@ class SqliteStockDataSource:
         ).fetchone()
         return row is not None
 
+    # Task 12：情绪指标数据回填的"是否已有数据"判定
+    async def has_emotion_daily(self, trade_date: str) -> bool:
+        """判定指定交易日的 emotion_daily 表是否有任何行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            True 当且仅当 emotion_daily 中存在 trade_date 的任意行。
+        """
+        _validate_table("emotion_daily")
+        row = self._conn.execute(
+            "SELECT 1 FROM emotion_daily WHERE trade_date = ? LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        return row is not None
+
+    # Task 12：取 trade_date 之前最近一个交易日的 emotion_daily
+    async def get_emotion_indicators_before(
+        self, trade_date: str
+    ) -> EmotionIndicators | None:
+        """取 ``trade_date`` 之前最近一个交易日的情绪指标行（用于算 volume_change_pct）。
+
+        Args:
+            trade_date: 截止日期（YYYYMMDD，不含本日本身）。
+
+        Returns:
+            EmotionIndicators 或 None（无更早数据时）。
+        """
+        _validate_table("emotion_daily")
+        row = self._conn.execute(
+            "SELECT * FROM emotion_daily WHERE trade_date < ? "
+            "ORDER BY trade_date DESC LIMIT 1",
+            (trade_date,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_emotion(row)
+
     # ── 内部辅助 ────────────────────────────────────────
 
     @staticmethod

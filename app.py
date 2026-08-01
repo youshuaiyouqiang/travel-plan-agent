@@ -416,11 +416,20 @@ def build_orchestrator() -> AppContainer:
     )
 
     market_index_fetcher_adapter: Any = MarketIndexFetcherAdapter()
+    # Task 12：情绪指标 fetcher 适配器（需要 data_source 用于读昨日 emotion_daily）
+    from infrastructure.stock.emotion_daily_fetcher_adapter import (
+        EmotionDailyFetcherAdapter,
+    )
+
+    emotion_daily_fetcher_adapter: Any = EmotionDailyFetcherAdapter(
+        data_source=stock_data_source,
+    )
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
         fetchers=[
             limit_fetcher_adapter,
             market_index_fetcher_adapter,
+            emotion_daily_fetcher_adapter,
         ],
         correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
     )

@@ -22,7 +22,7 @@ import akshare as ak
 import pandas as pd
 import requests
 
-from domain.stock.models import LimitStock, MarketIndexRow
+from domain.stock.models import EmotionRawData, LimitStock, MarketIndexRow
 from domain.stock.ports import StockDataSource
 
 logger = logging.getLogger(__name__)
@@ -196,6 +196,91 @@ def _to_float(v: Any) -> float | None:
     return f
 
 
+def _df_to_int(df: pd.DataFrame, item: str) -> int:
+    """从 ``[{"item": "涨停", "value": 4}, ...]`` 结构的 DataFrame 取 int。
+
+    找不到对应 item 返 0（akshare 接口列值偶发缺失，按 0 处理避免阻断）。
+    """
+    if df is None or len(df) == 0 or "item" not in df.columns:
+        return 0
+    match = df[df["item"] == item]
+    if len(match) == 0:
+        return 0
+    val = match.iloc[0].get("value")
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_shanghai_total_volume(df: pd.DataFrame) -> float:
+    """从 ``stock_zh_index_spot_em`` 返回的截面 DataFrame 取上证成交额。
+
+    返回 0.0（而非 None）— caller（fetcher）会做"未抓到成交额"判定。
+    """
+    if df is None or len(df) == 0 or "code" not in df.columns or "成交额" not in df.columns:
+        return 0.0
+    match = df[df["code"] == "sh000001"]
+    if len(match) == 0:
+        return 0.0
+    v = _to_float(match.iloc[0].get("成交额"))
+    return v if v is not None else 0.0
+
+
+def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
+    """抓取"原始"情绪指标（Task 12）：涨停/跌停/炸板 + 两市成交额。
+
+    二次加工（valid_count / broken_ratio / max_boards / volume_change_pct /
+    yesterday_premium）由 ``emotion_daily_fetcher.run`` 调
+    ``domain.stock.heuristics`` + 读 ``limit_stocks_daily`` 完成，
+    不在 akshare 包装层做聚合。
+
+    Returns:
+        EmotionRawData 单一对象（一天一行）；akshare 失败抛 AkshareFetchError。
+    """
+    target = _to_yyyymmdd(trade_date)
+    if target is None:
+        raise AkshareFetchError(
+            f"fetch_emotion_daily invalid trade_date={trade_date!r}"
+        )
+
+    # 1) 拉涨停/跌停/炸板截面（ak.stock_market_activity_legu）
+    try:
+        activity_df: pd.DataFrame = ak.stock_market_activity_legu()
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            f"fetch_emotion_daily stock_market_activity_legu failed date={trade_date}"
+        ) from e
+
+    limit_up = _df_to_int(activity_df, "涨停")
+    limit_down = _df_to_int(activity_df, "跌停")
+    broken = _df_to_int(activity_df, "炸板")
+
+    # 2) 拉两市成交额（ak.stock_zh_index_spot_em）— 取上证代码 sh000001
+    try:
+        spot_df: pd.DataFrame = ak.stock_zh_index_spot_em()
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            f"fetch_emotion_daily stock_zh_index_spot_em failed date={trade_date}"
+        ) from e
+    total_volume = _extract_shanghai_total_volume(spot_df)
+
+    if limit_up == 0 and limit_down == 0 and total_volume == 0.0:
+        # 三个数都拿不到，视为空数据（接口返空 / 非交易日）
+        raise AkshareFetchError(
+            f"fetch_emotion_daily empty data for date={trade_date} "
+            f"(limit_up=0, limit_down=0, total_volume=0)"
+        )
+
+    return EmotionRawData(
+        trade_date=target,
+        limit_up_count=limit_up,
+        limit_down_count=limit_down,
+        broken_count=broken,
+        total_volume=total_volume,
+    )
+
+
 class AkshareClient:
     """akshare 数据源客户端——StockDataSource 协议的 akshare 实现。
 
@@ -216,6 +301,16 @@ class AkshareClient:
             MarketIndexRow 列表（通常 3 条）。akshare 失败/空数据时返回 []。
         """
         return fetch_market_index(trade_date)
+
+    # ── Task 12：情绪指标 fetcher ──
+    async def fetch_emotion_daily(self, trade_date: str) -> EmotionRawData:
+        """从 akshare 抓取当日情绪指标（涨停/跌停/炸板/成交额）。
+
+        Returns:
+            EmotionRawData 单对象。akshare 失败时抛 AkshareFetchError，
+            由 emotion_daily_fetcher.run 捕获并 log warning 返 0。
+        """
+        return fetch_emotion_daily(trade_date)
 
     # ── Task 3+ 补全的占位方法（NotImplementedError 而非 ...） ──
     async def get_market_snapshot(self, trade_date: str) -> Any:  # type: ignore[override]

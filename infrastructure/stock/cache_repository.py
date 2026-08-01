@@ -21,6 +21,7 @@ import uuid
 from typing import Any
 
 from domain.stock.models import (
+    EmotionIndicators,
     LimitStock,
     MarketIndexRow,
     ReviewReport,
@@ -208,6 +209,89 @@ class CacheRepository:
                 low=row["low"],
                 volume=row["volume"],
                 pct_chg=row["pct_chg"],
+            )
+            for row in rows
+        ]
+
+    # ── emotion_daily ──────────────────────────────────────
+    # Task 12：情绪指标 fetcher 写路径
+
+    def upsert_emotion_daily(
+        self, trade_date: str, rows: list[EmotionIndicators]
+    ) -> None:
+        """批量 upsert 情绪指标单日行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            rows: EmotionIndicators DTO 列表（通常 1 个元素）。
+
+        Raises:
+            ValueError: 当 emotion_daily 不在白名单时（防御性校验）。
+        """
+        _validate_table("emotion_daily")
+        # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
+        sql = (
+            "INSERT OR REPLACE INTO emotion_daily ("
+            "trade_date, limit_up_count, limit_down_count, "
+            "valid_limit_up_count, broken_limit_ratio, max_consecutive_boards, "
+            "yesterday_limit_up_today_premium, total_volume, volume_change_pct, "
+            "phase, phase_confidence, phase_reason"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        for r in rows:
+            self._conn.execute(
+                sql,
+                (
+                    trade_date,
+                    r.limit_up_count,
+                    r.limit_down_count,
+                    r.valid_limit_up_count,
+                    r.broken_limit_ratio,
+                    r.max_consecutive_boards,
+                    r.yesterday_limit_up_today_premium,
+                    r.total_volume,
+                    r.volume_change_pct,
+                    r.phase,
+                    r.phase_confidence,
+                    r.phase_reason,
+                ),
+            )
+        self._conn.commit()
+
+    def select_emotion_daily(
+        self, trade_date: str
+    ) -> list[EmotionIndicators]:
+        """查询某日的情绪指标行。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            EmotionIndicators DTO 列表；无数据时为空列表。
+        """
+        _validate_table("emotion_daily")
+        rows = self._conn.execute(
+            "SELECT trade_date, limit_up_count, limit_down_count, "
+            "valid_limit_up_count, broken_limit_ratio, max_consecutive_boards, "
+            "yesterday_limit_up_today_premium, total_volume, volume_change_pct, "
+            "phase, phase_confidence, phase_reason "
+            "FROM emotion_daily WHERE trade_date = ?",
+            (trade_date,),
+        ).fetchall()
+        return [
+            EmotionIndicators(
+                trade_date=row["trade_date"],
+                limit_up_count=row["limit_up_count"],
+                limit_down_count=row["limit_down_count"],
+                valid_limit_up_count=row["valid_limit_up_count"],
+                broken_limit_ratio=row["broken_limit_ratio"],
+                max_consecutive_boards=row["max_consecutive_boards"],
+                yesterday_limit_up_today_premium=row["yesterday_limit_up_today_premium"],
+                total_volume=row["total_volume"],
+                volume_change_pct=row["volume_change_pct"],
+                phase=row["phase"],
+                phase_confidence=row["phase_confidence"],
+                phase_reason=row["phase_reason"],
             )
             for row in rows
         ]

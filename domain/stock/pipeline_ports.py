@@ -51,3 +51,7 @@ class AkshareClientPort(Protocol):
 
     # Task 13：大盘指数 fetcher 通过此端口拉 3 个指数
     async def get_market_index(self, trade_date: str) -> list[Any]: ...
+
+    # Task 12：情绪指标 fetcher 通过此端口拉市场活动统计
+    # 返回的 DTO 由调用方（emotion_daily_fetcher）解析为 emotion_daily 字段
+    async def fetch_emotion_daily(self, trade_date: str) -> Any: ...
