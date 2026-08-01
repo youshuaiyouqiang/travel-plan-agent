@@ -131,6 +131,11 @@ def fetch_market_index(trade_date: str) -> list[MarketIndexRow]:
     （含 date/open/close/high/low/volume 等列）。对每个指数分别拉一次后
     过滤到 ``trade_date`` 那天。
 
+    **Task A 修复**：``stock_zh_index_daily`` 实际返回的列不含 ``pct_chg``
+    （实测列名 ``['date', 'open', 'high', 'low', 'close', 'volume']``）。
+    因此 pct_chg 必须自己算：用前一行 close 作为 prev_close，公式
+    ``(close - prev_close) / prev_close * 100``。首行无前日时 pct_chg=None。
+
     失败时抛 AkshareFetchError，保留原始异常链（__cause__）。
     """
     target = _to_yyyymmdd(trade_date)
@@ -157,25 +162,37 @@ def fetch_market_index(trade_date: str) -> list[MarketIndexRow]:
 
         # 找到 trade_date 那一行
         # akshare 返回的 date 列是 Timestamp 或 'YYYY-MM-DD' 字符串
-        match = df[df["date"].astype(str).str.replace("-", "").str.replace("/", "") == target]
-        if len(match) == 0:
+        date_norm = df["date"].astype(str).str.replace("-", "").str.replace("/", "")
+        match_mask = date_norm == target
+        if not match_mask.any():
             logger.warning(
                 "fetch_market_index: no row for symbol=%s date=%s",
                 code, trade_date,
             )
             continue
 
-        r = match.iloc[0]
+        match_idx = int(match_mask.values.argmax())  # 第一个 True 的位置
+        r = df.iloc[match_idx]
+        close = _to_float(r.get("close"))
+
+        # Task A：自己算 pct_chg（akshare stock_zh_index_daily 不返回该字段）
+        # 用前一行 close 作为 prev_close；首行无前日时 pct_chg=None
+        pct_chg: float | None = None
+        if match_idx > 0:
+            prev_close = _to_float(df.iloc[match_idx - 1].get("close"))
+            if prev_close is not None and prev_close != 0 and close is not None:
+                pct_chg = (close - prev_close) / prev_close * 100
+
         try:
             row = MarketIndexRow(
                 trade_date=target,
                 index_code=code,
                 open=_to_float(r.get("open")),
-                close=_to_float(r.get("close")),
+                close=close,
                 high=_to_float(r.get("high")),
                 low=_to_float(r.get("low")),
                 volume=_to_float(r.get("volume")),
-                pct_chg=_to_float(r.get("pct_chg")),
+                pct_chg=pct_chg,
             )
         except (ValueError, TypeError) as e:
             logger.warning(

@@ -167,3 +167,110 @@ def test_akshare_client_implements_protocol() -> None:
     }
     missing = {m for m in expected if not hasattr(client, m)}
     assert not missing, f"AkshareClient 缺方法: {missing}"
+
+
+# ── Task A：pct_chg 自算测试 ────────────────────────────────────
+
+
+def _fake_real_index_df(symbol: str) -> pd.DataFrame:
+    """模拟 akshare 真实返回的指数日线（无 pct_chg 字段）。
+
+    akshare ``stock_zh_index_daily`` 实际返回的列：
+    ['date', 'open', 'high', 'low', 'close', 'volume']
+    不含 pct_chg 字段——这是 v1.0 文档里根因 B 的 bug 触发场景。
+    """
+    base_close = {
+        "sh000001": 3500.0,
+        "sz399001": 11800.0,
+        "sz399006": 2400.0,
+    }
+    c0 = base_close.get(symbol, 3500.0)
+    # 构造 3 行：前日 close 3500 → 当日 close 3520 → 涨跌幅应 = +0.5714%
+    return pd.DataFrame(
+        [
+            {"date": "2026-07-28", "open": c0 - 10, "high": c0 + 5,
+             "low": c0 - 15, "close": c0, "volume": 4.0e10},
+            {"date": "2026-07-29", "open": c0, "high": c0 + 10,
+             "low": c0 - 5, "close": c0 + 5, "volume": 4.2e10},
+            {"date": "2026-07-30", "open": c0 + 5, "high": c0 + 30,
+             "low": c0 - 10, "close": c0 + 20, "volume": 4.5e10},
+        ]
+    )
+
+
+class TestFetchMarketIndexPctChgCalc:
+    """Task A：akshare 不返回 pct_chg 时必须自己计算。
+
+    现有测试 mock 数据带 pct_chg 字段（不真实），掩盖了 bug。
+    本测试用 akshare 真实返回结构（无 pct_chg 列）断言：
+    - pct_chg 不能是 None
+    - pct_chg 必须等于 (close - prev_close) / prev_close * 100
+    - 第一行（无前日）pct_chg 应为 None
+    """
+
+    def test_pct_chg_is_calculated_when_akshare_omits_field(self) -> None:
+        """akshare 真实返回（无 pct_chg 列）→ 必须自己算 pct_chg。"""
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_zh_index_daily.side_effect = _fake_real_index_df
+            from infrastructure.stock.akshare_client import fetch_market_index
+
+            rows = fetch_market_index("20260730")
+
+        assert len(rows) == 3
+        # 各指数 base close 不同，pct_chg 也不同；按 index_code 校验
+        # _fake_real_index_df: 前日 close=base+5, 当日 close=base+20
+        # pct_chg = (base+20 - (base+5)) / (base+5) * 100 = 15/(base+5)*100
+        base_close = {"sh000001": 3500.0, "sz399001": 11800.0, "sz399006": 2400.0}
+        for r in rows:
+            # 当日（2026-07-30）必须有 pct_chg，不能是 None
+            if r.trade_date == "20260730":
+                assert r.pct_chg is not None, (
+                    f"pct_chg 不能为 None（index_code={r.index_code}）"
+                )
+                base = base_close[r.index_code]
+                expected = 15.0 / (base + 5.0) * 100
+                assert abs(r.pct_chg - expected) < 0.001, (
+                    f"pct_chg 计算错误（index_code={r.index_code}, "
+                    f"expected≈{expected}, got={r.pct_chg})"
+                )
+
+    def test_pct_chg_none_for_first_row_without_prev(self) -> None:
+        """第一行无前日 close → pct_chg 应为 None（不能算）。"""
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            # 让 df 只返回 1 行（首日无前日）
+            mock_ak.stock_zh_index_daily.return_value = pd.DataFrame(
+                [{"date": "2026-07-30", "open": 3500.0, "high": 3530.0,
+                  "low": 3490.0, "close": 3520.0, "volume": 4.5e10}]
+            )
+            from infrastructure.stock.akshare_client import fetch_market_index
+
+            rows = fetch_market_index("20260730")
+
+        assert len(rows) == 3
+        # 第一行（无前日）pct_chg 应为 None
+        first_row = rows[0]
+        assert first_row.pct_chg is None, (
+            f"首行无前日 close，pct_chg 应为 None，got={first_row.pct_chg}"
+        )
+
+    def test_pct_chg_zero_when_close_unchanged(self) -> None:
+        """当日 close 等于前日 close → pct_chg 应为 0.0（非 None）。"""
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_zh_index_daily.return_value = pd.DataFrame(
+                [
+                    {"date": "2026-07-29", "open": 3500.0, "high": 3510.0,
+                     "low": 3490.0, "close": 3500.0, "volume": 4.0e10},
+                    {"date": "2026-07-30", "open": 3500.0, "high": 3505.0,
+                     "low": 3495.0, "close": 3500.0, "volume": 4.2e10},
+                ]
+            )
+            from infrastructure.stock.akshare_client import fetch_market_index
+
+            rows = fetch_market_index("20260730")
+
+        assert len(rows) == 3
+        for r in rows:
+            if r.trade_date == "20260730":
+                assert r.pct_chg == 0.0, (
+                    f"close 不变时 pct_chg 应为 0.0，got={r.pct_chg}"
+                )
