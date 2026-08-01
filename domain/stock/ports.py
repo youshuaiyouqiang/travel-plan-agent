@@ -80,3 +80,12 @@ class StockDataSource(Protocol):
     # SQL: SELECT 1 FROM stock_daily WHERE trade_date = ? LIMIT 1
     # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
     async def has_stock_daily(self, trade_date: str) -> bool: ...
+
+    # Task 18：非交易日复盘回退——查询缓存中最近一个有数据的交易日
+    # SQL: SELECT MAX(trade_date) FROM market_index_daily
+    # 取大盘指数表（最可靠的"当天有市"信号：每天 3 行=3 个指数）
+    # 不取 limit_stocks_daily（可能为空：当日无涨停）
+    # 不取 emotion_daily（fetcher 失败时也为空）
+    # 返回 str（YYYYMMDD）或 None（缓存完全为空）
+    # 真实实现见 infrastructure.stock.sqlite_data_source.SqliteStockDataSource
+    async def get_latest_trade_date_with_data(self) -> str | None: ...

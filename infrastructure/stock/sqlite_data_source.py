@@ -398,6 +398,31 @@ class SqliteStockDataSource:
         ).fetchone()
         return row is not None
 
+    # Task 18：非交易日复盘回退——查询缓存中最近一个有数据的交易日
+    async def get_latest_trade_date_with_data(self) -> str | None:
+        """取缓存中最近一个有数据的交易日（用于 LLM 非交易日自动回退）。
+
+        实现要点（AGENTS.md §4 SQL 安全）：
+        - 表名 hard-coded "market_index_daily"（在 _ALLOWED_TABLES 白名单内）
+        - 无用户输入 → 不需要 ? 占位符
+        - ``SELECT MAX(trade_date)`` 走 trade_date 索引，O(1) 命中
+
+        选择 market_index_daily 而非 limit_stocks_daily 的原因：
+        - 大盘指数每天必有 3 行（上证/深证/创业板），是最可靠的"当天有市"信号
+        - limit_stocks_daily 在"无涨停日"为空，emotion_daily 在 fetcher 失败时为空
+        - sector_daily / stock_daily 行数不稳定（取决于个股数 / 板块数）
+
+        Returns:
+            str（YYYYMMDD）或 None（缓存完全为空——warmup 尚未跑过）。
+        """
+        _validate_table("market_index_daily")
+        row = self._conn.execute(
+            "SELECT MAX(trade_date) AS latest FROM market_index_daily"
+        ).fetchone()
+        if row is None or row["latest"] is None:
+            return None
+        return str(row["latest"])
+
     # Task 12：取 trade_date 之前最近一个交易日的 emotion_daily
     async def get_emotion_indicators_before(
         self, trade_date: str

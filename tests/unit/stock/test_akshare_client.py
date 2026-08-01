@@ -116,7 +116,7 @@ def test_fetch_zt_pool_request_error_preserves_chain() -> None:
 
 
 def test_stock_data_source_protocol_has_required_methods() -> None:
-    """StockDataSource 协议必须定义 15 个方法（含周复盘专用 get_correlation）。"""
+    """StockDataSource 协议必须定义 16 个方法（含 Task 18 新增的非交易日回退）。"""
     from domain.stock.ports import StockDataSource
 
     required = {
@@ -135,6 +135,7 @@ def test_stock_data_source_protocol_has_required_methods() -> None:
         "get_correlation",
         "get_sector_history",
         "get_limit_stocks",
+        "get_latest_trade_date_with_data",  # Task 18
     }
     methods = set(dir(StockDataSource))
     missing = required - methods
@@ -142,7 +143,7 @@ def test_stock_data_source_protocol_has_required_methods() -> None:
 
 
 def test_akshare_client_implements_protocol() -> None:
-    """AkshareClient 必须结构上满足 StockDataSource 协议（含 15 个方法名）。"""
+    """AkshareClient 必须结构上满足 StockDataSource 协议（含 16 个方法名）。"""
     from infrastructure.stock.akshare_client import AkshareClient
 
     client = AkshareClient()
@@ -162,6 +163,7 @@ def test_akshare_client_implements_protocol() -> None:
         "get_correlation",
         "get_sector_history",
         "get_limit_stocks",
+        "get_latest_trade_date_with_data",  # Task 18 stub
     }
     missing = {m for m in expected if not hasattr(client, m)}
     assert not missing, f"AkshareClient 缺方法: {missing}"

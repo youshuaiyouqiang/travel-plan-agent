@@ -1,8 +1,7 @@
 """股票复盘工具装配——按 session_mode 过滤工具集合。
 
-日复盘会话不含 `get_correlation`；周复盘会话包含全部 15 个工具。
+日复盘会话不含 `get_correlation`；周复盘会话包含全部 16 个工具。
 """
-
 from __future__ import annotations
 
 from typing import Literal
@@ -14,14 +13,14 @@ def build_stock_tools(session_mode: Literal["daily", "weekly"]) -> list[str]:
     Parameters
     ----------
     session_mode : "daily" | "weekly"
-        日复盘只返回 14 个常规工具；周复盘追加 `get_correlation`。
+        日复盘只返回 15 个常规工具；周复盘追加 `get_correlation`。
 
     Returns
     -------
     list[str]
         工具名列表（顺序与 yaml 一致，便于对照）。
     """
-    # 14 个常规工具（按 yaml 顺序）
+    # 15 个常规工具（按 yaml 顺序，含 Task 18 非交易日回退工具）
     common: list[str] = [
         "get_market_snapshot",
         "get_emotion_indicators",
@@ -37,6 +36,7 @@ def build_stock_tools(session_mode: Literal["daily", "weekly"]) -> list[str]:
         "get_stock_daily",
         "get_signal_stocks",
         "get_limit_stocks",
+        "get_latest_trade_date_with_data",
     ]
     if session_mode == "weekly":
         return common + ["get_correlation"]

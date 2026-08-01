@@ -23,6 +23,8 @@ interface:
     - get_limit_stocks
     # 周复盘专用（每日复盘不调用）
     - get_correlation
+    # Task 18：非交易日复盘回退——查最近一个有数据的交易日
+    - get_latest_trade_date_with_data
 i18n:
   zh:
     name: 股市复盘

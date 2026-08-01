@@ -84,11 +84,11 @@ def test_stock_adapter_exposes_specs_and_handlers():
 
 
 def test_stock_adapter_has_15_tools():
-    """stock adapter 必须注册 15 个工具 spec（与 stock-review/openai.yaml 对齐）。"""
+    """stock adapter 必须注册 16 个工具 spec（与 stock-review/openai.yaml 对齐；Task 18 之后从 15 增至 16）。"""
     from infrastructure.tools.adapters.stock import get_stock_specs
 
     specs = get_stock_specs()
-    assert len(specs) == 15, f"期望 15 个 stock 工具，实际 {len(specs)}"
+    assert len(specs) == 16, f"期望 16 个 stock 工具，实际 {len(specs)}"
 
 
 def test_stock_adapter_handler_keys_match_spec_names():

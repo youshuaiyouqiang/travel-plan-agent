@@ -523,6 +523,12 @@ class AkshareClient:
     async def get_sector_history(self, sector_name: str, days: int) -> Any:  # type: ignore[override]
         raise NotImplementedError("get_sector_history 计划在 Task 3 实现")
 
+    # ── Task 18：非交易日复盘回退（akshare 不实现——SQLite 读缓存） ──
+    async def get_latest_trade_date_with_data(self) -> Any:  # type: ignore[override]
+        raise NotImplementedError(
+            "get_latest_trade_date_with_data 只由 SqliteStockDataSource 实现读缓存"
+        )
+
 
 # Protocol 形式确认：mypy/IDE 静态检查时类满足 StockDataSource 协议
 _ = StockDataSource  # noqa: F841 — 仅作 import 校验

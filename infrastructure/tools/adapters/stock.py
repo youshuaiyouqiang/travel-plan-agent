@@ -226,7 +226,22 @@ async def _get_correlation(arguments: dict) -> dict:
     return await _call(ds.get_correlation(end_date, days))
 
 
-# ── Specs（15 个，与 stock-review/openai.yaml 一一对应） ──
+# Task 18：非交易日复盘回退——返回缓存中最近一个有数据的交易日。
+# LLM 在 system_prompt 被告知"今天周六/节假日时先调本工具"，避免用今天
+# 作为 trade_date 拿到空数据后硬写"今日复盘（数据缺失）"。
+async def _get_latest_trade_date_with_data(arguments: dict) -> dict:
+    """无参数：返回 ``{"latest_trade_date": "YYYYMMDD" | None}`` JSON。"""
+    ds = _get_data_source()
+    return await _call(_wrap_latest_trade_date(ds))
+
+
+async def _wrap_latest_trade_date(ds: Any) -> dict:
+    """把端口方法包装为 JSON-friendly dict（避免 LLM 收到 bare string）。"""
+    latest = await ds.get_latest_trade_date_with_data()
+    return {"latest_trade_date": latest}
+
+
+# ── Specs（16 个，与 stock-review/openai.yaml 一一对应） ──
 
 
 def get_stock_specs() -> list[ToolSpec]:
@@ -402,6 +417,16 @@ def get_stock_specs() -> list[ToolSpec]:
                 "required": ["end_date"],
             },
         ),
+        # Task 18：非交易日复盘回退工具。
+        # 无参数；返回缓存中最近一个有数据的交易日（YYYYMMDD）。
+        # 触发场景：今天是周六/节假日时，先调本工具拿到最近交易日，
+        # 再用该日期做分析（避免用 today 拿到空数据）。
+        ToolSpec(
+            name="get_latest_trade_date_with_data",
+            description="查询缓存中最近一个有数据的交易日（YYYYMMDD）。用于非交易日（周末/节假日）复盘：先调本工具，再用返回的日期作为 trade_date。无参数。",
+            category="Stock",
+            parameters={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -422,4 +447,5 @@ def get_stock_handlers() -> dict[str, ToolHandler]:
         "get_signal_stocks": _get_signal_stocks,
         "get_limit_stocks": _get_limit_stocks,
         "get_correlation": _get_correlation,
+        "get_latest_trade_date_with_data": _get_latest_trade_date_with_data,
     }
