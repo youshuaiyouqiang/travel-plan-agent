@@ -102,7 +102,10 @@ async def run(
     skipped = 0
     failed = 0
     today_rows: list[StockDaily] = []
-    for s in limit_stocks:
+    total = len(limit_stocks)
+    # 聚合进度：每抓完 10 只输出一次，避免每只都刷一行
+    _progress_step = max(1, min(10, total // 10 or 1))
+    for idx, s in enumerate(limit_stocks, start=1):
         stock_code = s.stock_code
 
         # Task 20：log 优化——TTL 内已 success → 跳过 akshare
@@ -175,14 +178,20 @@ async def run(
                 table_name="stock_daily",
                 status="success",
             )
+        # 聚合进度：每 _progress_step 只输出一次（避免每只刷一行）
+        if idx % _progress_step == 0 or idx == total:
+            logger.info(
+                "stock_daily_fetcher progress: %d/%d (written=%d skipped=%d failed=%d)",
+                idx, total, written, skipped, failed,
+            )
 
     if today_rows:
         repo.upsert_stock_daily(trade_date=trade_date, rows=today_rows)
         written = len(today_rows)
 
     logger.info(
-        "stock_daily_fetcher.run: trade_date=%s written=%d skipped=%d failed=%d",
-        trade_date, written, skipped, failed,
+        "stock_daily_fetcher.run: trade_date=%s total=%d written=%d skipped=%d failed=%d",
+        trade_date, total, written, skipped, failed,
     )
     return written
 

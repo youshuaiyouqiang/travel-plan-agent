@@ -38,6 +38,28 @@ from domain.stock.ports import StockDataSource
 logger = logging.getLogger(__name__)
 
 
+# ── 禁用 akshare 内部 tqdm 进度条 ──────────────────────
+# akshare 在 stock_zh_a_hist_tx 等函数里用
+# ``tqdm = get_tqdm()``（默认 enable=True）按年份循环，
+# 把 \r 写到 stderr。在 loguru 拦截 stderr 的环境下，
+# \r 不会原地刷新而是变成换行，99 只股刷出几百行丑陋输出。
+# 这里把 get_tqdm 替换为"返回 identity"的 no-op 版本，
+# akshare 拿到的是 ``lambda iterable, *a, **kw: iterable``，
+# 既不动 tqdm 本体也不影响其他模块的进度条。
+def _noop_tqdm(iterable: Any, *args: Any, **kwargs: Any) -> Any:
+    """akshare 内部进度条的禁用版：直接返回可迭代对象本身。"""
+    return iterable
+
+
+def _disabled_get_tqdm(enable: bool = True) -> Any:
+    """akshare.utils.tqdm.get_tqdm 的禁用版，永远返回 no-op 进度条。"""
+    return _noop_tqdm
+
+
+akshare_module = __import__("akshare.utils.tqdm", fromlist=["get_tqdm"])
+setattr(akshare_module, "get_tqdm", _disabled_get_tqdm)
+
+
 class AkshareFetchError(Exception):
     """akshare 抓取失败异常。包装 requests / 解析层具体异常并保留异常链。"""
 
