@@ -77,6 +77,11 @@ class AkshareClientPort(Protocol):
 
     async def get_limit_stocks(self, trade_date: str) -> list[Any]: ...
 
+    # 炸板股池（封板后开板）——limit_broken_fetcher 使用
+    # 与 get_limit_stocks 互补：涨停股池走 stock_zt_pool_em，炸板股池走
+    # stock_zt_pool_dtgc_em。LimitStock.limit_type='broken' 写入 limit_stocks_daily。
+    async def get_broken_limit_stocks(self, trade_date: str) -> list[Any]: ...
+
     # Task 13：大盘指数 fetcher 通过此端口拉 3 个指数
     async def get_market_index(self, trade_date: str) -> list[Any]: ...
 

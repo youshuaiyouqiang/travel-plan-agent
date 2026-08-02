@@ -142,6 +142,61 @@ def fetch_zt_pool(trade_date: str) -> list[LimitStock]:
     return result
 
 
+def fetch_zt_pool_dtgc(trade_date: str) -> list[LimitStock]:
+    """抓取炸板股池（封板后开板的个股），返回 LimitStock DTO 列表。
+
+    akshare 函数：``ak.stock_zt_pool_dtgc_em(date=...)``，返回 DataFrame。
+    失败时抛 AkshareFetchError，保留原始异常链（__cause__）。
+
+    与 ``fetch_zt_pool`` 互补：
+    - ``stock_zt_pool_em``：当日封死涨停股（含连板）
+    - ``stock_zt_pool_dtgc_em``：当日封板后开板的炸板股（封板失败）
+
+    字段映射：
+    - 代码 / 名称 → stock_code / stock_name
+    - 最后封板时间 → last_limit_time（炸板前的最后封板时刻）
+    - 开板次数 → open_count（炸板后再封次数）
+    - consecutive_boards=0（炸板未真正连板）
+    - is_valid_limit_up=False（一次性封死判定为否）
+    - first_limit_time=None（akshare 不返回炸板股的首次封板时间）
+    """
+    try:
+        df: pd.DataFrame = ak.stock_zt_pool_dtgc_em(date=trade_date)
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            f"fetch_zt_pool_dtgc failed for trade_date={trade_date}"
+        ) from e
+
+    if df is None or len(df) == 0:
+        return []
+
+    result: list[LimitStock] = []
+    for _, row in df.iterrows():
+        try:
+            last_time = str(row.get("最后封板时间", "") or "") or None
+            open_count = int(row.get("开板次数", 0) or 0)
+            result.append(
+                LimitStock(
+                    trade_date=trade_date,
+                    stock_code=str(row["代码"]),
+                    stock_name=str(row["名称"]),
+                    limit_type="broken",
+                    consecutive_boards=0,
+                    first_limit_time=None,
+                    last_limit_time=last_time,
+                    open_count=open_count,
+                    is_valid_limit_up=False,
+                )
+            )
+        except _AKSHARE_EXC as e:
+            logger.warning(
+                "fetch_zt_pool_dtgc skipped malformed row date=%s err=%s",
+                trade_date, e,
+            )
+            continue
+    return result
+
+
 # Task 13：大盘指数 3 个代码（上证/深证/创业板）
 MARKET_INDEX_CODES: tuple[str, ...] = (
     "sh000001",  # 上证指数
@@ -697,6 +752,14 @@ class AkshareClient:
     async def get_limit_stocks(self, trade_date: str) -> list[LimitStock]:
         """从 akshare 抓取涨停股池。"""
         return fetch_zt_pool(trade_date)
+
+    async def get_broken_limit_stocks(self, trade_date: str) -> list[LimitStock]:
+        """从 akshare 抓取炸板股池（封板后开板的个股）。
+
+        用于 limit_broken_fetcher，与 get_limit_stocks 互补：
+        涨停股池走 ``stock_zt_pool_em``，炸板股池走 ``stock_zt_pool_dtgc_em``。
+        """
+        return fetch_zt_pool_dtgc(trade_date)
 
     # ── Task 13：大盘指数 fetcher ──
     async def get_market_index(self, trade_date: str) -> list[MarketIndexRow]:

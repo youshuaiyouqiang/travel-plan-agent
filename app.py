@@ -442,10 +442,19 @@ def build_orchestrator() -> AppContainer:
         BoardLadderFetcherAdapter,
     )
     board_ladder_fetcher_adapter: Any = BoardLadderFetcherAdapter()
+    # 炸板股池 fetcher 适配器（Bug②：补齐 broken 股池写路径）
+    # 与 limit_fetcher_adapter 共享 akshare_client 实例（同一客户端复用）
+    from infrastructure.stock.limit_broken_fetcher_adapter import (
+        LimitBrokenFetcherAdapter,
+    )
+    limit_broken_fetcher_adapter: Any = LimitBrokenFetcherAdapter(
+        client=akshare_client,
+    )
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
         fetchers=[
             limit_fetcher_adapter,
+            limit_broken_fetcher_adapter,
             market_index_fetcher_adapter,
             emotion_daily_fetcher_adapter,
             sector_daily_fetcher_adapter,
