@@ -188,6 +188,10 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
     if (items.length === 0) return undefined
     // series 倒序展示
     const ordered = [...items].reverse()
+    // 兜底（运行时）：后端响应可能缺 top_board_leaders 字段
+    // （TypeScript 类型是 required，但运行时不可信）
+    const safeLeaders = (e: EmotionIndicators): string[] =>
+      e.top_board_leaders ?? []
     // 计算"断板位置"（连板高度下降的数据点）→ 视觉强调
     const downPoints = ordered
       .map((e, idx) => {
@@ -198,7 +202,7 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
             name: '断板',
             xAxis: e.trade_date,
             yAxis: e.max_consecutive_boards,
-            value: `${e.top_board_leaders[0] ?? '—'}`,
+            value: `${safeLeaders(e)[0] ?? '—'}`,
           }
         }
         return null
@@ -207,7 +211,7 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
 
     // 最新一日的最高板龙头——加 markPoint 醒目显示
     const latest = ordered[ordered.length - 1]
-    const latestLeaders = latest?.top_board_leaders ?? []
+    const latestLeaders = latest ? safeLeaders(latest) : []
     const latestPoint = latest
       ? {
           name: '最新龙头',

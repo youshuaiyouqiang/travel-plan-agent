@@ -98,4 +98,23 @@ describe('EmotionChart', () => {
       screen.getByText('最高板折线（每个点显示该日龙头）'),
     ).toBeInTheDocument()
   })
+
+  it('Bug⑧：top_board_leaders 缺失时仍可渲染（运行时兜底，不白屏）', () => {
+    // 模拟后端响应缺 top_board_leaders 字段（TypeScript 类型声明 required，
+    // 但运行时不可信）。修复前 line 201 e.top_board_leaders[0] 抛 TypeError。
+    const PARTIAL = SAMPLE.map((e) => {
+      const { top_board_leaders: _omit, ...rest } = e
+      void _omit
+      return rest as unknown as EmotionIndicators
+    })
+    render(
+      <EmotionChart
+        series={PARTIAL}
+        windowDays={10}
+        endDate="20260728"
+      />,
+    )
+    // 不应 throw；最高板独立图仍渲染
+    expect(screen.getByLabelText('最高板独立折线图')).toBeInTheDocument()
+  })
 })
