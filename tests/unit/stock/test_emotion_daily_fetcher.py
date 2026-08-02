@@ -35,6 +35,20 @@ def tmp_db(tmp_path, monkeypatch):
         os.unlink(db_path)
 
 
+@pytest.fixture(autouse=True)
+def force_today(monkeypatch):
+    """Bug① 修复后 fetcher 在历史日期走 _run_historical 分支（raw-derived 字段 None）。
+
+    现有测试用 trade_date=\"20260730\" 等历史日期 + mock akshare 接口验证完整
+    today 分支流程。autouse fixture 把 ``_is_today`` mock 为 True 保持旧行为。
+    新增的"历史分支"测试单独 override 此 fixture（或传入 monkeypatch 直接设 False）。
+    """
+    monkeypatch.setattr(
+        "infrastructure.stock.emotion_daily_fetcher._is_today",
+        lambda trade_date: True,
+    )
+
+
 def _seed_limit_stocks(repo: Any, trade_date: str) -> None:
     """塞 limit_stocks_daily 让 fetcher 算 valid / broken / max_consecutive。"""
     from domain.stock.models import LimitStock
@@ -650,3 +664,142 @@ class TestEmotionFetcherSixDimensions:
         # 高度/trend 仍可计算（默认"中位"/"数据不足"）
         assert r.height_level == "中位"  # 无历史 → 默认中位
         assert r.trend_5d == "数据不足"  # 无历史 → 数据不足
+
+
+class TestEmotionFetcherHistoricalBranch:
+    """Bug①：fetcher 对历史日期走 _run_historical 分支。
+
+    akshare 实时接口（legu / spot_em / fund_flow_individual）不接受日期参数，
+    永远返回"今天"截面。fetcher 对历史日期继续走 akshare 会污染历史行
+    的 raw-derived 维度（adv/decl/total_volume/strength/height/trend）。
+    修复后：trade_date != today → 跳过 akshare，所有 raw-derived 字段 None，
+    仅写 limit_stocks_daily 聚合的核心字段。
+    """
+
+    @pytest.fixture(autouse=True)
+    def force_historical(self, monkeypatch):
+        """覆盖外层 autouse force_today，强制 fetcher 走历史分支。"""
+        monkeypatch.setattr(
+            "infrastructure.stock.emotion_daily_fetcher._is_today",
+            lambda trade_date: False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_historical_branch_does_not_call_akshare(self, tmp_db) -> None:
+        """历史分支：fetcher 不调 akshare 实时接口，写入 1 行。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            count = await adapter.run(trade_date="20260730", repo=repo)
+            # akshare 实时接口不被调用（避免污染）
+            mock_ak.stock_market_activity_legu.assert_not_called()
+            mock_ak.stock_zh_index_spot_em.assert_not_called()
+            mock_ak.stock_fund_flow_individual.assert_not_called()
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        assert len(rows) == 1
+        r = rows[0]
+
+        # limit_stocks 聚合字段：db 真实值
+        assert r.limit_up_count == 4
+        assert r.broken_limit_ratio == 0.0  # db 无 broken 行
+        assert r.max_consecutive_boards == 5
+        assert "000003" in r.top_board_leaders
+        assert r.valid_limit_up_count == 3
+
+        # akshare 实时源字段：全部 None（历史日期不可用）
+        assert r.limit_down_count == 0  # 历史日期无数据
+        assert r.total_volume is None
+        assert r.volume_change_pct is None
+        assert r.adv_count is None
+        assert r.decl_count is None
+        assert r.adv_decl_ratio is None
+        assert r.breadth_level is None
+        assert r.top20_volume_avg_chg is None
+        assert r.top20_volume_up_count is None
+        assert r.top20_volume_limit_up_count is None
+        assert r.strength_level is None
+        assert r.market_style is None
+        assert r.board_break_total_count is None
+        assert r.board_break_rebound_count is None
+        assert r.rebound_success_ratio is None
+        assert r.resilience_level is None
+        assert r.height_level is None
+        assert r.trend_5d is None
+        assert r.trend_20d is None
+
+        # authenticity 仍可计算（来自 broken_ratio）
+        assert r.authenticity_level is not None
+
+    @pytest.mark.asyncio
+    async def test_historical_branch_with_broken_data(self, tmp_db) -> None:
+        """历史分支：当 limit_stocks 有 broken 行时，broken_ratio 不为 0。"""
+        from domain.stock.models import LimitStock
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        # seed：3 涨停 + 2 炸板
+        stocks = [
+            LimitStock(
+                trade_date="20260730", stock_code="000001", stock_name="A",
+                limit_type="up", consecutive_boards=1,
+                first_limit_time="10:00:00", last_limit_time="10:00:00",
+                open_count=0, is_valid_limit_up=True,
+            ),
+            LimitStock(
+                trade_date="20260730", stock_code="000002", stock_name="B",
+                limit_type="up", consecutive_boards=2,
+                first_limit_time="10:30:00", last_limit_time="10:30:00",
+                open_count=0, is_valid_limit_up=True,
+            ),
+            LimitStock(
+                trade_date="20260730", stock_code="000003", stock_name="C",
+                limit_type="up", consecutive_boards=1,
+                first_limit_time="11:00:00", last_limit_time="11:00:00",
+                open_count=0, is_valid_limit_up=True,
+            ),
+            LimitStock(
+                trade_date="20260730", stock_code="600000", stock_name="X",
+                limit_type="broken", consecutive_boards=0,
+                first_limit_time=None, last_limit_time="14:35:21",
+                open_count=2, is_valid_limit_up=False,
+            ),
+            LimitStock(
+                trade_date="20260730", stock_code="600001", stock_name="Y",
+                limit_type="broken", consecutive_boards=0,
+                first_limit_time=None, last_limit_time="13:12:45",
+                open_count=1, is_valid_limit_up=False,
+            ),
+        ]
+        repo = CacheRepository(conn=get_connection())
+        repo.upsert_limit_stocks(trade_date="20260730", stocks=stocks)
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            count = await adapter.run(trade_date="20260730", repo=repo)
+            mock_ak.stock_market_activity_legu.assert_not_called()
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        r = rows[0]
+        # 真实聚合：3 涨停 + 2 炸板 → broken_ratio = 2 / (3 + 2) = 0.4
+        assert r.limit_up_count == 3
+        assert r.broken_limit_ratio == pytest.approx(0.4)
+        assert r.max_consecutive_boards == 2
+        assert r.top_board_leaders == ["000002"]  # 唯一 2 板龙头

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any, Protocol
 
 from domain.stock.emotion_dimensions import (
@@ -44,6 +45,23 @@ from domain.stock.models import EmotionIndicators, EmotionRawData, StockDaily, T
 from infrastructure.stock.akshare_client import AkshareFetchError
 
 logger = logging.getLogger(__name__)
+
+
+def _is_today(trade_date: str) -> bool:
+    """判定 trade_date 是否为本地日历今天。
+
+    用途（Bug① 修复）：emotion_daily_fetcher 写入"今日"时，akshare
+    实时截面（stock_market_activity_legu / stock_zh_index_spot_em /
+    stock_fund_flow_individual）才是有效数据；写入历史日期时这些实时字段
+    必须置 None（akshare 接口不接日期参数，对历史日期天然失效）。
+
+    Returns:
+        trade_date == "YYYYMMDD" of 本地今天。
+    """
+    try:
+        return trade_date == datetime.now().strftime("%Y%m%d")
+    except Exception:  # noqa: BLE001 — 时间获取异常降级为非今天
+        return False
 
 
 class _FetcherDeps(Protocol):
@@ -87,6 +105,13 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
     Returns:
         写入条数（恒为 1 或 0）；akshare 失败 / 无 limit_stocks_daily 数据时返回 0。
     """
+    # Bug① 修复：trade_date ≠ 今天时，akshare 实时截面接口（legu / spot_em /
+    # fund_flow_individual）不接日期、永远返回"今天"——直接写入会污染历史行。
+    # 历史日期走 _run_historical 分支，跳过 akshare 调用，仅写 limit_stocks
+    # 聚合的核心字段；其余 raw-derived 维度置 None。
+    if not _is_today(trade_date):
+        return await _run_historical(trade_date, deps)
+
     try:
         raw: EmotionRawData = await _fetch(trade_date)
     except AkshareFetchError as e:
@@ -403,3 +428,92 @@ async def _fetch_top20(trade_date: str) -> Top20VolumeSnapshot | None:
             trade_date, e,
         )
         return None
+
+
+async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
+    """历史日期分支：仅写 limit_stocks_daily 聚合字段，实时派生维度置 None。
+
+    动机（Bug①）：akshare 实时接口（stock_market_activity_legu /
+    stock_zh_index_spot_em / stock_fund_flow_individual）不接受日期参数，
+    永远返回"今天"截面。如果 fetcher 对历史日期继续走 akshare，会把"今天"
+    的实时数据写到错误的日期——污染历史行的 adv_count / decl_count /
+    total_volume / strength / height / trend 等维度。
+
+    此分支跳过 akshare 调用，仅依赖 limit_stocks_daily 真实缓存聚合：
+    - limit_up_count / limit_down_count(置 0) / valid_limit_up_count
+    - broken_limit_ratio（仅当 db 有 broken 行时非零）
+    - max_consecutive_boards + top_board_leaders
+    - authenticity_level（基于 broken_ratio）
+
+    其余 18 个 v023 维度字段全部置 None，表示"数据缺失"；等 fetcher 在"今日"
+    自然覆盖时（当日限速当日跑 fetcher）填入。
+    """
+    limit_stocks = deps.select_limit_stocks(trade_date)
+    if not limit_stocks:
+        db_limit_up_count = 0
+        db_broken_count = 0
+        max_boards = 0
+        valid_count = 0
+        top_board_leaders: list[str] = []
+    else:
+        valid_count = count_valid_limit_ups(limit_stocks)
+        max_boards = max_consecutive_boards(limit_stocks)
+        db_limit_up_count = sum(
+            1 for s in limit_stocks if s.limit_type == "up"
+        )
+        db_broken_count = sum(
+            1 for s in limit_stocks if s.limit_type == "broken"
+        )
+        top_board_leaders = sorted({
+            s.stock_code
+            for s in limit_stocks
+            if s.consecutive_boards == max_boards and max_boards > 0
+        })
+
+    broken_ratio = calculate_broken_limit_ratio(
+        db_limit_up_count, db_broken_count
+    )
+    authenticity_level = compute_authenticity_level(broken_ratio)
+
+    row = EmotionIndicators(
+        trade_date=trade_date,
+        limit_up_count=db_limit_up_count,
+        limit_down_count=0,  # akshare 实时源；历史日期无数据
+        valid_limit_up_count=valid_count,
+        broken_limit_ratio=broken_ratio,
+        max_consecutive_boards=max_boards,
+        yesterday_limit_up_today_premium=None,
+        total_volume=None,
+        volume_change_pct=None,
+        phase=None,
+        phase_confidence=None,
+        phase_reason=None,
+        top_board_leaders=top_board_leaders,
+        # v023 6 维度字段：历史日期无实时源数据，全部 None
+        adv_count=None,
+        decl_count=None,
+        adv_decl_ratio=None,
+        breadth_level=None,
+        top20_volume_avg_chg=None,
+        top20_volume_up_count=None,
+        top20_volume_limit_up_count=None,
+        strength_level=None,
+        market_style=None,
+        board_break_total_count=None,
+        board_break_rebound_count=None,
+        rebound_success_ratio=None,
+        top5d_avg_chg=None,
+        resilience_level=None,
+        authenticity_level=authenticity_level,
+        height_level=None,
+        trend_5d=None,
+        trend_20d=None,
+    )
+    deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
+    logger.info(
+        "emotion_daily_fetcher.run (historical): trade_date=%s limit_up=%d "
+        "valid=%d max_boards=%d leaders=%s (akshare-derived fields=None)",
+        trade_date, db_limit_up_count, valid_count, max_boards,
+        top_board_leaders,
+    )
+    return 1
