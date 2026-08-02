@@ -20,6 +20,31 @@ from domain.stock.models import LimitStock
 # ── 单股判定 ──────────────────────────────────────────────
 
 
+def is_st_stock(stock_name: str | None) -> bool:
+    """判定股票名是否为 ST / *ST / 退市股。
+
+    业务背景（Bug⑨）：ST 股 / *ST 股 / 退市股 涨跌幅限制不同（±5% vs ±10% vs 自由），
+    业务上"涨停数"通常指**普涨停**（±10% 涨停股），不应混入 ST 涨停。
+    fetcher 抓取后过滤 ST 股写入 limit_stocks_daily，emotion_daily 聚合
+    字段（limit_up_count / valid_limit_up_count / top_board_leaders /
+    broken_limit_ratio）天然基于 limit_stocks_daily 计算，自动剔除 ST。
+
+    Args:
+        stock_name: 股票名称（来自 akshare ``stock_zt_pool_em`` /
+            ``stock_zt_pool_dtgc_em`` 的"名称"列）。
+
+    Returns:
+        True 表示该股为 ST/*ST/退市股，应从涨停数中剔除。
+    """
+    if not stock_name:
+        return False
+    # 退市股 / 退整理期 系列
+    if "退" in stock_name:
+        return True
+    # ST / *ST 系列
+    return "ST" in stock_name.upper()
+
+
 def is_valid_limit_up(
     open_count: int, first_limit_time: str | None, last_limit_time: str | None
 ) -> bool:

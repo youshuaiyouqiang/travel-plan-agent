@@ -55,6 +55,7 @@ import pandas as pd
 import requests
 
 from domain.stock.emotion_dimensions import parse_amount_str, parse_pct_str
+from domain.stock.heuristics import is_st_stock
 from domain.stock.models import (
     EmotionRawData,
     LimitStock,
@@ -113,6 +114,10 @@ def fetch_zt_pool(trade_date: str) -> list[LimitStock]:
     result: list[LimitStock] = []
     for _, row in df.iterrows():
         try:
+            stock_name = str(row["名称"])
+            # Bug⑨：ST/*ST/退市股涨跌幅限制不同，过滤不计入普涨停数
+            if is_st_stock(stock_name):
+                continue
             first_time = str(row.get("首次封板时间", "") or "") or None
             last_time = str(row.get("最后封板时间", "") or "") or None
             open_count = int(row.get("炸板次数", 0) or 0)
@@ -173,13 +178,17 @@ def fetch_zt_pool_dtgc(trade_date: str) -> list[LimitStock]:
     result: list[LimitStock] = []
     for _, row in df.iterrows():
         try:
+            stock_name = str(row["名称"])
+            # Bug⑨：ST/*ST/退市股 涨跌幅限制不同（±5% vs ±10%），不计入涨停数
+            if is_st_stock(stock_name):
+                continue
             last_time = str(row.get("最后封板时间", "") or "") or None
             open_count = int(row.get("开板次数", 0) or 0)
             result.append(
                 LimitStock(
                     trade_date=trade_date,
                     stock_code=str(row["代码"]),
-                    stock_name=str(row["名称"]),
+                    stock_name=stock_name,
                     limit_type="broken",
                     consecutive_boards=0,
                     first_limit_time=None,
