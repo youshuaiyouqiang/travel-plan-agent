@@ -236,18 +236,19 @@ def _df_to_int(df: pd.DataFrame, item: str) -> int:
         return 0
 
 
-def _extract_shanghai_total_volume(df: pd.DataFrame) -> float:
+def _extract_shanghai_total_volume(df: pd.DataFrame) -> float | None:
     """从 ``stock_zh_index_spot_em`` 返回的截面 DataFrame 取上证成交额。
 
-    返回 0.0（而非 None）— caller（fetcher）会做"未抓到成交额"判定。
+    Task B：返回 None（而非 0.0）表示"未抓到成交额"。
+    区分"接口返空"（None）和"成交额确实为 0"（0.0）两种语义。
     """
     if df is None or len(df) == 0 or "code" not in df.columns or "成交额" not in df.columns:
-        return 0.0
+        return None
     match = df[df["code"] == "sh000001"]
     if len(match) == 0:
-        return 0.0
+        return None
     v = _to_float(match.iloc[0].get("成交额"))
-    return v if v is not None else 0.0
+    return v  # 可能 None
 
 
 def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
@@ -258,8 +259,15 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
     ``domain.stock.heuristics`` + 读 ``limit_stocks_daily`` 完成，
     不在 akshare 包装层做聚合。
 
+    **Task B 修复**：``stock_zh_index_spot_em`` 反爬不稳定（约 50% 成功率），
+    原代码在该接口失败时直接 ``raise AkshareFetchError``，导致整个
+    emotion_daily 该日不写入。修复后：spot_em 失败时降级为
+    ``total_volume=None``，其他字段（涨停/跌停/炸板）照写——
+    legu 接口稳定可用，不应被 spot_em 拖累。
+
     Returns:
-        EmotionRawData 单一对象（一天一行）；akshare 失败抛 AkshareFetchError。
+        EmotionRawData 单一对象（一天一行）；legu 失败抛 AkshareFetchError。
+        spot_em 失败时 total_volume=None，不抛异常。
     """
     target = _to_yyyymmdd(trade_date)
     if target is None:
@@ -267,7 +275,7 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
             f"fetch_emotion_daily invalid trade_date={trade_date!r}"
         )
 
-    # 1) 拉涨停/跌停/炸板截面（ak.stock_market_activity_legu）
+    # 1) 拉涨停/跌停/炸板截面（ak.stock_market_activity_legu）— 稳定可用
     try:
         activity_df: pd.DataFrame = ak.stock_market_activity_legu()
     except _AKSHARE_EXC as e:
@@ -279,20 +287,24 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
     limit_down = _df_to_int(activity_df, "跌停")
     broken = _df_to_int(activity_df, "炸板")
 
-    # 2) 拉两市成交额（ak.stock_zh_index_spot_em）— 取上证代码 sh000001
+    # 2) 拉两市成交额（ak.stock_zh_index_spot_em）— 反爬不稳定，失败降级 None
+    # Task B：不再因 spot_em 失败而抛异常；legu 成功即写入
+    total_volume: float | None = None
     try:
         spot_df: pd.DataFrame = ak.stock_zh_index_spot_em()
+        total_volume = _extract_shanghai_total_volume(spot_df)
     except _AKSHARE_EXC as e:
-        raise AkshareFetchError(
-            f"fetch_emotion_daily stock_zh_index_spot_em failed date={trade_date}"
-        ) from e
-    total_volume = _extract_shanghai_total_volume(spot_df)
+        logger.warning(
+            "fetch_emotion_daily stock_zh_index_spot_em failed date=%s err=%s",
+            trade_date, e,
+        )
+        total_volume = None  # 降级：成交额缺失，其他字段照写
 
-    if limit_up == 0 and limit_down == 0 and total_volume == 0.0:
-        # 三个数都拿不到，视为空数据（接口返空 / 非交易日）
+    if limit_up == 0 and limit_down == 0 and broken == 0 and total_volume is None:
+        # 涨停/跌停/炸板/成交额全空 → 视为空数据（非交易日）
         raise AkshareFetchError(
             f"fetch_emotion_daily empty data for date={trade_date} "
-            f"(limit_up=0, limit_down=0, total_volume=0)"
+            f"(limit_up=0, limit_down=0, broken=0, total_volume=None)"
         )
 
     return EmotionRawData(

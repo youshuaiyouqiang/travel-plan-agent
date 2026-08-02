@@ -222,3 +222,186 @@ class TestEmotionFetcherAdapter:
             written = await adapter.run(trade_date="20260730", repo=repo)
 
         assert written == 1
+
+
+# ── Task B：spot_em 降级 + 无 limit_stocks 边界 ────────────────
+
+
+class TestEmotionFetcherSpotEmDegradation:
+    """Task B：spot_em 失败时降级为 total_volume=None，其他字段照写。
+
+    现状 bug：fetch_emotion_daily 在 spot_em 失败时直接 raise AkshareFetchError，
+    导致整个 fetcher 返回 0，emotion_daily 表该日完全不写入。
+    修复后：legu 成功 + spot_em 失败 → total_volume=None，其他字段正常写入。
+    """
+
+    @pytest.mark.asyncio
+    async def test_spot_em_failure_writes_with_none_volume(self, tmp_db) -> None:
+        """spot_em 抛异常 → total_volume=None，但 limit_up/limit_down/valid 照写。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        _seed_limit_stocks(repo, trade_date="20260730")
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            # spot_em 失败
+            mock_ak.stock_zh_index_spot_em.side_effect = ValueError("反爬失败")
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        # 修复后：spot_em 失败时降级，fetcher 仍写 1 行
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        assert len(rows) == 1
+        r = rows[0]
+        # 其他字段照写
+        assert r.limit_up_count == 4
+        assert r.limit_down_count == 1
+        assert r.valid_limit_up_count == 3
+        # total_volume 应为 None（降级）
+        assert r.total_volume is None, (
+            f"spot_em 失败时 total_volume 应为 None（降级），got={r.total_volume}"
+        )
+        # volume_change_pct 也应为 None（当日 total_volume=None 无法算）
+        assert r.volume_change_pct is None
+
+    @pytest.mark.asyncio
+    async def test_spot_em_empty_df_writes_with_none_volume(self, tmp_db) -> None:
+        """spot_em 返空 df → total_volume=None（非 0.0）。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        _seed_limit_stocks(repo, trade_date="20260730")
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            # spot_em 返空 df
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame()
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        r = rows[0]
+        assert r.total_volume is None, (
+            f"spot_em 返空时 total_volume 应为 None，got={r.total_volume}"
+        )
+
+
+class TestEmotionFetcherNoLimitStocksBoundary:
+    """Task B：limit_stocks 为空时也写入（冰点期是有效数据）。
+
+    现状 bug：fetcher 第 80-86 行在 limit_stocks 为空时直接 return 0，
+    导致"涨停数为 0 的冰点期"完全不写入 emotion_daily。
+    修复后：limit_stocks 为空时 valid_count=0、max_boards=0，
+    其他字段照写。
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_limit_stocks_still_writes(self, tmp_db) -> None:
+        """limit_stocks_daily 该日无数据 → 仍写入 emotion_daily（valid=0, max_boards=0）。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        # 不 seed limit_stocks_daily（模拟涨停数为 0 的冰点期）
+
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            # legu 返回涨停 0 / 跌停 5 / 炸板 0（冰点期）
+            mock_ak.stock_market_activity_legu.return_value = pd.DataFrame(
+                [
+                    {"item": "涨停", "value": 0},
+                    {"item": "跌停", "value": 5},
+                    {"item": "炸板", "value": 0},
+                ]
+            )
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 8.0e11}]
+            )
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        # 修复后：limit_stocks 为空时仍写入（不 skip）
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        assert len(rows) == 1
+        r = rows[0]
+        assert r.limit_up_count == 0
+        assert r.limit_down_count == 5
+        # valid / max_boards 为 0（无涨停股）
+        assert r.valid_limit_up_count == 0
+        assert r.max_consecutive_boards == 0
+        # broken_ratio = 0 / (0 + 0) 应为 0.0（不能 NaN）
+        assert r.broken_limit_ratio == 0.0
+        # total_volume 照写
+        assert r.total_volume == pytest.approx(8.0e11)
+
+
+class TestEmotionFetcherVolumeChangePctWithNone:
+    """Task B：volume_change_pct 在 None total_volume 时的边界。
+
+    - 当日 total_volume=None → volume_change_pct=None
+    - 前日 total_volume=None → volume_change_pct=None
+    """
+
+    @pytest.mark.asyncio
+    async def test_volume_change_pct_none_when_today_volume_none(
+        self, tmp_db
+    ) -> None:
+        """当日 total_volume=None（spot_em 失败）→ volume_change_pct=None。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        # 写昨日 emotion_daily（有 total_volume）
+        from domain.stock.models import EmotionIndicators
+
+        repo.upsert_emotion_daily(
+            trade_date="20260729",
+            rows=[
+                EmotionIndicators(
+                    trade_date="20260729",
+                    limit_up_count=10, limit_down_count=2,
+                    valid_limit_up_count=8, broken_limit_ratio=0.1,
+                    max_consecutive_boards=2,
+                    yesterday_limit_up_today_premium=None,
+                    total_volume=1.0e12, volume_change_pct=None,
+                    phase=None, phase_confidence=None, phase_reason=None,
+                )
+            ],
+        )
+        _seed_limit_stocks(repo, trade_date="20260730")
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            # spot_em 失败 → 当日 total_volume=None
+            mock_ak.stock_zh_index_spot_em.side_effect = ValueError("失败")
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        r = rows[0]
+        # 当日 total_volume=None → volume_change_pct 必须为 None（不能除 0）
+        assert r.total_volume is None
+        assert r.volume_change_pct is None

@@ -36,7 +36,7 @@ class EmotionIndicators(BaseModel):
     broken_limit_ratio: float
     max_consecutive_boards: int
     yesterday_limit_up_today_premium: float | None
-    total_volume: float
+    total_volume: float | None  # Task B：spot_em 失败时降级 None
     volume_change_pct: float | None
     phase: str | None
     phase_confidence: str | None
@@ -54,7 +54,9 @@ class EmotionRawData(BaseModel):
     字段语义：
     - limit_up_count / limit_down_count: akshare 截面涨停/跌停家数
     - broken_count: 当日炸板数（fetcher 用此算 broken_limit_ratio）
-    - total_volume: 两市成交额（元）
+    - total_volume: 两市成交额（元）；Task B 改为 Optional——
+      ``stock_zh_index_spot_em`` 反爬不稳定，失败时降级为 None，
+      其他字段照写（不再因 spot_em 失败而整行丢弃）
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -62,7 +64,7 @@ class EmotionRawData(BaseModel):
     limit_up_count: int
     limit_down_count: int
     broken_count: int
-    total_volume: float
+    total_volume: float | None
 
 
 class MarketSnapshot(BaseModel):

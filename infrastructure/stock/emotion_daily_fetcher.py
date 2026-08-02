@@ -76,25 +76,39 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         return 0
 
     # 二次加工：valid_count / max_boards（来自 limit_stocks_daily）
+    # Task B：limit_stocks 为空（涨停数为 0 的冰点期）时仍写入——
+    # 涨停数为 0 是有效数据（情绪冰点期），原代码直接 return 0 导致
+    # 该日完全不写入 emotion_daily，复盘文无法判定冰点期
     limit_stocks = deps.select_limit_stocks(trade_date)
     if not limit_stocks:
-        # 涨停股池没数据无法算 valid / max_boards；fatcher 不写（避免空数据）
+        # 涨停股池为空 → valid_count=0, max_boards=0（冰点期）
         logger.info(
-            "emotion_daily_fetcher.run: trade_date=%s no limit_stocks; skip",
+            "emotion_daily_fetcher.run: trade_date=%s no limit_stocks; "
+            "write as ice_phase (valid=0, max_boards=0)",
             trade_date,
         )
-        return 0
-    valid_count = count_valid_limit_ups(limit_stocks)
-    max_boards = max_consecutive_boards(limit_stocks)
+        valid_count = 0
+        max_boards = 0
+    else:
+        valid_count = count_valid_limit_ups(limit_stocks)
+        max_boards = max_consecutive_boards(limit_stocks)
     broken_ratio = calculate_broken_limit_ratio(
         raw.limit_up_count, raw.broken_count
     )
 
     # 衍生字段：volume_change_pct（需昨日 emotion_daily）
+    # Task B：当日或前日 total_volume=None 时 volume_change_pct=None
     yesterday = await deps.get_emotion_indicators_before(trade_date)
     volume_change_pct: float | None = None
-    if yesterday is not None and yesterday.total_volume > 0:
-        volume_change_pct = (raw.total_volume - yesterday.total_volume) / yesterday.total_volume
+    if (
+        yesterday is not None
+        and yesterday.total_volume is not None
+        and yesterday.total_volume > 0
+        and raw.total_volume is not None
+    ):
+        volume_change_pct = (
+            (raw.total_volume - yesterday.total_volume) / yesterday.total_volume
+        )
 
     # yesterday_limit_up_today_premium 暂留 None
     # （需 stock_daily fetcher 完成后基于个股 K 线计算）
@@ -114,7 +128,7 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
     )
     deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
     logger.info(
-        "emotion_daily_fetcher.run: trade_date=%s limit_up=%d valid=%d max_boards=%d total_volume=%.0f",
+        "emotion_daily_fetcher.run: trade_date=%s limit_up=%d valid=%d max_boards=%d total_volume=%s",
         trade_date, raw.limit_up_count, valid_count, max_boards, raw.total_volume,
     )
     return 1
