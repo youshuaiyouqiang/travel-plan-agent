@@ -466,38 +466,78 @@ def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
     return rows
 
 
+def _to_tx_symbol(stock_code: str) -> str:
+    """把 6 位股票代码转为腾讯接口要求的 ``sh``/``sz`` 前缀格式。
+
+    规则（按 A 股代码首位）：
+    - ``6`` 开头 → 上交所 ``sh`` + code（如 600519 → sh600519）
+    - ``0`` / ``3`` 开头 → 深交所 ``sz`` + code（如 000001 → sz000001）
+    - ``8`` / ``4`` 开头（北交所）→ 默认归 ``bj``；腾讯接口对北交所
+      支持不稳定，调用方按失败处理（akshare 抛异常 → log warning 跳过）
+
+    Args:
+        stock_code: 6 位股票代码（如 ``"000001"``）。
+
+    Returns:
+        带交易所前缀的 symbol（如 ``"sz000001"``）。
+
+    Raises:
+        AkshareFetchError: 当 stock_code 不是 6 位数字时。
+    """
+    code = str(stock_code).strip()
+    if len(code) != 6 or not code.isdigit():
+        raise AkshareFetchError(
+            f"_to_tx_symbol invalid stock_code={stock_code!r}"
+        )
+    first = code[0]
+    if first == "6":
+        return f"sh{code}"
+    if first in ("0", "3"):
+        return f"sz{code}"
+    # 北交所（8/4 开头）——腾讯接口支持不稳定，仍按 bj 前缀尝试
+    return f"bj{code}"
+
+
 def fetch_stock_daily(
     stock_code: str, trade_date: str
 ) -> list[StockDaily]:
-    """抓取单只股的多日 K 线（ak.stock_zh_a_hist）。
+    """抓取单只股的多日 K 线（腾讯 ``stock_zh_a_hist_tx``）。
 
-    akshare 函数：``ak.stock_zh_a_hist(symbol=stock_code, period='daily',
-    end_date=YYYY-MM-DD)``。返回 DataFrame 列名（中文）：
-    ``日期`` / ``开盘`` / ``收盘`` / ``最高`` / ``最低`` / ``成交量`` /
-    ``成交额`` / ``振幅`` / ``涨跌幅`` / ``涨跌额`` / ``换手率``。
+    **Task D 修复**：从东财 ``stock_zh_a_hist``（反爬严重，99 股失败 80 只）
+    切换到腾讯 ``stock_zh_a_hist_tx``（成功率显著提升）。
+
+    akshare 函数：``ak.stock_zh_a_hist_tx(symbol=sh/sz+code,
+    start_date=YYYYMMDD, end_date=YYYYMMDD)``。返回 DataFrame 列名（英文）：
+    ``date`` / ``open`` / ``close`` / ``high`` / ``low`` / ``volume`` /
+    ``turnover``（换手率，0-1 小数）/ ``amount``（成交额）。
+    腾讯接口**不返回 pct_chg 字段**，需用前日 close 自己算（与
+    ``stock_zh_index_daily`` / ``stock_board_industry_index_ths`` 同病）。
+
+    start_date 往前推 3 天确保覆盖前一个交易日（用于算 pct_chg）。
 
     Args:
-        stock_code: 6 位股票代码（如 "000001"）。
-        trade_date: 交易日期（YYYYMMDD）；用于限定 end_date。
+        stock_code: 6 位股票代码（如 ``"000001"``）。
+        trade_date: 交易日期（``YYYYMMDD``）；用于限定 end_date。
 
     Returns:
-        StockDaily 列表（含指定日期及之前所有 K 线）。akshare 失败/空数据
-        时返回 []。
+        StockDaily 列表（含指定日期及之前约 3-4 天的 K 线）。
+        akshare 失败/空数据时返回 ``[]``。
     """
     target = _to_yyyymmdd(trade_date)
     if target is None:
         raise AkshareFetchError(
             f"fetch_stock_daily invalid trade_date={trade_date!r}"
         )
-    end_date_dash = f"{target[:4]}-{target[4:6]}-{target[6:8]}"
+    symbol = _to_tx_symbol(stock_code)
+    start_date = _shift_date_yyyymmdd(target, days=-3)
 
     try:
-        df: pd.DataFrame = ak.stock_zh_a_hist(
-            symbol=str(stock_code), period="daily", end_date=end_date_dash,
+        df: pd.DataFrame = ak.stock_zh_a_hist_tx(
+            symbol=symbol, start_date=start_date, end_date=target,
         )
     except _AKSHARE_EXC as e:
         raise AkshareFetchError(
-            f"fetch_stock_daily stock_zh_a_hist failed code={stock_code} date={trade_date}"
+            f"fetch_stock_daily stock_zh_a_hist_tx failed code={stock_code} date={trade_date}"
         ) from e
 
     if df is None or len(df) == 0:
@@ -506,30 +546,39 @@ def fetch_stock_daily(
         )
         return []
 
+    # 预先转成 norm_date 列，便于按 trade_date 过滤与定位 prev_close
+    df = df.reset_index(drop=True)
+    date_norm = df["date"].astype(str).str.replace("-", "").str.replace("/", "")
+
     rows: list[StockDaily] = []
-    for _, r in df.iterrows():
-        date_raw = r.get("日期")
-        if date_raw is None:
+    for i, r in df.iterrows():
+        norm_date = str(date_norm.iloc[i])
+        if len(norm_date) != 8:
             continue
-        if hasattr(date_raw, "strftime"):
-            norm_date = date_raw.strftime("%Y%m%d")
-        else:
-            s = str(date_raw).strip()
-            norm_date = s.replace("-", "").replace("/", "")
-            if len(norm_date) != 8:
-                continue
+        close = _to_float(r.get("close"))
+
+        # 自己算 pct_chg（腾讯接口不返回该字段）
+        # 用前一行 close 作为 prev_close；首行无前日时 pct_chg=None
+        pct_chg: float | None = None
+        if i > 0:
+            prev_close = _to_float(df.iloc[i - 1].get("close"))
+            if prev_close is not None and prev_close != 0 and close is not None:
+                pct_chg = (close - prev_close) / prev_close * 100
+
         try:
             rows.append(
                 StockDaily(
                     trade_date=norm_date,
                     stock_code=str(stock_code),
-                    open=_to_float(r.get("开盘")),
-                    close=_to_float(r.get("收盘")),
-                    high=_to_float(r.get("最高")),
-                    low=_to_float(r.get("最低")),
-                    volume=_to_float(r.get("成交量")),
-                    pct_chg=_to_float(r.get("涨跌幅")),
-                    turnover=_to_float(r.get("成交额")),
+                    open=_to_float(r.get("open")),
+                    close=close,
+                    high=_to_float(r.get("high")),
+                    low=_to_float(r.get("low")),
+                    volume=_to_float(r.get("volume")),
+                    pct_chg=pct_chg,
+                    # StockDaily.turnover 是"成交额"，对应腾讯 amount 字段
+                    # （腾讯 turnover 字段是"换手率"，StockDaily 无此字段）
+                    turnover=_to_float(r.get("amount")),
                 )
             )
         except (ValueError, TypeError) as e:

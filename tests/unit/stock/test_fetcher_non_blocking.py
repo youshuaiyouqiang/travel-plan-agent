@@ -143,17 +143,17 @@ class TestStockDailyFetcherNonBlocking:
     async def test__fetch_does_not_block_event_loop(self, tmp_db) -> None:
         from infrastructure.stock.stock_daily_fetcher import _fetch
 
+        # Task D：数据源切换到腾讯 stock_zh_a_hist_tx（英文列名）
         def _slow_hist(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
             time.sleep(0.4)
             return pd.DataFrame(
-                [{"日期": "2026-07-30", "股票代码": "000001",
-                  "开盘": 12.5, "收盘": 13.0, "最高": 13.2,
-                  "最低": 12.3, "成交量": 1000000, "成交额": 12.95e6,
-                  "振幅": 0.0, "涨跌幅": 4.0, "涨跌额": 0.5, "换手率": 0.0}]
+                [{"date": "2026-07-30", "open": 12.5, "close": 13.0,
+                  "high": 13.2, "low": 12.3, "volume": 1000000,
+                  "turnover": 0.0, "amount": 12.95e6}]
             )
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_zh_a_hist.side_effect = _slow_hist
+            mock_ak.stock_zh_a_hist_tx.side_effect = _slow_hist
             await _assert_event_loop_responsive(_fetch("000001", "20260730"))
 
 

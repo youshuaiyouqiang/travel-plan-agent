@@ -315,29 +315,35 @@ class TestStockDailyFetcherSkipsRecentlyFetched:
         )
 
         # mock akshare: 只 600001 和 600002 应被调
+        # Task D：腾讯接口 symbol 是 "sh600000" 格式（带前缀）
         called_codes: list[str] = []
 
-        def _slow_hist(*_args: Any, code: str | None = None, **_kwargs: Any) -> pd.DataFrame:
-            # akshare 真实调用是 stock_zh_a_hist(symbol=code, period=..., ...)
-            # 用 kwargs.symbol 兜底
-            actual = code or _kwargs.get("symbol") or (_args[0] if _args else None)
+        def _slow_hist(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
+            # 腾讯接口调用：stock_zh_a_hist_tx(symbol="sh600000", ...)
+            actual = _kwargs.get("symbol") or (_args[0] if _args else None)
             assert actual is not None
             called_codes.append(str(actual))
+            # 返回 2 行便于 fetcher 取到 trade_date 当日行
             return pd.DataFrame(
-                [{"日期": "2026-07-31", "股票代码": str(actual),
-                  "开盘": 10.0, "收盘": 10.5, "最高": 10.8, "最低": 9.9,
-                  "成交量": 1_000_000, "成交额": 10_500_000.0,
-                  "振幅": 0.0, "涨跌幅": 5.0, "涨跌额": 0.5, "换手率": 2.5}]
+                [
+                    {"date": "2026-07-30", "open": 10.0, "close": 10.0,
+                     "high": 10.2, "low": 9.8, "volume": 800_000,
+                     "turnover": 0.004, "amount": 8_000_000.0},
+                    {"date": "2026-07-31", "open": 10.0, "close": 10.5,
+                     "high": 10.8, "low": 9.9, "volume": 1_000_000,
+                     "turnover": 0.005, "amount": 10_500_000.0},
+                ]
             )
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_zh_a_hist.side_effect = _slow_hist
+            mock_ak.stock_zh_a_hist_tx.side_effect = _slow_hist
             written = await fetcher_mod.run("20260731", repo)
 
         # 600000 跳过；600001 重抓 → success（之前 failed）；600002 抓 → success
-        assert "600000" not in called_codes, "log 标 success 的股不应调 akshare"
-        assert "600001" in called_codes, "log 标 failed 的股应重抓"
-        assert "600002" in called_codes, "无 log 的股应抓取"
+        # 注意：腾讯接口 symbol 带 sh 前缀
+        assert "sh600000" not in called_codes, "log 标 success 的股不应调 akshare"
+        assert "sh600001" in called_codes, "log 标 failed 的股应重抓"
+        assert "sh600002" in called_codes, "无 log 的股应抓取"
         assert len(called_codes) == 2
         # 实际：fetcher 只 upsert 抓到的 2 行（600001 + 600002）
         assert written == 2
@@ -352,14 +358,18 @@ class TestStockDailyFetcherSkipsRecentlyFetched:
 
         def _hist(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
             return pd.DataFrame(
-                [{"日期": "2026-07-31", "股票代码": "600000",
-                  "开盘": 10.0, "收盘": 10.5, "最高": 10.8, "最低": 9.9,
-                  "成交量": 1_000_000, "成交额": 10_500_000.0,
-                  "振幅": 0.0, "涨跌幅": 5.0, "涨跌额": 0.5, "换手率": 2.5}]
+                [
+                    {"date": "2026-07-30", "open": 10.0, "close": 10.0,
+                     "high": 10.2, "low": 9.8, "volume": 800_000,
+                     "turnover": 0.004, "amount": 8_000_000.0},
+                    {"date": "2026-07-31", "open": 10.0, "close": 10.5,
+                     "high": 10.8, "low": 9.9, "volume": 1_000_000,
+                     "turnover": 0.005, "amount": 10_500_000.0},
+                ]
             )
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_zh_a_hist.side_effect = _hist
+            mock_ak.stock_zh_a_hist_tx.side_effect = _hist
             await fetcher_mod.run("20260731", repo)
 
         # 验证 log 已写入
@@ -382,7 +392,7 @@ class TestStockDailyFetcherSkipsRecentlyFetched:
             raise AkshareFetchError("akshare 异常")
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_zh_a_hist.side_effect = _hist
+            mock_ak.stock_zh_a_hist_tx.side_effect = _hist
             written = await fetcher_mod.run("20260731", repo)
 
         assert written == 0
@@ -431,19 +441,25 @@ class TestWarmupFasterOnReboot:
 
         called_codes: list[str] = []
 
-        def _hist(*_args: Any, code: str | None = None, **_kwargs: Any) -> pd.DataFrame:
-            actual = code or _kwargs.get("symbol") or (_args[0] if _args else None)
+        def _hist(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
+            # Task D：腾讯接口 symbol 是 "sh600000" 格式（带前缀）
+            actual = _kwargs.get("symbol") or (_args[0] if _args else None)
             assert actual is not None
             called_codes.append(str(actual))
+            # 返回 2 行便于 fetcher 取到 trade_date 当日行
             return pd.DataFrame(
-                [{"日期": "2026-07-31", "股票代码": str(actual),
-                  "开盘": 10.0, "收盘": 10.5, "最高": 10.8, "最低": 9.9,
-                  "成交量": 1_000_000, "成交额": 10_500_000.0,
-                  "振幅": 0.0, "涨跌幅": 5.0, "涨跌额": 0.5, "换手率": 2.5}]
+                [
+                    {"date": "2026-07-30", "open": 10.0, "close": 10.0,
+                     "high": 10.2, "low": 9.8, "volume": 800_000,
+                     "turnover": 0.004, "amount": 8_000_000.0},
+                    {"date": "2026-07-31", "open": 10.0, "close": 10.5,
+                     "high": 10.8, "low": 9.9, "volume": 1_000_000,
+                     "turnover": 0.005, "amount": 10_500_000.0},
+                ]
             )
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_zh_a_hist.side_effect = _hist
+            mock_ak.stock_zh_a_hist_tx.side_effect = _hist
             written = await fetcher_mod.run("20260731", repo)
 
         # 只调 19 次（80..98）
