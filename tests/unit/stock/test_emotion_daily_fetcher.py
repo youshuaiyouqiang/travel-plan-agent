@@ -81,14 +81,17 @@ def _fake_activity_df() -> pd.DataFrame:
     """ak.stock_market_activity_legu 返回的简化版。
 
     Task E：新增"上涨"/"下跌"项（维度 2 广度原始数据）。
+
+    数值故意与 _seed_limit_stocks 不一致（"涨停"=99，但 db 里只塞 4 个 up），
+    用来断言 fetcher 现在走 db 聚合而非 akshare 实时截面。
     """
     return pd.DataFrame(
         [
-            {"item": "涨停", "value": 4},     # 4 家涨停（含 1 个炸板后回封）
-            {"item": "跌停", "value": 1},
-            {"item": "炸板", "value": 1},
-            {"item": "上涨", "value": 300},   # Task E：维度 2 广度
-            {"item": "下跌", "value": 200},   # Task E：维度 2 广度
+            {"item": "涨停", "value": 99},   # fake ≠ db 个数，驱动 fetcher 走 db
+            {"item": "跌停", "value": 1},    # fetcher 仍信 akshare（无 db 替代）
+            {"item": "炸板", "value": 99},   # fake ≠ db 个数，驱动 fetcher 走 db
+            {"item": "上涨", "value": 300},
+            {"item": "下跌", "value": 200},
         ]
     )
 
@@ -128,12 +131,18 @@ class TestEmotionFetcherSuccess:
         r = rows[0]
         assert r.trade_date == "20260730"
         # 数值字段
-        assert r.limit_up_count == 4   # akshare 返的"涨停"=4
+        # 修复前 fetcher 直接用 akshare 实时截面的"涨停"=99 → 与历史 7-30 真实数不符。
+        # 现在 fetcher 从 limit_stocks_daily 聚合（4 个 up）→ 4（fake 99 必须被忽略）。
+        assert r.limit_up_count == 4
         assert r.limit_down_count == 1
         # 聚合字段（来自 limit_stocks_daily）
         assert r.valid_limit_up_count == 3  # 3 个一次性封死
-        assert r.broken_limit_ratio == pytest.approx(1 / 5)  # 1 / (4+1)
+        # 修复前 fetcher 用 akshare "炸板"=99 算 → broken_ratio ≈ 99/(99+99) ≈ 0.5
+        # 现在 db 没 broken 行 → 0；broken_ratio 仅在 db 真有 broken 行时非零
+        assert r.broken_limit_ratio == 0.0
         assert r.max_consecutive_boards == 5  # 3 只涨停中最大连板
+        # 龙头股票：5 板的 000003 必须出现在 top_board_leaders
+        assert "000003" in r.top_board_leaders
         # 成交额
         assert r.total_volume == pytest.approx(1.2e12)
         # volume_change_pct：昨日无数据 → None
@@ -558,8 +567,8 @@ class TestEmotionFetcherSixDimensions:
         assert r.top20_volume_up_count == 20
         assert r.market_style is not None  # 有 height_level 才有 market_style
 
-        # 维度 5：真实度（broken_ratio=1/5=0.2 → "偏真"）
-        assert r.authenticity_level == "偏真"
+        # 维度 5：真实度（db 没 broken 行 → broken_ratio=0 → "真实"）
+        assert r.authenticity_level == "真实"
 
         # 维度 1：高度（有历史数据 → 非 None）
         assert r.height_level is not None

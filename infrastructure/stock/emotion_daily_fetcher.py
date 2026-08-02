@@ -116,11 +116,39 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         )
         valid_count = 0
         max_boards = 0
+        # 修复：limit_up_count / broken_count / top_board_leaders 都跟着置默认
+        db_limit_up_count = 0
+        db_broken_count = 0
+        top_board_leaders: list[str] = []
     else:
         valid_count = count_valid_limit_ups(limit_stocks)
         max_boards = max_consecutive_boards(limit_stocks)
+        # 修复：原 fetcher 用 akshare 实时截面的"涨停"/"炸板"（不接日期，永远是今天）
+        # 来算 broken_ratio，导致每个历史日的 limit_up_count / broken_count
+        # 都被错写成"今日"。此处改用 limit_stocks_daily 聚合的真实值。
+        db_limit_up_count = sum(
+            1 for s in limit_stocks if s.limit_type == "up"
+        )
+        db_broken_count = sum(
+            1 for s in limit_stocks if s.limit_type == "broken"
+        )
+        # 修复：max_consecutive_boards 对应股票代码列表（并列龙头都要列出）。
+        top_board_leaders = sorted({
+            s.stock_code
+            for s in limit_stocks
+            if s.consecutive_boards == max_boards and max_boards > 0
+        })
+    # 当 db 真实数据可计算时优先覆盖 akshare 实时截面（akshare 接口不接受日期，
+    # 原写法对历史日天然失效）；db 一行都没有才退回 akshare。
+    effective_limit_up_count = (
+        db_limit_up_count if db_limit_up_count > 0 else raw.limit_up_count
+    )
+    effective_broken_count = (
+        db_broken_count if (db_limit_up_count + db_broken_count) > 0
+        else raw.broken_count
+    )
     broken_ratio = calculate_broken_limit_ratio(
-        raw.limit_up_count, raw.broken_count
+        effective_limit_up_count, effective_broken_count
     )
 
     # 衍生字段：volume_change_pct（需昨日 emotion_daily）
@@ -202,7 +230,9 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
     # （需 stock_daily fetcher 完成后基于个股 K 线计算）
     row = EmotionIndicators(
         trade_date=raw.trade_date,
-        limit_up_count=raw.limit_up_count,
+        # 修复：优先用 limit_stocks_daily 聚合的真实涨停数，akshare 实时截面
+        # 不接日期，对历史日天然失效。
+        limit_up_count=effective_limit_up_count,
         limit_down_count=raw.limit_down_count,
         valid_limit_up_count=valid_count,
         broken_limit_ratio=broken_ratio,
@@ -213,6 +243,8 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         phase=None,
         phase_confidence=None,
         phase_reason=None,
+        # 修复：把"最高板龙头"股票代码填入 DTO，前端可单独列表展示
+        top_board_leaders=top_board_leaders,
         # Task E v023：6 维度字段
         adv_count=raw.adv_count,
         decl_count=raw.decl_count,
@@ -236,9 +268,11 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
     deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
     logger.info(
         "emotion_daily_fetcher.run: trade_date=%s limit_up=%d valid=%d "
-        "max_boards=%d total_volume=%s height=%s breadth=%s strength=%s "
-        "resilience=%s authenticity=%s trend_5d=%s trend_20d=%s style=%s",
-        trade_date, raw.limit_up_count, valid_count, max_boards,
+        "max_boards=%d leaders=%s total_volume=%s height=%s breadth=%s "
+        "strength=%s resilience=%s authenticity=%s trend_5d=%s "
+        "trend_20d=%s style=%s",
+        trade_date, effective_limit_up_count, valid_count, max_boards,
+        top_board_leaders,
         raw.total_volume, height_level, breadth_level, strength_level,
         resilience_result["resilience_level"], authenticity_level,
         trend_5d, trend_20d, market_style,

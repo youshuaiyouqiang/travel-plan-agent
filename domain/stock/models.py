@@ -79,6 +79,10 @@ class EmotionIndicators(BaseModel):
     # 维度 6：持续性
     trend_5d: str | None = None
     trend_20d: str | None = None
+    # 最高板龙头股票代码列表：max_consecutive_boards 对应的所有 stock_code
+    # 不入库（避免再开 schema 迁移），读路径从 limit_stocks_daily 多查一次聚合
+    # 写入时由 fetcher 填；老行（DB 已有但 fetcher 未重写）读路径补全
+    top_board_leaders: list[str] = []
 
 
 class EmotionRawData(BaseModel):

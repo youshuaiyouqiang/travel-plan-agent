@@ -60,6 +60,40 @@ def _validate_table(table: str) -> None:
         )
 
 
+def _compute_top_board_leaders(
+    conn: sqlite3.Connection, trade_date: str
+) -> list[str]:
+    """取 max_consecutive_boards 对应的 stock_code 列表。
+
+    修复：emotion_daily.max_consecutive_boards 只存数字，缺少龙头归属。
+    该函数多查一次 limit_stocks_daily（白名单内）给出"龙头列表"，
+    供"最高板龙头"前端表。
+
+    Args:
+        conn: SQLite 连接（必须能读 limit_stocks_daily）。
+        trade_date: 交易日（YYYYMMDD）。
+
+    Returns:
+        已排序的 stock_code 列表（空列表 = 该日无涨停股）。
+    """
+    _validate_table("limit_stocks_daily")
+    max_row = conn.execute(
+        "SELECT MAX(consecutive_boards) AS m FROM limit_stocks_daily "
+        "WHERE trade_date = ?",
+        (trade_date,),
+    ).fetchone()
+    max_boards = max_row["m"] if max_row is not None else None
+    if max_boards is None or int(max_boards) <= 0:
+        return []
+    rows = conn.execute(
+        "SELECT stock_code FROM limit_stocks_daily "
+        "WHERE trade_date = ? AND consecutive_boards = ? "
+        "ORDER BY stock_code",
+        (trade_date, int(max_boards)),
+    ).fetchall()
+    return [r["stock_code"] for r in rows]
+
+
 class SqliteStockDataSource:
     """SQLite 股票数据源——读侧。
 
@@ -81,30 +115,44 @@ class SqliteStockDataSource:
         _validate_table("market_index_daily")
         # 取所有指数；聚合得到 sh / sz / cyb
         rows = self._conn.execute(
-            "SELECT index_code, close, pct_chg FROM market_index_daily "
+            "SELECT index_code, close, pct_chg, volume FROM market_index_daily "
             "WHERE trade_date = ?",
             (trade_date,),
         ).fetchall()
         sh_index: float | None = None
         sz_index: float | None = None
         cyb_index: float | None = None
+        sh_volume: float = 0.0  # 修复：原 SELECT 漏了 volume，两市成交额永远 None
+        sz_volume: float = 0.0
         for r in rows:
             code = r["index_code"]
             close = r["close"]
+            vol = float(r["volume"]) if r["volume"] is not None else 0.0
             if code in ("000001", "sh000001"):
                 sh_index = close
             elif code in ("399001", "sz399001"):
                 sz_index = close
+                sz_volume = vol
             elif code in ("399006", "sz399006"):
                 cyb_index = close
-        # 成交额 / 量能：来自 emotion_daily（v021 schema 唯一存成交额的表）
+                sz_volume += vol
+            if code in ("000001", "sh000001"):
+                sh_volume = vol
+        # 修复：根据 market_index_daily 各指数的 volume 求和得到两市成交额（元）。
+        total_volume_from_index: float | None = (
+            (sh_volume + sz_volume) if (sh_volume > 0 or sz_volume > 0) else None
+        )
+        # 成交额 / 量能：emotion_daily.total_volume 仅在 sum==0 时作为 fallback 兜底
         _validate_table("emotion_daily")
         e_row = self._conn.execute(
             "SELECT total_volume, volume_change_pct FROM emotion_daily "
             "WHERE trade_date = ?",
             (trade_date,),
         ).fetchone()
-        total_volume = e_row["total_volume"] if e_row else None
+        # 修复：两市成交额优先用 market_index_daily 求和；全为 0 时 fallback emotion_daily
+        total_volume: float | None = total_volume_from_index
+        if total_volume is None:
+            total_volume = e_row["total_volume"] if e_row else None
         volume_change_pct = e_row["volume_change_pct"] if e_row else None
         # 连续下跌天数 / MA20：未在 schema 内存储，返回占位
         return MarketSnapshot(
@@ -143,7 +191,7 @@ class SqliteStockDataSource:
                 phase_confidence=None,
                 phase_reason=None,
             )
-        return self._row_to_emotion(row)
+        return self._row_to_emotion(row, self._conn)
 
     async def get_emotion_indicators_trend(
         self, end_date: str, days: int
@@ -157,7 +205,7 @@ class SqliteStockDataSource:
             "ORDER BY trade_date DESC LIMIT ?",
             (end_date, bounded_days),
         ).fetchall()
-        return [self._row_to_emotion(r) for r in rows]
+        return [self._row_to_emotion(r, self._conn) for r in rows]  # noqa: PERF401
 
     async def get_emotion_cycles(
         self, end_date: str, lookback_days: int = 60
@@ -212,7 +260,8 @@ class SqliteStockDataSource:
         _validate_table("stock_daily")
         bounded_days = max(1, min(int(days), 60))
         rows = self._conn.execute(
-            "SELECT trade_date, stock_code, open, close, high, low, volume, pct_chg "
+            "SELECT trade_date, stock_code, open, close, high, low, "
+            "volume, pct_chg, turnover "
             "FROM stock_daily WHERE stock_code = ? "
             "ORDER BY trade_date DESC LIMIT ?",
             (stock_code, bounded_days),
@@ -523,7 +572,7 @@ class SqliteStockDataSource:
         ).fetchone()
         if row is None:
             return None
-        return self._row_to_emotion(row)
+        return self._row_to_emotion(row, self._conn)
 
     # ── 内部辅助 ────────────────────────────────────────
 
@@ -533,8 +582,23 @@ class SqliteStockDataSource:
 
         Task E：v023 新增字段允许 None；total_volume 旧代码用 ``or 0.0``
         兜底（兼容 v021 旧行），新字段保持 None 语义（未计算=未写入）。
+        """    @classmethod
+    def _row_to_emotion(
+        cls,
+        row: sqlite3.Row,
+        conn: sqlite3.Connection | None = None,
+    ) -> EmotionIndicators:
+        """把 sqlite3.Row 转为 EmotionIndicators DTO（含 v023 新增 18 字段）。
+
+        Task E：v023 新增字段允许 None；total_volume 旧代码用 ``or 0.0``
+        兜底（兼容 v021 旧行），新字段保持 None 语义（未计算=未写入）。
+
+        Args:
+            row: emotion_daily 表行。
+            conn: 可选的 SQLite 连接；若提供，则补 ``top_board_leaders``
+                （从 ``limit_stocks_daily`` 多查一次）。
         """
-        return EmotionIndicators(
+        emotion = EmotionIndicators(
             trade_date=row["trade_date"],
             limit_up_count=row["limit_up_count"],
             limit_down_count=row["limit_down_count"],
@@ -569,6 +633,15 @@ class SqliteStockDataSource:
             trend_5d=row["trend_5d"],
             trend_20d=row["trend_20d"],
         )
+        if conn is not None:
+            # 修复：emotion_daily 表没存 leaders，但前端要按"最高板龙头"单独展示。
+            # 读路径多查一次 limit_stocks_daily 聚合（无 schema 改动，回滚容易）。
+            object.__setattr__(
+                emotion,
+                "top_board_leaders",
+                _compute_top_board_leaders(conn, emotion.trade_date),
+            )
+        return emotion
 
     @staticmethod
     def _row_to_watchlist(row: sqlite3.Row) -> WatchlistStock:

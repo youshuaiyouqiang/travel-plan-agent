@@ -64,14 +64,54 @@ def _validate_table(table: str) -> None:
         )
 
 
-def _row_to_emotion_indicators(row: sqlite3.Row) -> EmotionIndicators:
+def _compute_top_board_leaders(
+    conn: sqlite3.Connection, trade_date: str
+) -> list[str]:
+    """取指定交易日 ``max_consecutive_boards`` 对应的全部股票代码。
+
+    修复：``emotion_daily.max_consecutive_boards`` 只存了数字，看不出是哪只股票。
+    该函数多查一次 ``limit_stocks_daily`` 给出"龙头列表"，供前端"最高板龙头"表格。
+
+    Args:
+        conn: SQLite 连接（必须能读 limit_stocks_daily 白名单表）。
+        trade_date: 交易日（YYYYMMDD）。
+
+    Returns:
+        已排序的 stock_code 列表（空列表 = 该日无涨停股）。
+    """
+    _validate_table("limit_stocks_daily")
+    max_row = conn.execute(
+        "SELECT MAX(consecutive_boards) AS m FROM limit_stocks_daily "
+        "WHERE trade_date = ?",
+        (trade_date,),
+    ).fetchone()
+    max_boards = max_row["m"] if max_row is not None else None
+    if max_boards is None or int(max_boards) <= 0:
+        return []
+    rows = conn.execute(
+        "SELECT stock_code FROM limit_stocks_daily "
+        "WHERE trade_date = ? AND consecutive_boards = ? "
+        "ORDER BY stock_code",
+        (trade_date, int(max_boards)),
+    ).fetchall()
+    return [r["stock_code"] for r in rows]
+
+
+def _row_to_emotion_indicators(
+    row: sqlite3.Row, conn: sqlite3.Connection | None = None
+) -> EmotionIndicators:
     """把 sqlite3.Row 转为 EmotionIndicators DTO（含 v023 新增 18 字段）。
 
     Task E：v023 新增字段允许 None；用 ``row[key]`` 取值时若列不存在
     会抛 KeyError，但迁移 v023 已确保所有列存在。
     ``or 0`` 仅对 NOT NULL DEFAULT 0 的旧字段使用，新字段保持 None 语义。
+
+    Args:
+        row: emotion_daily 表行。
+        conn: 可选的 SQLite 连接；若提供，则补充 ``top_board_leaders``
+            （从 ``limit_stocks_daily`` 多查一次聚合）。
     """
-    return EmotionIndicators(
+    base = EmotionIndicators(
         trade_date=row["trade_date"],
         limit_up_count=row["limit_up_count"],
         limit_down_count=row["limit_down_count"],
@@ -104,6 +144,15 @@ def _row_to_emotion_indicators(row: sqlite3.Row) -> EmotionIndicators:
         trend_5d=row["trend_5d"],
         trend_20d=row["trend_20d"],
     )
+    if conn is not None:
+        # 修复：emotion_daily 表 schema 没存 leaders，但前端要按"最高板龙头"单独表展示。
+        # 读路径多查一次聚合（无 schema 改动，回滚容易）。
+        object.__setattr__(
+            base,
+            "top_board_leaders",
+            _compute_top_board_leaders(conn, base.trade_date),
+        )
+    return base
 
 
 class CacheRepository:
@@ -360,7 +409,7 @@ class CacheRepository:
             "SELECT * FROM emotion_daily WHERE trade_date = ?",
             (trade_date,),
         ).fetchall()
-        return [_row_to_emotion_indicators(row) for row in rows]
+        return [_row_to_emotion_indicators(row, self._conn) for row in rows]  # noqa: PERF401
 
     # ── sector_daily ──────────────────────────────────────
     # Task 14：板块日线 fetcher 写路径
