@@ -72,4 +72,30 @@ describe('EmotionChart', () => {
     const btn20 = screen.getByRole('button', { name: '20日' })
     expect(btn20.getAttribute('aria-pressed')).toBe('true')
   })
+
+  it('Bug⑤：最高板单独折线图随数据存在而渲染（aria-label 可达）', () => {
+    render(
+      <EmotionChart
+        series={SAMPLE}
+        windowDays={10}
+        endDate="20260728"
+      />,
+    )
+    // 主图 + 最高板独立图（修复后拆分出来）
+    expect(screen.getByLabelText('情绪多日曲线图')).toBeInTheDocument()
+    expect(screen.getByLabelText('最高板独立折线图')).toBeInTheDocument()
+  })
+
+  it('Bug⑤：最高板折线图说明文字可见', () => {
+    render(
+      <EmotionChart
+        series={SAMPLE}
+        windowDays={10}
+        endDate="20260728"
+      />,
+    )
+    expect(
+      screen.getByText('最高板折线（每个点显示该日龙头）'),
+    ).toBeInTheDocument()
+  })
 })

@@ -2,7 +2,8 @@
  * 情绪多日曲线组件（Task 7）。
  *
  * 设计要点：
- * - 使用 echarts-for-react 渲染折线/柱状混合图（涨停数 + 炸板率 + 连板高度）
+ * - 主图使用 echarts-for-react 渲染柱状/折线混合（涨停数 + 有效涨停 + 炸板率）
+ * - 最高板**单独**折线图（TopBoardChart）——独立组件，每点标注龙头股票代码
  * - 空 series → 显示"暂无数据"占位（不臆测）
  * - 窗口切换控件 5/10/20/60 日，键盘可达（aria-pressed）
  * - 图表容器带 aria-label，遵循可访问性
@@ -50,7 +51,7 @@ export function EmotionChart({
     const ordered = [...trimmed].reverse()
     return {
       tooltip: { trigger: 'axis' },
-      legend: { data: ['涨停数', '有效涨停', '炸板率', '最高连板'] },
+      legend: { data: ['涨停数', '有效涨停', '炸板率'] },
       grid: { left: 50, right: 50, top: 40, bottom: 50 },
       xAxis: {
         type: 'category',
@@ -81,12 +82,6 @@ export function EmotionChart({
             e.broken_limit_ratio == null ? null : Number(e.broken_limit_ratio.toFixed(3)),
           ),
           itemStyle: { color: '#a855f7' },
-        },
-        {
-          name: '最高连板',
-          type: 'line',
-          data: ordered.map((e) => e.max_consecutive_boards),
-          itemStyle: { color: '#0ea5e9' },
         },
       ],
     }
@@ -171,9 +166,8 @@ export function EmotionChart({
               opts={{ renderer: 'canvas' }}
             />
           </div>
-          {/* 最高板龙头：单独表格，仅展示当前窗口最后一日（最新日）的龙头
-              与 max_consecutive_boards，避免与折线图挤在一起看不清。 */}
-          <TopBoardLeaders latest={trimmed[0]} />
+          {/* Bug⑤ 修复：最高板独立折线图，每个点标注龙头股票代码 */}
+          <TopBoardChart items={trimmed} />
         </>
       )}
     </section>
@@ -181,43 +175,118 @@ export function EmotionChart({
 }
 
 /**
- * 最高板龙头小表格。
+ * 最高板独立折线图（Bug⑤ 修复）。
  *
- * 修复：原 emotion 曲线把 "最高连板" 画成单数字折线，混在多指标中看不出"是哪只股票"。
- * 现在拆成单独表格，明示龙头代码，连板数。
+ * 设计要点：
+ * - 单独一个折线图，每个数据点对应一个交易日的"最高连板"高度
+ * - 每个点 tooltip 显示该日龙头股票代码（从 top_board_leaders 取）
+ * - x 轴下方另起一行 code chip，让"高度"和"龙头"视觉分离（之前混在
+ *   多系列图里看不出来）
  */
-function TopBoardLeaders({ latest }: { latest: EmotionIndicators }) {
-  const maxBoards = latest.max_consecutive_boards
-  const leaders = latest.top_board_leaders ?? []
-  const hasData = leaders.length > 0 && maxBoards > 0
+function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
+  const option = useMemo<EChartsOption | undefined>(() => {
+    if (items.length === 0) return undefined
+    // series 倒序展示
+    const ordered = [...items].reverse()
+    return {
+      tooltip: {
+        trigger: 'axis',
+        formatter: (params: unknown) => {
+          const arr = params as Array<{
+            axisValue: string
+            data: number
+            marker: string
+          }>
+          const p = arr[0]
+          if (!p) return ''
+          const idx = ordered.findIndex((e) => e.trade_date === p.axisValue)
+          const leaders =
+            idx >= 0 ? ordered[idx]?.top_board_leaders ?? [] : []
+          const leadersStr =
+            leaders.length > 0 ? leaders.join(', ') : '暂无龙头'
+          return [
+            `${p.axisValue}`,
+            `${p.marker}最高板：${p.data} 板`,
+            `龙头：${leadersStr}`,
+          ].join('<br/>')
+        },
+      },
+      legend: { data: ['最高板（连板高度）'] },
+      grid: { left: 50, right: 30, top: 40, bottom: 80 },
+      xAxis: {
+        type: 'category',
+        data: ordered.map((e) => e.trade_date),
+        axisLabel: {
+          interval: 0,
+          formatter: (val: string, idx: number) => {
+            // x 轴双行：日期 + 龙头代码 chip
+            const leaders = ordered[idx]?.top_board_leaders ?? []
+            const firstLeader = leaders[0] ?? '—'
+            return `{date|${val}}\n{leader|${firstLeader}${leaders.length > 1 ? ` 等${leaders.length}只` : ''}}`
+          },
+          rich: {
+            date: { color: '#475569', fontSize: 11 },
+            leader: { color: '#0ea5e9', fontSize: 10, fontFamily: 'monospace' },
+          },
+        },
+      },
+      yAxis: {
+        type: 'value',
+        name: '板数',
+        minInterval: 1,
+      },
+      series: [
+        {
+          name: '最高板（连板高度）',
+          type: 'line',
+          data: ordered.map((e) => e.max_consecutive_boards),
+          itemStyle: { color: '#0ea5e9' },
+          symbol: 'circle',
+          symbolSize: 8,
+          label: {
+            show: true,
+            position: 'top',
+            formatter: '{c} 板',
+            color: '#0ea5e9',
+            fontSize: 10,
+          },
+          // 数据点高亮：让用户能看见每个点对应龙头
+          emphasis: {
+            focus: 'series',
+            itemStyle: { color: '#0369a1' },
+          },
+          lineStyle: { width: 2 },
+          areaStyle: { color: 'rgba(14,165,233,0.1)' },
+        },
+      ],
+    }
+  }, [items])
+
+  if (!option) {
+    return null
+  }
 
   return (
     <div
-      className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
-      aria-label={`${latest.trade_date} 最高板龙头`}
+      className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+      aria-label="最高板独立折线图"
     >
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-semibold text-slate-800">{latest.trade_date}</span>
-        <span>最高板</span>
-        <span className="rounded bg-sky-100 px-1.5 py-0.5 font-mono text-sky-800">
-          {maxBoards} 板
-        </span>
+      <h4 className="mb-2 text-xs font-semibold text-slate-700">
+        最高板折线（每个点显示该日龙头）
+      </h4>
+      <div
+        aria-label="最高板折线图"
+        role="img"
+        className="h-56 w-full"
+      >
+        <ReactECharts
+          option={option}
+          style={{ height: '100%', width: '100%' }}
+          notMerge
+          lazyUpdate
+          opts={{ renderer: 'canvas' }}
+        />
       </div>
-      {hasData ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-slate-500">龙头：</span>
-          {leaders.map((code) => (
-            <span
-              key={code}
-              className="rounded bg-white px-2 py-0.5 font-mono text-slate-800 shadow-sm"
-            >
-              {code}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="text-slate-400">当日暂无龙头数据</div>
-      )}
     </div>
   )
 }
