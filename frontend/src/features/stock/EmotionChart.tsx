@@ -188,6 +188,35 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
     if (items.length === 0) return undefined
     // series 倒序展示
     const ordered = [...items].reverse()
+    // 计算"断板位置"（连板高度下降的数据点）→ 视觉强调
+    const downPoints = ordered
+      .map((e, idx) => {
+        if (idx === 0) return null
+        const prev = ordered[idx - 1]?.max_consecutive_boards ?? 0
+        if (e.max_consecutive_boards < prev) {
+          return {
+            name: '断板',
+            xAxis: e.trade_date,
+            yAxis: e.max_consecutive_boards,
+            value: `${e.top_board_leaders[0] ?? '—'}`,
+          }
+        }
+        return null
+      })
+      .filter((p): p is { name: string; xAxis: string; yAxis: number; value: string } => p !== null)
+
+    // 最新一日的最高板龙头——加 markPoint 醒目显示
+    const latest = ordered[ordered.length - 1]
+    const latestLeaders = latest?.top_board_leaders ?? []
+    const latestPoint = latest
+      ? {
+          name: '最新龙头',
+          xAxis: latest.trade_date,
+          yAxis: latest.max_consecutive_boards,
+          value: `${latestLeaders[0] ?? '—'}`,
+        }
+      : null
+
     return {
       tooltip: {
         trigger: 'axis',
@@ -211,15 +240,14 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           ].join('<br/>')
         },
       },
-      legend: { data: ['最高板（连板高度）'] },
-      grid: { left: 50, right: 30, top: 40, bottom: 80 },
+      legend: { data: ['最高板（连板高度）', '断板', '最新龙头'] },
+      grid: { left: 50, right: 30, top: 60, bottom: 70 },
       xAxis: {
         type: 'category',
         data: ordered.map((e) => e.trade_date),
         axisLabel: {
           interval: 0,
           formatter: (val: string, idx: number) => {
-            // x 轴双行：日期 + 龙头代码 chip
             const leaders = ordered[idx]?.top_board_leaders ?? []
             const firstLeader = leaders[0] ?? '—'
             return `{date|${val}}\n{leader|${firstLeader}${leaders.length > 1 ? ` 等${leaders.length}只` : ''}}`
@@ -242,21 +270,51 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           data: ordered.map((e) => e.max_consecutive_boards),
           itemStyle: { color: '#0ea5e9' },
           symbol: 'circle',
-          symbolSize: 8,
+          symbolSize: 10,
           label: {
             show: true,
             position: 'top',
-            formatter: '{c} 板',
+            // 每点 label 显示"X 板\n龙头代码"
+            formatter: (params: unknown) => {
+              const p = params as { value: number; dataIndex: number }
+              const idx = p.dataIndex
+              const leaders = ordered[idx]?.top_board_leaders ?? []
+              const code = leaders[0] ?? '—'
+              return `${p.value} 板\n${code}`
+            },
             color: '#0ea5e9',
             fontSize: 10,
+            lineHeight: 12,
           },
-          // 数据点高亮：让用户能看见每个点对应龙头
           emphasis: {
             focus: 'series',
             itemStyle: { color: '#0369a1' },
           },
           lineStyle: { width: 2 },
           areaStyle: { color: 'rgba(14,165,233,0.1)' },
+          // 断板处 + 最新龙头 → markPoint 强化
+          markPoint: {
+            symbol: 'pin',
+            symbolSize: [50, 28],
+            data: [
+              ...(latestPoint ? [latestPoint] : []),
+              ...downPoints,
+            ],
+            label: {
+              show: true,
+              color: '#ffffff',
+              fontSize: 9,
+              fontFamily: 'monospace',
+              formatter: (params: unknown) => {
+                const p = params as { name: string; value: string }
+                return p.value
+              },
+            },
+            // 颜色用 data[i].itemStyle 区分：最新龙头红、断板橙
+            itemStyle: {
+              color: '#dc2626',
+            },
+          },
         },
       ],
     }

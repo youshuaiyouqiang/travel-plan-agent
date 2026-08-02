@@ -55,13 +55,24 @@ export function SectorRotation({
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
+        formatter: (params: unknown) => {
+          const arr = params as Array<{
+            axisValueLabel: string
+            data: { value: number }
+            marker: string
+          }>
+          const p = arr[0]
+          if (!p) return ''
+          const pct = p.data.value
+          return `${p.axisValueLabel}<br/>${p.marker}涨幅：${pct.toFixed(2)}%`
+        },
       },
-      grid: { left: 100, right: 30, top: 10, bottom: 30 },
+      grid: { left: 110, right: 30, top: 10, bottom: 30 },
       xAxis: {
         type: 'value',
-        name: '涨跌幅',
+        name: '涨跌幅（%）',
         axisLabel: {
-          formatter: (v: number) => `${(v * 100).toFixed(1)}%`,
+          formatter: (v: number) => `${v.toFixed(1)}%`,
         },
       },
       yAxis: {
@@ -73,7 +84,7 @@ export function SectorRotation({
         {
           type: 'bar',
           data: merged.map((s) => ({
-            value: s.pct_chg == null ? 0 : Number((s.pct_chg * 100).toFixed(2)),
+            value: s.pct_chg == null ? 0 : Number(s.pct_chg.toFixed(2)),
             itemStyle: {
               color:
                 s.pct_chg == null
