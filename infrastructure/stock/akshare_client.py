@@ -16,11 +16,41 @@
 from __future__ import annotations
 
 import logging
+import sys
 import time
+import types
 from datetime import datetime, timedelta
 from typing import Any
 
-import akshare as ak
+# ── 必须在 import akshare 之前：禁用 akshare 内部 tqdm 进度条 ──
+# akshare 在 stock_zh_a_hist_tx、stock_individual_fund_flow_rank、
+# akshare.utils.func.fetch_paginated_data 等十几处用
+# ``from akshare.utils.tqdm import get_tqdm``，函数体内
+# ``tqdm = get_tqdm()``（默认 enable=True）按年份/分页循环，
+# 把 ``\r`` 写到 stderr。在 loguru 拦截 stderr 的环境下，
+# ``\r`` 不会原地刷新而是变成换行，全量抓取会刷出几百行
+# "88%|...| 91/104 [00:08<00:01, 10.72it/s]" 丑陋输出。
+#
+# 注意：akshare 内部 ``from ... import get_tqdm`` 在 import 时
+# **绑定函数对象的本地引用**——``setattr(akshare_module, "get_tqdm", ...)``
+# 替换模块属性不影响已绑定的本地引用。所以必须用 ``sys.modules``
+# 在 akshare 任何子模块 import 之前占位，fake 模块的 ``get_tqdm``
+# 才会被所有 ``from akshare.utils.tqdm import get_tqdm`` 拿到。
+#
+# 本项目只有 akshare_client.py 顶层 import akshare，其他模块都从这里
+# 间接获取，所以这里占位 100% 覆盖所有 akshare 子模块。
+def _disabled_get_tqdm(enable: bool = True) -> Any:  # noqa: ARG001
+    """akshare.utils.tqdm.get_tqdm 的禁用版，永远返回 no-op 进度条。"""
+    def _noop(iterable: Any, *args: Any, **kwargs: Any) -> Any:
+        return iterable
+    return _noop
+
+
+_fake_akshare_tqdm = types.ModuleType("akshare.utils.tqdm")
+_fake_akshare_tqdm.get_tqdm = _disabled_get_tqdm  # type: ignore[attr-defined]
+sys.modules["akshare.utils.tqdm"] = _fake_akshare_tqdm
+
+import akshare as ak  # noqa: E402  # 必须在 sys.modules 占位之后
 import pandas as pd
 import requests
 
@@ -36,28 +66,6 @@ from domain.stock.models import (
 from domain.stock.ports import StockDataSource
 
 logger = logging.getLogger(__name__)
-
-
-# ── 禁用 akshare 内部 tqdm 进度条 ──────────────────────
-# akshare 在 stock_zh_a_hist_tx 等函数里用
-# ``tqdm = get_tqdm()``（默认 enable=True）按年份循环，
-# 把 \r 写到 stderr。在 loguru 拦截 stderr 的环境下，
-# \r 不会原地刷新而是变成换行，99 只股刷出几百行丑陋输出。
-# 这里把 get_tqdm 替换为"返回 identity"的 no-op 版本，
-# akshare 拿到的是 ``lambda iterable, *a, **kw: iterable``，
-# 既不动 tqdm 本体也不影响其他模块的进度条。
-def _noop_tqdm(iterable: Any, *args: Any, **kwargs: Any) -> Any:
-    """akshare 内部进度条的禁用版：直接返回可迭代对象本身。"""
-    return iterable
-
-
-def _disabled_get_tqdm(enable: bool = True) -> Any:
-    """akshare.utils.tqdm.get_tqdm 的禁用版，永远返回 no-op 进度条。"""
-    return _noop_tqdm
-
-
-akshare_module = __import__("akshare.utils.tqdm", fromlist=["get_tqdm"])
-setattr(akshare_module, "get_tqdm", _disabled_get_tqdm)
 
 
 class AkshareFetchError(Exception):
