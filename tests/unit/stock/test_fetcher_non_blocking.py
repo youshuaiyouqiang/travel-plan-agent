@@ -112,22 +112,26 @@ class TestSectorDailyFetcherNonBlocking:
     async def test__fetch_does_not_block_event_loop(self, tmp_db) -> None:
         from infrastructure.stock.sector_daily_fetcher import _fetch
 
-        def _slow_sectors() -> pd.DataFrame:
+        # Task C：数据源切换到同花顺
+        # - stock_board_industry_name_ths：板块列表（快速返回）
+        # - stock_board_industry_index_ths：单板块 K 线（sleep 0.4s 模拟阻塞）
+        def _fast_sectors() -> pd.DataFrame:
+            return pd.DataFrame([{"name": "半导体", "code": "881121"}])
+
+        def _slow_sector_hist(*_args: Any, **_kwargs: Any) -> pd.DataFrame:
             time.sleep(0.4)
             return pd.DataFrame(
                 [
-                    {
-                        "板块名称": "半导体",
-                        "板块代码": "BK1004",
-                        "涨跌幅": 2.35,
-                        "领涨股": "中芯国际",
-                        "领涨股代码": "688981",
-                    }
+                    {"日期": "2026-07-29", "开盘价": 100.0, "最高价": 105.0,
+                     "最低价": 99.0, "收盘价": 100.0, "成交量": 4.0e8, "成交额": 3.0e10},
+                    {"日期": "2026-07-30", "开盘价": 103.0, "最高价": 106.0,
+                     "最低价": 102.0, "收盘价": 105.0, "成交量": 4.5e8, "成交额": 3.5e10},
                 ]
             )
 
         with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
-            mock_ak.stock_board_industry_name_em.side_effect = _slow_sectors
+            mock_ak.stock_board_industry_name_ths.side_effect = _fast_sectors
+            mock_ak.stock_board_industry_index_ths.side_effect = _slow_sector_hist
             await _assert_event_loop_responsive(_fetch("20260730"))
 
 

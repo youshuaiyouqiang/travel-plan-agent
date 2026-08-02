@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import akshare as ak
@@ -316,16 +318,48 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
     )
 
 
-def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
-    """抓取所有板块的单日涨跌幅（约 100+ 个行业板块）。
+def _shift_date_yyyymmdd(date_yyyymmdd: str, days: int) -> str:
+    """把 ``YYYYMMDD`` 日期往前/往后推 ``days`` 天，返回 ``YYYYMMDD``。
 
-    akshare 函数：``ak.stock_board_industry_name_em()``，返回 DataFrame
-    包含列：``板块名称``、``板块代码``、``涨跌幅``、``领涨股``、``领涨股代码`` 等。
-    该接口为**全量截面**（不带日期参数），fetcher 写入时用调用方传入
-    的 ``trade_date`` 作为统一日期标签（与 akshare 实际返回的当天数据对齐）。
+    Task C 辅助函数：用于计算 ``stock_board_industry_index_ths`` 的
+    ``start_date`` —— 往前推几天以保证覆盖前一个交易日的 close，
+    用来自己算 pct_chg（同花顺接口不直接返回 pct_chg）。
+    """
+    dt = datetime.strptime(date_yyyymmdd, "%Y%m%d")
+    return (dt + timedelta(days=days)).strftime("%Y%m%d")
+
+
+def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
+    """抓取所有板块的单日涨跌幅（约 90 个同花顺行业板块）。
+
+    **Task C 修复**：从东财 ``stock_board_industry_name_em``（反爬失败，
+    sector_daily 表 0 行）切换到同花顺 ``stock_board_industry_index_ths``。
+
+    实现策略（两步走）：
+    1. ``ak.stock_board_industry_name_ths()`` 拿 90 个板块列表（列 ``name`` /
+       ``code``，如 ``半导体`` / ``881121``）。该接口失败时抛
+       ``AkshareFetchError``（拿不到板块列表后续无法继续）。
+    2. 逐板块调 ``ak.stock_board_industry_index_ths(symbol=name,
+       start_date, end_date)`` 取 K 线。``start_date`` 往前推 3 天以保证
+       拿到前一个交易日的 close，用来自己算 ``pct_chg``
+       （同花顺接口不返回 pct_chg 字段，与 ``stock_zh_index_daily`` 同病）。
+
+    单板块失败：log warning continue，不中断整体流程（部分板块接口失败
+    不应让当日 sector_daily 完全空）。
+
+    性能：90 板块 × (2-3s akshare + 0.3s 反爬 sleep) ≈ 200-300s。
+    作为后台任务（``asyncio.create_task``）可接受；本函数为同步实现，
+    fetcher 用 ``asyncio.to_thread`` 包装后调用。
+
+    Args:
+        trade_date: 交易日期（``YYYY-MM-DD`` 或 ``YYYYMMDD``）。
 
     Returns:
-        SectorDaily 列表。akshare 失败/空数据时返回 []。
+        SectorDaily 列表（约 80-90 行，部分板块可能因接口失败而跳过）。
+
+    Raises:
+        AkshareFetchError: 当 ``stock_board_industry_name_ths`` 失败时抛出
+            （拿不到板块列表，后续无法继续）。
     """
     target = _to_yyyymmdd(trade_date)
     if target is None:
@@ -333,45 +367,102 @@ def fetch_sector_daily(trade_date: str) -> list[SectorDaily]:
             f"fetch_sector_daily invalid trade_date={trade_date!r}"
         )
 
+    # 1. 取 90 个板块列表（同花顺）
     try:
-        df: pd.DataFrame = ak.stock_board_industry_name_em()
+        sectors_df: pd.DataFrame = ak.stock_board_industry_name_ths()
     except _AKSHARE_EXC as e:
         raise AkshareFetchError(
-            f"fetch_sector_daily stock_board_industry_name_em failed date={trade_date}"
+            f"fetch_sector_daily stock_board_industry_name_ths failed date={trade_date}"
         ) from e
 
-    if df is None or len(df) == 0:
-        logger.warning("fetch_sector_daily: empty df date=%s", trade_date)
+    if sectors_df is None or len(sectors_df) == 0:
+        logger.warning(
+            "fetch_sector_daily: empty sectors df date=%s", trade_date,
+        )
         return []
 
+    # 2. start_date 往前推 3 天确保覆盖前一个交易日（用于算 pct_chg）
+    start_date = _shift_date_yyyymmdd(target, days=-3)
+
     rows: list[SectorDaily] = []
-    for _, r in df.iterrows():
-        name = r.get("板块名称")
-        code = r.get("板块代码")
+    for _, sector in sectors_df.iterrows():
+        name = sector.get("name")
+        code = sector.get("code")
         # 缺核心字段 → 跳过
         if not name or not code:
             continue
-        leader_code = r.get("领涨股代码")
-        leading = [leader_code] if leader_code else []
+        name_str = str(name)
+        code_str = str(code)
+
+        try:
+            hist_df: pd.DataFrame = ak.stock_board_industry_index_ths(
+                symbol=name_str,
+                start_date=start_date,
+                end_date=target,
+            )
+        except _AKSHARE_EXC as e:
+            # 单板块失败：跳过，不中断整体
+            logger.warning(
+                "fetch_sector_daily: ths index failed name=%s date=%s err=%s",
+                name_str, trade_date, e,
+            )
+            continue
+
+        if hist_df is None or len(hist_df) == 0:
+            logger.warning(
+                "fetch_sector_daily: empty hist name=%s date=%s",
+                name_str, trade_date,
+            )
+            continue
+
+        # 找到 trade_date 那一行（同花顺日期格式为 'YYYY-MM-DD'）
+        date_norm = hist_df["日期"].astype(str).str.replace("-", "")
+        match_mask = date_norm == target
+        if not match_mask.any():
+            logger.warning(
+                "fetch_sector_daily: no row for name=%s date=%s",
+                name_str, trade_date,
+            )
+            continue
+
+        match_idx = int(match_mask.values.argmax())  # 第一个 True 的位置
+        r = hist_df.iloc[match_idx]
+        close = _to_float(r.get("收盘价"))
+
+        # 自己算 pct_chg（同花顺接口不返回该字段）
+        # 用前一行 close 作为 prev_close；首行无前日时 pct_chg=None
+        pct_chg: float | None = None
+        if match_idx > 0:
+            prev_close = _to_float(hist_df.iloc[match_idx - 1].get("收盘价"))
+            if prev_close is not None and prev_close != 0 and close is not None:
+                pct_chg = (close - prev_close) / prev_close * 100
+
         try:
             rows.append(
                 SectorDaily(
                     trade_date=target,
-                    sector_code=str(code),
-                    sector_name=str(name),
-                    pct_chg=_to_float(r.get("涨跌幅")),
-                    leading_stock_codes=leading,
-                    # limit_up_count 在 Task 14 阶段由 fetcher 填 0；
-                    # 后续可由板块龙头 fetcher 二次加工（避免 N+1 akshare 调用）
+                    sector_code=code_str,
+                    sector_name=name_str,
+                    pct_chg=pct_chg,
+                    # 同花顺 stock_board_industry_index_ths 不返回领涨股
+                    # → Task F 阶段由 stock_fund_flow_industry 二次加工
+                    leading_stock_codes=[],
+                    # 同花顺接口不返回板块涨停数
+                    # → Task F 阶段由 limit_stocks_daily 聚合
                     limit_up_count=0,
                 )
             )
         except (ValueError, TypeError) as e:
             logger.warning(
                 "fetch_sector_daily: parse failed name=%s code=%s err=%s",
-                name, code, e,
+                name_str, code_str, e,
             )
             continue
+
+        # 反爬防护：每次 akshare 调用后 sleep 0.3 秒
+        # （90 板块 × 0.3s ≈ 27s，总耗时增加约 30s，可接受）
+        time.sleep(0.3)
+
     return rows
 
 
