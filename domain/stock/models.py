@@ -26,7 +26,20 @@ class LimitStock(BaseModel):
 
 
 class EmotionIndicators(BaseModel):
-    """单日情绪指标（截面）。"""
+    """单日情绪指标（截面）。
+
+    Task E：新增 6 维度情绪观察框架的 18 个字段。
+    - 维度 1 高度：height_level（基于近 20 日涨停数分位数）
+    - 维度 2 广度：adv_count/decl_count/adv_decl_ratio/breadth_level
+    - 维度 3 强度：top20_volume_*/strength_level/market_style
+    - 维度 4 韧性：board_break_*/rebound_success_ratio/top5d_avg_chg/resilience_level
+    - 维度 5 真实度：authenticity_level（基于已有 broken_limit_ratio）
+    - 维度 6 持续性：trend_5d/trend_20d
+
+    全部新字段允许 None——fetcher 调用方未计算时保持 None。
+    phase / phase_confidence / phase_reason 保留 schema 但 Task E 不再写入
+    （代码做维度分类，LLM 受约束推理，不写阶段标签）。
+    """
 
     model_config = ConfigDict(extra="forbid")
     trade_date: str
@@ -41,6 +54,31 @@ class EmotionIndicators(BaseModel):
     phase: str | None
     phase_confidence: str | None
     phase_reason: str | None
+    # Task E：6 维度情绪观察框架（v023 新增 18 字段）
+    # 维度 2：广度
+    adv_count: int | None = None
+    decl_count: int | None = None
+    adv_decl_ratio: float | None = None
+    breadth_level: str | None = None
+    # 维度 3：强度
+    top20_volume_avg_chg: float | None = None
+    top20_volume_up_count: int | None = None
+    top20_volume_limit_up_count: int | None = None
+    strength_level: str | None = None
+    market_style: str | None = None
+    # 维度 4：韧性
+    board_break_total_count: int | None = None
+    board_break_rebound_count: int | None = None
+    rebound_success_ratio: float | None = None
+    top5d_avg_chg: float | None = None
+    resilience_level: str | None = None
+    # 维度 5：真实度（已有 broken_limit_ratio，新增分类）
+    authenticity_level: str | None = None
+    # 维度 1：高度
+    height_level: str | None = None
+    # 维度 6：持续性
+    trend_5d: str | None = None
+    trend_20d: str | None = None
 
 
 class EmotionRawData(BaseModel):
@@ -51,12 +89,16 @@ class EmotionRawData(BaseModel):
     broken_ratio / max_boards，并查询昨日 emotion_daily 算 volume_change_pct，
     最终拼出 EmotionIndicators 写入 cache。
 
+    Task E 扩展：新增 adv_count / decl_count（来自 legu "上涨"/"下跌"项），
+    供维度 2（广度）计算 breadth_level。
+
     字段语义：
     - limit_up_count / limit_down_count: akshare 截面涨停/跌停家数
     - broken_count: 当日炸板数（fetcher 用此算 broken_limit_ratio）
     - total_volume: 两市成交额（元）；Task B 改为 Optional——
       ``stock_zh_index_spot_em`` 反爬不稳定，失败时降级为 None，
       其他字段照写（不再因 spot_em 失败而整行丢弃）
+    - adv_count / decl_count: 上涨/下跌家数（Task E，来自 legu "上涨"/"下跌"）
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -65,6 +107,25 @@ class EmotionRawData(BaseModel):
     limit_down_count: int
     broken_count: int
     total_volume: float | None
+    # Task E：维度 2 广度原始数据（legu "上涨"/"下跌"项）
+    adv_count: int = 0
+    decl_count: int = 0
+
+
+class Top20VolumeSnapshot(BaseModel):
+    """成交额前 20 名股票涨幅统计（维度 3 强度原始数据）。
+
+    Task E：akshare_client.fetch_top20_volume_stocks 返回本 DTO，
+    fetcher 用此计算 strength_level + market_style。
+
+    数据源：``ak.stock_fund_flow_individual()``（同花顺，返回 5000+ 只个股
+    资金流，含 涨跌幅/成交额 字符串字段）。取成交额前 20 名的涨幅统计。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    avg_chg: float  # 前 20 名平均涨幅（%）
+    up_count: int  # 前 20 名中上涨家数
+    limit_up_count: int  # 前 20 名中涨停家数（pct_chg >= 9.8）
 
 
 class MarketSnapshot(BaseModel):
@@ -248,6 +309,27 @@ class BoardLadder(BaseModel):
     boards: int  # 连板高度（1=首板，2=2 连板，3=3 连板...）
     count: int  # 该高度涨停股数量
     stock_codes: list[str]  # 该高度所有涨停股代码列表
+
+
+class EmotionCycleSegment(BaseModel):
+    """情绪周期段（峰→谷→修复），供 LLM 对比修复力度。
+
+    Task E：周期段峰谷检测的输出 DTO。
+    不含方向判定——LLM 基于 SKILL.md §三第 3 步自己判断。
+
+    一个周期段由"峰值日 + 谷值日 + 首次修复日"三要素构成。
+    LLM 用此对比"当前修复力度 vs 上一轮修复力度"：
+    - 当前涨停 45 > 上一轮首次修复涨停 35 → 上升周期概率较高
+    - 但修复力度不及上一轮峰值 80 的 60% → 仍处于修复早期
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    peak_date: str  # 峰值日（涨停数局部极大）
+    peak_limit_up_count: int  # 峰值日涨停数
+    trough_date: str  # 谷值日（涨停数局部极小）
+    trough_limit_up_count: int  # 谷值日涨停数
+    first_repair_date: str | None  # 谷值后首次修复日（涨停数回升 ≥ 30%）
+    first_repair_limit_up: int | None  # 首次修复日涨停数
 
 
 class CorrelationResult(BaseModel):

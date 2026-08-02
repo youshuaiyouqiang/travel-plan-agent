@@ -1,4 +1,4 @@
-"""股票复盘工具适配器 — 注册 15 个 stock 工具到 ToolRegistry。
+"""股票复盘工具适配器 — 注册 16 个 stock 工具到 ToolRegistry。
 
 设计要点（AGENTS.md §8.1 端口先于实现 + §8.4 工具入站）：
 - 与 stock-review skill (infra/skills/builtin/stock-review/agents/openai.yaml)
@@ -6,7 +6,7 @@
 - 工具集按 domain.stock.tools.build_stock_tools("daily") 装配；周复盘
   的 get_correlation 仍注册到 ToolRegistry，但 DynamicAgent 会按 session
   上下文调用
-- 15 个 spec 覆盖：大盘 / 情绪 / 板块 / 个股 / 周复盘
+- 16 个 spec 覆盖：大盘 / 情绪（含周期段） / 板块 / 个股 / 周复盘
 - Handler 直接调 SqliteStockDataSource（同层 infrastructure，无
   application 反向依赖），序列化 DTO 为 markdown-friendly JSON
 
@@ -107,7 +107,7 @@ async def _call(coro: Any) -> dict:
     return {"is_error": False, "content": _dumps(result)}
 
 
-# ── Handlers（15 个） ────────────────────────────────────
+# ── Handlers（16 个） ────────────────────────────────────
 
 
 async def _get_market_snapshot(arguments: dict) -> dict:
@@ -133,6 +133,17 @@ async def _get_emotion_indicators_trend(arguments: dict) -> dict:
         return {"is_error": True, "content": "invalid end_date (expected YYYYMMDD or YYYY-MM-DD)"}
     ds = _get_data_source()
     return await _call(ds.get_emotion_indicators_trend(end_date, days))
+
+
+# Task E：情绪周期段峰谷检测——供 SKILL.md 第 3 步"与上一轮退潮比"客观对比。
+# 基于近 60 日涨停数曲线自动检测峰值/谷值/首次修复，切成周期段。
+async def _get_emotion_cycles(arguments: dict) -> dict:
+    end_date = _normalize_trade_date(arguments.get("end_date"))
+    lookback_days = int(arguments.get("lookback_days", 60) or 60)
+    if not end_date:
+        return {"is_error": True, "content": "invalid end_date (expected YYYYMMDD or YYYY-MM-DD)"}
+    ds = _get_data_source()
+    return await _call(ds.get_emotion_cycles(end_date, lookback_days))
 
 
 async def _get_strong_repair_leaders(_arguments: dict) -> dict:
@@ -241,7 +252,7 @@ async def _wrap_latest_trade_date(ds: Any) -> dict:
     return {"latest_trade_date": latest}
 
 
-# ── Specs（16 个，与 stock-review/openai.yaml 一一对应） ──
+# ── Specs（17 个，与 stock-review/openai.yaml 一一对应） ──
 
 
 def get_stock_specs() -> list[ToolSpec]:
@@ -279,6 +290,20 @@ def get_stock_specs() -> list[ToolSpec]:
                 "properties": {
                     "end_date": {"type": "string", "description": "截止日期 YYYYMMDD（也支持标准 8 位日期写法）"},
                     "days": {"type": "integer", "description": "天数,默认10,范围1-60", "default": 10},
+                },
+                "required": ["end_date"],
+            },
+        ),
+        # Task E：情绪周期段峰谷检测——第 3 步"与上一轮退潮比"的客观依据。
+        ToolSpec(
+            name="get_emotion_cycles",
+            description="拉取近 N 日情绪周期段（峰→谷→首次修复），用于与上一轮退潮修复力度对比。基于涨停数曲线自动检测峰谷。",
+            category="Stock",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "end_date": {"type": "string", "description": "截止日期 YYYYMMDD（也支持标准 8 位日期写法）"},
+                    "lookback_days": {"type": "integer", "description": "回看天数,默认60,范围5-60", "default": 60},
                 },
                 "required": ["end_date"],
             },
@@ -435,6 +460,7 @@ def get_stock_handlers() -> dict[str, ToolHandler]:
         "get_market_snapshot": _get_market_snapshot,
         "get_emotion_indicators": _get_emotion_indicators,
         "get_emotion_indicators_trend": _get_emotion_indicators_trend,
+        "get_emotion_cycles": _get_emotion_cycles,
         "get_strong_repair_leaders": _get_strong_repair_leaders,
         "get_sector_rotation": _get_sector_rotation,
         "get_sector_heat_distribution": _get_sector_heat_distribution,

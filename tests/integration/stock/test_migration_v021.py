@@ -58,12 +58,12 @@ def tmp_db(tmp_path, monkeypatch):
         os.unlink(db_path)
 
 
-def test_registry_validates_1_to_22() -> None:
-    """registry 必须包含 1..22 连续版本（Task 20 新增 v022 stock_fetch_log）。"""
+def test_registry_validates_1_to_23() -> None:
+    """registry 必须包含 1..23 连续版本（Task E 新增 v023 emotion_daily 6 维度字段）。"""
     from infrastructure.persistence.migrations.registry import MIGRATIONS
 
     versions = [m.version for m in MIGRATIONS]
-    assert versions == list(range(1, 23)), f"版本不连续或重复: {versions}"
+    assert versions == list(range(1, 24)), f"版本不连续或重复: {versions}"
 
 
 def test_migration_v021_creates_all_tables(tmp_db) -> None:

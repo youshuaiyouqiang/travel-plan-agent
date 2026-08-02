@@ -49,8 +49,8 @@ def test_yaml_tools_match_port_methods():
     tools = _yaml_tools()
     methods = _port_methods()
     assert tools == methods, f"yaml 与端口不一致: yaml-only={tools - methods}, port-only={methods - tools}"
-    # Task 18 之后：15 个 get_* + 1 个 get_latest_trade_date_with_data = 16
-    assert len(tools) == 16, f"期望 16 个工具，实际 {len(tools)}: {tools}"
+    # Task E 之后：16 个 get_* + 1 个 get_emotion_cycles = 17
+    assert len(tools) == 17, f"期望 17 个工具，实际 {len(tools)}: {tools}"
 
 
 def test_daily_session_excludes_correlation_tool():
@@ -63,7 +63,7 @@ def test_daily_session_excludes_correlation_tool():
     weekly_names = set(weekly_tools)
     assert "get_correlation" not in daily_names
     assert "get_correlation" in weekly_names
-    # Task 18 之后：日复盘 15 工具（含 get_latest_trade_date_with_data），
-    # 周复盘 16 工具
-    assert len(daily_tools) == 15, f"日复盘应 15 个工具，实际 {len(daily_tools)}: {daily_tools}"
-    assert len(weekly_tools) == 16, f"周复盘应 16 个工具，实际 {len(weekly_tools)}: {weekly_tools}"
+    # Task E 之后：日复盘 16 工具（含 get_latest_trade_date_with_data + get_emotion_cycles），
+    # 周复盘 17 工具
+    assert len(daily_tools) == 16, f"日复盘应 16 个工具，实际 {len(daily_tools)}: {daily_tools}"
+    assert len(weekly_tools) == 17, f"周复盘应 17 个工具，实际 {len(weekly_tools)}: {weekly_tools}"

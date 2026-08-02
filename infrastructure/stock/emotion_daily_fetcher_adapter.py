@@ -26,8 +26,11 @@ class _FetcherDepsBundle:
     """把 repo + data_source 组合成 fetcher 期望的 deps。
 
     ``repo`` 实际是 ``CacheRepository``（具备 select_limit_stocks /
-    upsert_emotion_daily 等方法），但 CacheWritePort 协议只声明了
-    upsert_* 写方法，故此处的 repo 用 Any 避免 mypy 误报。
+    upsert_emotion_daily / select_stock_daily 等方法），但 CacheWritePort
+    协议只声明了 upsert_* 写方法，故此处的 repo 用 Any 避免 mypy 误报。
+
+    Task E 扩展：新增 get_emotion_indicators_trend（从 data_source）+
+    select_stock_daily（从 repo）用于 6 维度计算。
     """
 
     def __init__(self, repo: Any, data_source: Any) -> None:
@@ -46,6 +49,16 @@ class _FetcherDepsBundle:
         self, trade_date: str
     ) -> Any:
         return await self._data_source.get_emotion_indicators_before(trade_date)
+
+    async def get_emotion_indicators_trend(
+        self, end_date: str, days: int
+    ) -> Any:
+        return await self._data_source.get_emotion_indicators_trend(
+            end_date, days
+        )
+
+    def select_stock_daily(self, trade_date: str) -> list[Any]:
+        return self._repo.select_stock_daily(trade_date)  # type: ignore[attr-defined]
 
 
 class EmotionDailyFetcherAdapter:

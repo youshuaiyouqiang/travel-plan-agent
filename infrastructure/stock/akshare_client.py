@@ -24,12 +24,14 @@ import akshare as ak
 import pandas as pd
 import requests
 
+from domain.stock.emotion_dimensions import parse_amount_str, parse_pct_str
 from domain.stock.models import (
     EmotionRawData,
     LimitStock,
     MarketIndexRow,
     SectorDaily,
     StockDaily,
+    Top20VolumeSnapshot,
 )
 from domain.stock.ports import StockDataSource
 
@@ -288,6 +290,9 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
     limit_up = _df_to_int(activity_df, "涨停")
     limit_down = _df_to_int(activity_df, "跌停")
     broken = _df_to_int(activity_df, "炸板")
+    # Task E：维度 2 广度原始数据（legu "上涨"/"下跌"项）
+    adv_count = _df_to_int(activity_df, "上涨")
+    decl_count = _df_to_int(activity_df, "下跌")
 
     # 2) 拉两市成交额（ak.stock_zh_index_spot_em）— 反爬不稳定，失败降级 None
     # Task B：不再因 spot_em 失败而抛异常；legu 成功即写入
@@ -315,6 +320,8 @@ def fetch_emotion_daily(trade_date: str) -> EmotionRawData:
         limit_down_count=limit_down,
         broken_count=broken,
         total_volume=total_volume,
+        adv_count=adv_count,
+        decl_count=decl_count,
     )
 
 
@@ -590,6 +597,65 @@ def fetch_stock_daily(
     return rows
 
 
+def fetch_top20_volume_stocks() -> Top20VolumeSnapshot:
+    """取成交额前 20 名股票的涨幅统计（维度 3 强度原始数据）。
+
+    Task E：调用 ``ak.stock_fund_flow_individual()``（同花顺，返回 5000+ 只
+    个股资金流）。akshare 返回的 ``涨跌幅`` 和 ``成交额`` 都是字符串
+    （带 ``%`` 或 ``亿``/``万`` 后缀），必须解析后才能数值运算。
+
+    实现要点：
+    - 用 ``parse_pct_str`` 解析 ``"20.01%"`` → ``20.01``
+    - 用 ``parse_amount_str`` 解析 ``"3.35亿"`` → ``335000000``
+    - 用 ``df.nlargest(20, "_amount")`` 取前 20（不能对字符串 ``sort_values``）
+    - 返回 ``Top20VolumeSnapshot``（avg_chg / up_count / limit_up_count）
+
+    失败时抛 ``AkshareFetchError``，由调用方（emotion_daily_fetcher）捕获后
+    降级为 ``strength_level=None``。
+
+    Returns:
+        Top20VolumeSnapshot DTO。
+
+    Raises:
+        AkshareFetchError: akshare 调用失败或返回空数据时抛出。
+    """
+    try:
+        df: pd.DataFrame = ak.stock_fund_flow_individual()
+    except _AKSHARE_EXC as e:
+        raise AkshareFetchError(
+            "fetch_top20_volume_stocks stock_fund_flow_individual failed"
+        ) from e
+
+    if df is None or len(df) == 0:
+        raise AkshareFetchError(
+            "fetch_top20_volume_stocks empty df from stock_fund_flow_individual"
+        )
+
+    # 解析字符串字段为数值（parse_pct_str / parse_amount_str 来自 domain 层）
+    df = df.copy()
+    df["_pct"] = df["涨跌幅"].apply(parse_pct_str)
+    df["_amount"] = df["成交额"].apply(parse_amount_str)
+
+    if len(df) < 20:
+        logger.warning(
+            "fetch_top20_volume_stocks: only %d rows (< 20), using all",
+            len(df),
+        )
+        top20 = df.nlargest(min(len(df), 20), "_amount")
+    else:
+        top20 = df.nlargest(20, "_amount")
+
+    avg_chg = float(top20["_pct"].mean()) if len(top20) > 0 else 0.0
+    up_count = int((top20["_pct"] > 0).sum())
+    limit_up_count = int((top20["_pct"] >= 9.8).sum())
+
+    return Top20VolumeSnapshot(
+        avg_chg=avg_chg,
+        up_count=up_count,
+        limit_up_count=limit_up_count,
+    )
+
+
 class AkshareClient:
     """akshare 数据源客户端——StockDataSource 协议的 akshare 实现。
 
@@ -641,6 +707,18 @@ class AkshareClient:
         """
         return fetch_stock_daily(stock_code, trade_date)
 
+    # ── Task E：成交额前 20 强度数据 ──
+    async def fetch_top20_volume_stocks(self) -> Top20VolumeSnapshot:
+        """从 akshare 抓取成交额前 20 名股票涨幅统计（维度 3 强度）。
+
+        Task E：供 emotion_daily_fetcher 计算 strength_level + market_style。
+        失败时抛 AkshareFetchError，由 fetcher 捕获后降级为 strength_level=None。
+
+        Returns:
+            Top20VolumeSnapshot DTO（avg_chg / up_count / limit_up_count）。
+        """
+        return fetch_top20_volume_stocks()
+
     # ── Task 3+ 补全的占位方法（NotImplementedError 而非 ...） ──
     async def get_market_snapshot(self, trade_date: str) -> Any:  # type: ignore[override]
         raise NotImplementedError("get_market_snapshot 计划在 Task 3 实现")
@@ -653,6 +731,13 @@ class AkshareClient:
     ) -> Any:  # type: ignore[override]
         raise NotImplementedError(
             "get_emotion_indicators_trend 计划在 Task 3 实现"
+        )
+
+    async def get_emotion_cycles(
+        self, end_date: str, lookback_days: int = 60
+    ) -> Any:  # type: ignore[override]
+        raise NotImplementedError(
+            "get_emotion_cycles 只由 SqliteStockDataSource 实现读缓存"
         )
 
     async def get_watchlist(self) -> Any:  # type: ignore[override]

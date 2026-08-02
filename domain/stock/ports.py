@@ -10,6 +10,7 @@ from typing import Protocol
 
 from domain.stock.models import (
     CorrelationResult,
+    EmotionCycleSegment,
     EmotionIndicators,
     MarketSnapshot,
     ResistantSector,
@@ -34,6 +35,23 @@ class StockDataSource(Protocol):
     async def get_emotion_indicators_trend(
         self, end_date: str, days: int
     ) -> list[EmotionIndicators]: ...
+    async def get_emotion_cycles(
+        self, end_date: str, lookback_days: int = 60
+    ) -> list[EmotionCycleSegment]:
+        """返回近 N 日的情绪周期段（峰谷检测，客观切分）。
+
+        Task E：为 SKILL.md §三第 3 步"与上一轮退潮比"提供客观数据。
+        不判定阶段方向——只提供峰/谷/首次修复日 + 涨停数，
+        LLM 基于代码提供的周期段数据，对比"当前涨停数 vs 上一轮首次强修复涨停数"。
+
+        Args:
+            end_date: 截止交易日（YYYYMMDD）。
+            lookback_days: 回看天数（默认 60）。
+
+        Returns:
+            EmotionCycleSegment 列表；历史数据不足或无峰谷模式时为空列表。
+        """
+        ...
     async def get_watchlist(self) -> list[WatchlistStock]: ...
     async def get_stock_daily(
         self, stock_code: str, days: int

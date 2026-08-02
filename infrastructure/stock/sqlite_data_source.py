@@ -15,8 +15,10 @@ import json
 import logging
 import sqlite3
 
+from domain.stock.emotion_cycles import identify_emotion_cycles
 from domain.stock.models import (
     CorrelationResult,
+    EmotionCycleSegment,
     EmotionIndicators,
     MarketSnapshot,
     ResistantSector,
@@ -156,6 +158,41 @@ class SqliteStockDataSource:
             (end_date, bounded_days),
         ).fetchall()
         return [self._row_to_emotion(r) for r in rows]
+
+    async def get_emotion_cycles(
+        self, end_date: str, lookback_days: int = 60
+    ) -> list[EmotionCycleSegment]:
+        """返回近 N 日的情绪周期段（峰谷检测，客观切分）。
+
+        Task E.10：为 SKILL.md §三第 3 步"与上一轮退潮比"提供客观数据。
+        不判定阶段方向——只提供峰/谷/首次修复日 + 涨停数，
+        LLM 基于代码提供的周期段数据，对比"当前涨停数 vs 上一轮首次修复涨停数"。
+
+        实现要点：
+        - 子查询取最近 N 日（DESC LIMIT），外层按 ASC 重排（算法要求正序）
+        - 调 ``domain.stock.emotion_cycles.identify_emotion_cycles`` 做峰谷检测
+        - 历史数据不足 (<5 日) 或无峰谷模式时返回空列表
+
+        Args:
+            end_date: 截止交易日（YYYYMMDD）。
+            lookback_days: 回看天数（默认 60，上限 60 防止过载）。
+
+        Returns:
+            EmotionCycleSegment 列表。
+        """
+        _validate_table("emotion_daily")
+        bounded_days = max(5, min(int(lookback_days), 60))
+        # 子查询取最近 N 日（DESC LIMIT），外层按 ASC 重排供算法使用
+        rows = self._conn.execute(
+            "SELECT * FROM ("
+            "SELECT * FROM emotion_daily "
+            "WHERE trade_date <= ? "
+            "ORDER BY trade_date DESC LIMIT ?"
+            ") ORDER BY trade_date ASC",
+            (end_date, bounded_days),
+        ).fetchall()
+        history = [self._row_to_emotion(r) for r in rows]
+        return identify_emotion_cycles(history)
 
     # ── watchlist / sector rotation / signals ──────────────
 
@@ -492,6 +529,11 @@ class SqliteStockDataSource:
 
     @staticmethod
     def _row_to_emotion(row: sqlite3.Row) -> EmotionIndicators:
+        """把 sqlite3.Row 转为 EmotionIndicators DTO（含 v023 新增 18 字段）。
+
+        Task E：v023 新增字段允许 None；total_volume 旧代码用 ``or 0.0``
+        兜底（兼容 v021 旧行），新字段保持 None 语义（未计算=未写入）。
+        """
         return EmotionIndicators(
             trade_date=row["trade_date"],
             limit_up_count=row["limit_up_count"],
@@ -507,6 +549,25 @@ class SqliteStockDataSource:
             phase=row["phase"],
             phase_confidence=row["phase_confidence"],
             phase_reason=row["phase_reason"],
+            # Task E v023 新增字段（6 维度情绪观察框架）
+            adv_count=row["adv_count"],
+            decl_count=row["decl_count"],
+            adv_decl_ratio=row["adv_decl_ratio"],
+            breadth_level=row["breadth_level"],
+            top20_volume_avg_chg=row["top20_volume_avg_chg"],
+            top20_volume_up_count=row["top20_volume_up_count"],
+            top20_volume_limit_up_count=row["top20_volume_limit_up_count"],
+            strength_level=row["strength_level"],
+            market_style=row["market_style"],
+            board_break_total_count=row["board_break_total_count"],
+            board_break_rebound_count=row["board_break_rebound_count"],
+            rebound_success_ratio=row["rebound_success_ratio"],
+            top5d_avg_chg=row["top5d_avg_chg"],
+            resilience_level=row["resilience_level"],
+            authenticity_level=row["authenticity_level"],
+            height_level=row["height_level"],
+            trend_5d=row["trend_5d"],
+            trend_20d=row["trend_20d"],
         )
 
     @staticmethod

@@ -202,6 +202,72 @@ def _upgrade_22(conn: Any) -> None:
     logger.info("Migration 22: created stock_fetch_log table and index")
 
 
+# Task E v023：emotion_daily 新增 18 个字段，支持 6 维度情绪观察框架。
+# 字段按维度分组：广度(4) / 强度(5) / 韧性(5) / 真实度(1) / 高度(1) / 持续性(2)
+# 全部字段允许 NULL（默认 None），由 fetcher 写入计算结果。
+# phase / phase_confidence / phase_reason 保持原状，Task E 不再写入。
+_EMOTION_V023_NEW_COLUMNS: tuple[tuple[str, str], ...] = (
+    # 维度 2：广度
+    ("adv_count", "INTEGER"),
+    ("decl_count", "INTEGER"),
+    ("adv_decl_ratio", "REAL"),
+    ("breadth_level", "TEXT"),
+    # 维度 3：强度
+    ("top20_volume_avg_chg", "REAL"),
+    ("top20_volume_up_count", "INTEGER"),
+    ("top20_volume_limit_up_count", "INTEGER"),
+    ("strength_level", "TEXT"),
+    ("market_style", "TEXT"),
+    # 维度 4：韧性
+    ("board_break_total_count", "INTEGER"),
+    ("board_break_rebound_count", "INTEGER"),
+    ("rebound_success_ratio", "REAL"),
+    ("top5d_avg_chg", "REAL"),
+    ("resilience_level", "TEXT"),
+    # 维度 5：真实度（已有 broken_limit_ratio，新增分类）
+    ("authenticity_level", "TEXT"),
+    # 维度 1：高度
+    ("height_level", "TEXT"),
+    # 维度 6：持续性
+    ("trend_5d", "TEXT"),
+    ("trend_20d", "TEXT"),
+)
+
+
+def _upgrade_23(conn: Any) -> None:
+    """Task E：emotion_daily 新增 18 个字段（6 维度情绪观察框架）。
+
+    设计要点：
+    - 全部 ALTER TABLE ADD COLUMN，允许 NULL 默认值
+    - 既有行的新字段自动为 NULL（fetcher 重抓后回填）
+    - 不修改 phase / phase_confidence / phase_reason（保留 schema，不再写入）
+    - 回滚用 DROP COLUMN（SQLite 3.35+ 支持）
+    """
+    for col, col_type in _EMOTION_V023_NEW_COLUMNS:
+        conn.execute(
+            f"ALTER TABLE emotion_daily ADD COLUMN {col} {col_type}"
+        )
+    conn.commit()
+    logger.info(
+        "Migration 23: added %d columns to emotion_daily (6-dim emotion framework)",
+        len(_EMOTION_V023_NEW_COLUMNS),
+    )
+
+
+def _downgrade_23(conn: Any) -> None:
+    """回滚迁移 23 — 删除 emotion_daily 的 18 个新字段。
+
+    SQLite 3.35+ 支持 DROP COLUMN；旧版本需重建表。
+    """
+    for col, _ in _EMOTION_V023_NEW_COLUMNS:
+        conn.execute(f"ALTER TABLE emotion_daily DROP COLUMN {col}")
+    conn.commit()
+    logger.warning(
+        "Migration 23 downgrade: dropped %d columns from emotion_daily",
+        len(_EMOTION_V023_NEW_COLUMNS),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=21,
@@ -214,5 +280,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         description="stock_fetch_log table: per-(date, code, table) fetch status with TTL index",
         upgrade=_upgrade_22,
         downgrade=_downgrade_22,
+    ),
+    Migration(
+        version=23,
+        description="emotion_daily: 18 new columns for 6-dim emotion framework (breadth/strength/resilience/authenticity/height/trend)",
+        upgrade=_upgrade_23,
+        downgrade=_downgrade_23,
     ),
 )

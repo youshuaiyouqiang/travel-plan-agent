@@ -244,9 +244,9 @@ class TestToolWiring:
         weekly = build_stock_tools(session_mode="weekly")
         assert "get_latest_trade_date_with_data" in daily
         assert "get_latest_trade_date_with_data" in weekly
-        # 不能影响原有的 daily/weekly 数量断言（仍是 14 + 1）
-        assert len(daily) == 15
-        assert len(weekly) == 16
+        # Task E 之后：daily 16 工具（含 get_emotion_cycles），weekly 17 工具
+        assert len(daily) == 16
+        assert len(weekly) == 17
 
 
 # ── 5. prompt 必须有非交易日回退说明 ──────────────────────

@@ -8,6 +8,8 @@ interface:
     # 情绪指标（返回多日序列数据，供 AI 看趋势而非截面）
     - get_emotion_indicators
     - get_emotion_indicators_trend
+    # Task E：情绪周期段峰谷检测（供第 3 步"与上一轮退潮比"客观对比）
+    - get_emotion_cycles
     - get_strong_repair_leaders
     # 板块维度
     - get_sector_rotation

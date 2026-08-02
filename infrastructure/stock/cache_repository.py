@@ -64,6 +64,48 @@ def _validate_table(table: str) -> None:
         )
 
 
+def _row_to_emotion_indicators(row: sqlite3.Row) -> EmotionIndicators:
+    """把 sqlite3.Row 转为 EmotionIndicators DTO（含 v023 新增 18 字段）。
+
+    Task E：v023 新增字段允许 None；用 ``row[key]`` 取值时若列不存在
+    会抛 KeyError，但迁移 v023 已确保所有列存在。
+    ``or 0`` 仅对 NOT NULL DEFAULT 0 的旧字段使用，新字段保持 None 语义。
+    """
+    return EmotionIndicators(
+        trade_date=row["trade_date"],
+        limit_up_count=row["limit_up_count"],
+        limit_down_count=row["limit_down_count"],
+        valid_limit_up_count=row["valid_limit_up_count"],
+        broken_limit_ratio=row["broken_limit_ratio"] or 0.0,
+        max_consecutive_boards=row["max_consecutive_boards"],
+        yesterday_limit_up_today_premium=row["yesterday_limit_up_today_premium"],
+        total_volume=row["total_volume"],
+        volume_change_pct=row["volume_change_pct"],
+        phase=row["phase"],
+        phase_confidence=row["phase_confidence"],
+        phase_reason=row["phase_reason"],
+        # Task E v023 新增字段
+        adv_count=row["adv_count"],
+        decl_count=row["decl_count"],
+        adv_decl_ratio=row["adv_decl_ratio"],
+        breadth_level=row["breadth_level"],
+        top20_volume_avg_chg=row["top20_volume_avg_chg"],
+        top20_volume_up_count=row["top20_volume_up_count"],
+        top20_volume_limit_up_count=row["top20_volume_limit_up_count"],
+        strength_level=row["strength_level"],
+        market_style=row["market_style"],
+        board_break_total_count=row["board_break_total_count"],
+        board_break_rebound_count=row["board_break_rebound_count"],
+        rebound_success_ratio=row["rebound_success_ratio"],
+        top5d_avg_chg=row["top5d_avg_chg"],
+        resilience_level=row["resilience_level"],
+        authenticity_level=row["authenticity_level"],
+        height_level=row["height_level"],
+        trend_5d=row["trend_5d"],
+        trend_20d=row["trend_20d"],
+    )
+
+
 class CacheRepository:
     """缓存仓储——SQLite 写路径的薄包装。
 
@@ -226,6 +268,9 @@ class CacheRepository:
     ) -> None:
         """批量 upsert 情绪指标单日行。
 
+        Task E 扩展：写入 v023 新增的 18 个 6 维度字段。
+        全部新字段允许 None（fetcher 未计算时保持 None）。
+
         Args:
             trade_date: 交易日期（YYYYMMDD）。
             rows: EmotionIndicators DTO 列表（通常 1 个元素）。
@@ -235,13 +280,27 @@ class CacheRepository:
         """
         _validate_table("emotion_daily")
         # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
+        # Task E v023：新增 18 个 6 维度字段（共 30 列 = 12 旧 + 18 新）
+        # 占位符按 10 个一组分行书写，便于人工核对数量
         sql = (
             "INSERT OR REPLACE INTO emotion_daily ("
             "trade_date, limit_up_count, limit_down_count, "
             "valid_limit_up_count, broken_limit_ratio, max_consecutive_boards, "
             "yesterday_limit_up_today_premium, total_volume, volume_change_pct, "
-            "phase, phase_confidence, phase_reason"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "phase, phase_confidence, phase_reason, "
+            # Task E v023 新增字段（6 维度情绪观察框架）
+            "adv_count, decl_count, adv_decl_ratio, breadth_level, "
+            "top20_volume_avg_chg, top20_volume_up_count, "
+            "top20_volume_limit_up_count, strength_level, market_style, "
+            "board_break_total_count, board_break_rebound_count, "
+            "rebound_success_ratio, top5d_avg_chg, resilience_level, "
+            "authenticity_level, height_level, "
+            "trend_5d, trend_20d"
+            ") VALUES ("
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?"   # 10
+            ")"
         )
         for r in rows:
             self._conn.execute(
@@ -259,6 +318,25 @@ class CacheRepository:
                     r.phase,
                     r.phase_confidence,
                     r.phase_reason,
+                    # Task E v023 新增字段
+                    r.adv_count,
+                    r.decl_count,
+                    r.adv_decl_ratio,
+                    r.breadth_level,
+                    r.top20_volume_avg_chg,
+                    r.top20_volume_up_count,
+                    r.top20_volume_limit_up_count,
+                    r.strength_level,
+                    r.market_style,
+                    r.board_break_total_count,
+                    r.board_break_rebound_count,
+                    r.rebound_success_ratio,
+                    r.top5d_avg_chg,
+                    r.resilience_level,
+                    r.authenticity_level,
+                    r.height_level,
+                    r.trend_5d,
+                    r.trend_20d,
                 ),
             )
         self._conn.commit()
@@ -268,6 +346,9 @@ class CacheRepository:
     ) -> list[EmotionIndicators]:
         """查询某日的情绪指标行。
 
+        Task E 扩展：读取 v023 新增的 18 个 6 维度字段。
+        用 ``SELECT *`` 简化列管理（v023 新增 18 列后显式列名冗长）。
+
         Args:
             trade_date: 交易日期（YYYYMMDD）。
 
@@ -276,30 +357,10 @@ class CacheRepository:
         """
         _validate_table("emotion_daily")
         rows = self._conn.execute(
-            "SELECT trade_date, limit_up_count, limit_down_count, "
-            "valid_limit_up_count, broken_limit_ratio, max_consecutive_boards, "
-            "yesterday_limit_up_today_premium, total_volume, volume_change_pct, "
-            "phase, phase_confidence, phase_reason "
-            "FROM emotion_daily WHERE trade_date = ?",
+            "SELECT * FROM emotion_daily WHERE trade_date = ?",
             (trade_date,),
         ).fetchall()
-        return [
-            EmotionIndicators(
-                trade_date=row["trade_date"],
-                limit_up_count=row["limit_up_count"],
-                limit_down_count=row["limit_down_count"],
-                valid_limit_up_count=row["valid_limit_up_count"],
-                broken_limit_ratio=row["broken_limit_ratio"],
-                max_consecutive_boards=row["max_consecutive_boards"],
-                yesterday_limit_up_today_premium=row["yesterday_limit_up_today_premium"],
-                total_volume=row["total_volume"],
-                volume_change_pct=row["volume_change_pct"],
-                phase=row["phase"],
-                phase_confidence=row["phase_confidence"],
-                phase_reason=row["phase_reason"],
-            )
-            for row in rows
-        ]
+        return [_row_to_emotion_indicators(row) for row in rows]
 
     # ── sector_daily ──────────────────────────────────────
     # Task 14：板块日线 fetcher 写路径

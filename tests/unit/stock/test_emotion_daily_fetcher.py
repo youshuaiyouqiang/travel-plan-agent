@@ -78,12 +78,17 @@ def _seed_limit_stocks(repo: Any, trade_date: str) -> None:
 
 
 def _fake_activity_df() -> pd.DataFrame:
-    """ak.stock_market_activity_legu 返回的简化版。"""
+    """ak.stock_market_activity_legu 返回的简化版。
+
+    Task E：新增"上涨"/"下跌"项（维度 2 广度原始数据）。
+    """
     return pd.DataFrame(
         [
             {"item": "涨停", "value": 4},     # 4 家涨停（含 1 个炸板后回封）
             {"item": "跌停", "value": 1},
             {"item": "炸板", "value": 1},
+            {"item": "上涨", "value": 300},   # Task E：维度 2 广度
+            {"item": "下跌", "value": 200},   # Task E：维度 2 广度
         ]
     )
 
@@ -405,3 +410,234 @@ class TestEmotionFetcherVolumeChangePctWithNone:
         # 当日 total_volume=None → volume_change_pct 必须为 None（不能除 0）
         assert r.total_volume is None
         assert r.volume_change_pct is None
+
+
+# ── Task E：6 维度情绪观察框架集成测试 ────────────────────
+
+
+def _fake_fund_flow_df() -> pd.DataFrame:
+    """ak.stock_fund_flow_individual 返回的简化版（含字符串字段）。
+
+    Task E：成交额前 20 名的涨幅统计（维度 3 强度）。
+    构造 25 行：前 20 名平均涨幅约 3.5%、上涨 18 只、涨停 2 只 → "强势"。
+    """
+    rows = []
+    # 前 20 名：高成交额 + 多数上涨
+    for i in range(20):
+        chg = f"{3.0 + i * 0.05:.2f}%"  # 3.00% ~ 3.95%
+        amount = f"{10 - i * 0.1:.1f}亿"  # 10亿 ~ 8.1亿
+        rows.append({
+            "序号": i + 1, "股票代码": f"60000{i:02d}", "股票简称": f"股{i}",
+            "最新价": 10.0, "涨跌幅": chg, "换手率": "5.0%",
+            "流入资金": "5亿", "流出资金": "3亿", "净额": "2亿", "成交额": amount,
+        })
+    # 5 名低成交额（不会进 top 20）
+    for i in range(5):
+        rows.append({
+            "序号": 21 + i, "股票代码": f"00000{i}", "股票简称": f"小{i}",
+            "最新价": 5.0, "涨跌幅": "1.00%", "换手率": "2.0%",
+            "流入资金": "0.1亿", "流出资金": "0.05亿", "净额": "0.05亿",
+            "成交额": "0.5亿",
+        })
+    return pd.DataFrame(rows)
+
+
+def _seed_history_emotion(repo: Any, end_date: str, days: int) -> None:
+    """塞近 N 日 emotion_daily（用于 height percentile + trend）。
+
+    涨停数序列（近→远）：[40, 35, 30, 25, 20, 15, 10, ...]（递减趋势）
+    """
+    from domain.stock.models import EmotionIndicators
+
+    base = int(end_date)
+    for i in range(days):
+        # 日期往前推 i 天（简化：不考虑周末）
+        d = base - i
+        trade_date = str(d)
+        # 涨停数递减：近 5 日 [40,35,30,25,20]，趋势=下降
+        limit_up = max(5, 40 - i * 3)
+        repo.upsert_emotion_daily(
+            trade_date=trade_date,
+            rows=[
+                EmotionIndicators(
+                    trade_date=trade_date,
+                    limit_up_count=limit_up,
+                    limit_down_count=2,
+                    valid_limit_up_count=limit_up - 1,
+                    broken_limit_ratio=0.1,
+                    max_consecutive_boards=2,
+                    yesterday_limit_up_today_premium=None,
+                    total_volume=1.0e12, volume_change_pct=0.05,
+                    phase=None, phase_confidence=None, phase_reason=None,
+                )
+            ],
+        )
+
+
+class TestEmotionFetcherSixDimensions:
+    """Task E：6 维度情绪观察框架集成测试。
+
+    验证 fetcher 正确调用 6 维度计算函数并写入 v023 新增字段。
+    """
+
+    @pytest.mark.asyncio
+    async def test_six_dimensions_written(self, tmp_db) -> None:
+        """完整 6 维度计算流程 → 18 个新字段正确写入。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+
+        # 1. 塞历史 emotion_daily（近 10 日，用于 height + trend）
+        _seed_history_emotion(repo, end_date="20260729", days=10)
+
+        # 2. 塞昨日 limit_stocks + 今日 stock_daily（用于韧性维度）
+        from domain.stock.models import LimitStock, StockDaily
+        yesterday_stocks = [
+            LimitStock(
+                trade_date="20260729", stock_code="600000", stock_name="A",
+                limit_type="up", consecutive_boards=2,
+                first_limit_time="10:00:00", last_limit_time="10:00:00",
+                open_count=0, is_valid_limit_up=True,
+            ),
+            LimitStock(
+                trade_date="20260729", stock_code="600001", stock_name="B",
+                limit_type="up", consecutive_boards=1,
+                first_limit_time="10:30:00", last_limit_time="10:30:00",
+                open_count=0, is_valid_limit_up=True,
+            ),
+        ]
+        repo.upsert_limit_stocks(trade_date="20260729", stocks=yesterday_stocks)
+
+        # 今日 stock_daily：600000 涨 6%（断板反包成功），600001 跌 2%（断板未反包）
+        today_stocks = [
+            StockDaily(
+                trade_date="20260730", stock_code="600000",
+                open=10.0, close=10.6, high=10.8, low=9.9,
+                volume=1e6, pct_chg=6.0, turnover=1e7,
+            ),
+            StockDaily(
+                trade_date="20260730", stock_code="600001",
+                open=10.0, close=9.8, high=10.1, low=9.7,
+                volume=5e5, pct_chg=-2.0, turnover=5e6,
+            ),
+        ]
+        repo.upsert_stock_daily(trade_date="20260730", rows=today_stocks)
+
+        # 3. 塞今日 limit_stocks（用于 valid_count + max_boards）
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        # 4. mock akshare（legu + spot_em + fund_flow_individual）
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 1.2e12}]
+            )
+            mock_ak.stock_fund_flow_individual.return_value = _fake_fund_flow_df()
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        assert len(rows) == 1
+        r = rows[0]
+
+        # 维度 2：广度（adv=300, decl=200 → ratio=1.5 → "偏广"）
+        assert r.adv_count == 300
+        assert r.decl_count == 200
+        assert r.adv_decl_ratio == pytest.approx(1.5)
+        assert r.breadth_level == "偏广"
+
+        # 维度 3：强度（top20 avg_chg≈3.48, up_count=20, limit_up=0 → "强势"）
+        assert r.strength_level == "强势"
+        assert r.top20_volume_up_count == 20
+        assert r.market_style is not None  # 有 height_level 才有 market_style
+
+        # 维度 5：真实度（broken_ratio=1/5=0.2 → "偏真"）
+        assert r.authenticity_level == "偏真"
+
+        # 维度 1：高度（有历史数据 → 非 None）
+        assert r.height_level is not None
+
+        # 维度 6：持续性（近 5 日涨停数递减 → "下降"）
+        assert r.trend_5d is not None
+
+        # 维度 4：韧性（昨日 2 涨停，今日 1 断板反包 → board_break_total=2, rebound=1）
+        assert r.board_break_total_count is not None
+        assert r.board_break_total_count >= 1
+        assert r.resilience_level is not None
+
+    @pytest.mark.asyncio
+    async def test_strength_degrades_when_fund_flow_fails(self, tmp_db) -> None:
+        """fetch_top20_volume_stocks 失败 → strength 字段为 None，其他维度照写。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 1.0e12}]
+            )
+            # fund_flow_individual 失败
+            mock_ak.stock_fund_flow_individual.side_effect = ValueError("反爬失败")
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        r = rows[0]
+        # 强度字段为 None（降级）
+        assert r.strength_level is None
+        assert r.market_style is None
+        assert r.top20_volume_avg_chg is None
+        # 其他维度照写
+        assert r.breadth_level is not None
+        assert r.authenticity_level is not None
+
+    @pytest.mark.asyncio
+    async def test_resilience_none_when_no_yesterday_data(self, tmp_db) -> None:
+        """无昨日 emotion_daily → 韧性字段全部 None。"""
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        _seed_limit_stocks(repo, trade_date="20260730")
+        # 不 seed 历史 emotion_daily（无昨日数据）
+
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 1.0e12}]
+            )
+            mock_ak.stock_fund_flow_individual.return_value = _fake_fund_flow_df()
+            count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        rows = repo.select_emotion_daily(trade_date="20260730")
+        r = rows[0]
+        # 韧性字段全部 None（无昨日数据）
+        assert r.board_break_total_count is None
+        assert r.board_break_rebound_count is None
+        assert r.resilience_level is None
+        # 高度/trend 仍可计算（默认"中位"/"数据不足"）
+        assert r.height_level == "中位"  # 无历史 → 默认中位
+        assert r.trend_5d == "数据不足"  # 无历史 → 数据不足
