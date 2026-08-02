@@ -144,7 +144,7 @@ async def test_get_market_snapshot_missing_volume_falls_back(tmp_db) -> None:
 
 @pytest.mark.asyncio
 async def test_get_market_snapshot_no_data_returns_zeros(tmp_db) -> None:
-    """当天完全没数据（未抓）→ 返回 None 主键，但 status 字段是 int 默认 0 不爆。"""
+    """cache 完全为空（warmup 未跑过）→ 返回 None 主键，但 status 字段是 int 默认 0 不爆。"""
     from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
 
     conn = get_connection(tmp_db)
@@ -157,3 +157,54 @@ async def test_get_market_snapshot_no_data_returns_zeros(tmp_db) -> None:
     assert snapshot.cyb_index is None
     assert snapshot.total_volume is None
     assert snapshot.consecutive_down_days == 0
+
+
+@pytest.mark.asyncio
+async def test_get_market_snapshot_falls_back_to_latest_trading_day(tmp_db) -> None:
+    """周六查询 → fallback 到最近交易日 20260731（market_index_daily 中最新 <= target）。
+
+    修复：原版本直接 SELECT ... WHERE trade_date=周六 → 返空 → 前端所有卡片显示"—"。
+    现在先 resolve 实际有数据的最近交易日，再用该日期查。
+    """
+    from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+    conn = get_connection(tmp_db)
+    # seed 7-31 数据
+    _insert_index(
+        conn, trade_date="20260731", index_code="sh000001",
+        close=3832.262, volume=5_975_294_2700.0, pct_chg=0.72,
+    )
+    _insert_index(
+        conn, trade_date="20260731", index_code="sz399001",
+        close=13578.93, volume=7_193_959_4436.0, pct_chg=2.21,
+    )
+
+    ds = SqliteStockDataSource(conn=conn)
+    # 周六 8-2 查询 → 应 fallback 到 7-31
+    snapshot = await ds.get_market_snapshot("20260802")
+
+    assert snapshot.trade_date == "20260731"  # 已 fallback
+    assert snapshot.sh_index == pytest.approx(3832.262)
+    assert snapshot.sz_index == pytest.approx(13578.93)
+
+
+@pytest.mark.asyncio
+async def test_get_market_snapshot_does_not_fall_back_to_future(tmp_db) -> None:
+    """target_date 早于 cache 中所有数据时 → 不回退到 target 之后。
+
+    边界：forward-only 防御，避免被 cache 偷换为未来的数据。
+    """
+    from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+    conn = get_connection(tmp_db)
+    _insert_index(
+        conn, trade_date="20260731", index_code="sh000001",
+        close=3832.262, volume=5e10, pct_chg=0.5,
+    )
+
+    ds = SqliteStockDataSource(conn=conn)
+    # 查询 20260101（远早于 cache）→ cache 中只有 7-31 > 20260101 → 不应该 fallback 到 7-31
+    snapshot = await ds.get_market_snapshot("20260101")
+
+    assert snapshot.trade_date == "20260101"  # 保留 target
+    assert snapshot.sh_index is None  # 无 fallback 数据

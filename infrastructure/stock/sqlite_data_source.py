@@ -60,6 +60,43 @@ def _validate_table(table: str) -> None:
         )
 
 
+def _resolve_trade_date_with_data(
+    conn: sqlite3.Connection, table: str, target_date: str
+) -> str | None:
+    """非交易日 fallback：返回 <= target_date 且指定表里有数据的最近 trade_date。
+
+    设计要点（Bug③ 修复）：
+    - 大盘快照 / 板块轮动接口，调用方传"今天"日期；
+      周末/节假日该日期在 market_index_daily / sector_daily 中无数据。
+    - 原版 SELECT ... WHERE trade_date = today 直接返空 → 前端所有卡片"—"。
+    - 现在 fallback 到 <= today 的最近有数据日期，MarketSnapshot.trade_date
+      / SectorPerformance.trade_date 反映**实际**查询的日期，前端可据此
+      显示"截至 20260731"。
+
+    边界：
+    - forward-only：``WHERE trade_date <= target_date``，绝不回退到未来
+      （避免 cache 时间戳错乱时把未来数据当历史展示）
+    - 整表为空 → 返 None，调用方保持 target_date 不变（行为与旧版一致）
+
+    Args:
+        conn: SQLite 连接。
+        table: 目标表名（必须在 _ALLOWED_TABLES 白名单内）。
+        target_date: 目标交易日（YYYYMMDD）。
+
+    Returns:
+        实际有数据的交易日；无数据返 None。
+    """
+    _validate_table(table)
+    row = conn.execute(
+        f"SELECT MAX(trade_date) AS latest FROM {table} "
+        f"WHERE trade_date <= ?",
+        (target_date,),
+    ).fetchone()
+    if row is None or row["latest"] is None:
+        return None
+    return str(row["latest"])
+
+
 def _compute_top_board_leaders(
     conn: sqlite3.Connection, trade_date: str
 ) -> list[str]:
@@ -111,13 +148,24 @@ class SqliteStockDataSource:
     # ── market snapshot ─────────────────────────────────────
 
     async def get_market_snapshot(self, trade_date: str) -> MarketSnapshot:
-        """拉取大盘快照（上证/深证/创业板/成交额/连续下跌天数/MA20）。"""
+        """拉取大盘快照（上证/深证/创业板/成交额/连续下跌天数/MA20）。
+
+        非交易日 fallback（Bug③）：当 trade_date 无 market_index_daily 数据时
+        （周末/节假日），自动回退到 <= trade_date 的最近有数据交易日。
+        MarketSnapshot.trade_date 反映实际查询的日期，前端可据此标注
+        "截至 20260731"。
+        """
         _validate_table("market_index_daily")
+        # Bug③ 修复：非交易日 fallback
+        resolved = _resolve_trade_date_with_data(
+            self._conn, "market_index_daily", trade_date
+        )
+        effective_date = resolved if resolved is not None else trade_date
         # 取所有指数；聚合得到 sh / sz / cyb
         rows = self._conn.execute(
             "SELECT index_code, close, pct_chg, volume FROM market_index_daily "
             "WHERE trade_date = ?",
-            (trade_date,),
+            (effective_date,),
         ).fetchall()
         sh_index: float | None = None
         sz_index: float | None = None
@@ -147,7 +195,7 @@ class SqliteStockDataSource:
         e_row = self._conn.execute(
             "SELECT total_volume, volume_change_pct FROM emotion_daily "
             "WHERE trade_date = ?",
-            (trade_date,),
+            (effective_date,),
         ).fetchone()
         # 修复：两市成交额优先用 market_index_daily 求和；全为 0 时 fallback emotion_daily
         total_volume: float | None = total_volume_from_index
@@ -156,7 +204,7 @@ class SqliteStockDataSource:
         volume_change_pct = e_row["volume_change_pct"] if e_row else None
         # 连续下跌天数 / MA20：未在 schema 内存储，返回占位
         return MarketSnapshot(
-            trade_date=trade_date,
+            trade_date=effective_date,
             sh_index=sh_index,
             sz_index=sz_index,
             cyb_index=cyb_index,
@@ -290,13 +338,23 @@ class SqliteStockDataSource:
     async def get_sector_rotation(
         self, trade_date: str
     ) -> list[SectorPerformance]:
+        """板块轮动——非交易日 fallback 到最近有数据日期。
+
+        Bug③ 修复：trade_date 无 sector_daily 数据（周末/节假日）→ 回退到
+        <= trade_date 的最近有数据交易日。SectorPerformance.trade_date
+        反映实际查询日期。
+        """
         _validate_table("sector_daily")
+        resolved = _resolve_trade_date_with_data(
+            self._conn, "sector_daily", trade_date
+        )
+        effective_date = resolved if resolved is not None else trade_date
         rows = self._conn.execute(
             "SELECT trade_date, sector_code, sector_name, pct_chg, "
             "leading_stock_codes, limit_up_count "
             "FROM sector_daily WHERE trade_date = ? "
             "ORDER BY pct_chg DESC",
-            (trade_date,),
+            (effective_date,),
         ).fetchall()
         return [self._row_to_sector_perf(r) for r in rows]
 
@@ -576,13 +634,7 @@ class SqliteStockDataSource:
 
     # ── 内部辅助 ────────────────────────────────────────
 
-    @staticmethod
-    def _row_to_emotion(row: sqlite3.Row) -> EmotionIndicators:
-        """把 sqlite3.Row 转为 EmotionIndicators DTO（含 v023 新增 18 字段）。
-
-        Task E：v023 新增字段允许 None；total_volume 旧代码用 ``or 0.0``
-        兜底（兼容 v021 旧行），新字段保持 None 语义（未计算=未写入）。
-        """    @classmethod
+    @classmethod
     def _row_to_emotion(
         cls,
         row: sqlite3.Row,
@@ -593,10 +645,13 @@ class SqliteStockDataSource:
         Task E：v023 新增字段允许 None；total_volume 旧代码用 ``or 0.0``
         兜底（兼容 v021 旧行），新字段保持 None 语义（未计算=未写入）。
 
+        v024 修复：top_board_leaders 列已加入 schema；读路径优先取列值（JSON
+        解析），无值时再 fallback 到 limit_stocks_daily 聚合。
+
         Args:
             row: emotion_daily 表行。
-            conn: 可选的 SQLite 连接；若提供，则补 ``top_board_leaders``
-                （从 ``limit_stocks_daily`` 多查一次）。
+            conn: 可选的 SQLite 连接；若提供且列值为 NULL，fallback 到
+                limit_stocks_daily 聚合 top_board_leaders。
         """
         emotion = EmotionIndicators(
             trade_date=row["trade_date"],
@@ -634,13 +689,20 @@ class SqliteStockDataSource:
             trend_20d=row["trend_20d"],
         )
         if conn is not None:
-            # 修复：emotion_daily 表没存 leaders，但前端要按"最高板龙头"单独展示。
-            # 读路径多查一次 limit_stocks_daily 聚合（无 schema 改动，回滚容易）。
-            object.__setattr__(
-                emotion,
-                "top_board_leaders",
-                _compute_top_board_leaders(conn, emotion.trade_date),
+            # v024 修复：emotion_daily 表已有 top_board_leaders 列；
+            # 优先读列值（JSON 数组），无值时再 fallback 到 limit_stocks_daily 聚合。
+            stored_leaders_raw = (
+                row["top_board_leaders"] if "top_board_leaders" in row.keys() else None
             )
+            parsed_leaders: list[str] | None = None
+            if stored_leaders_raw:
+                try:
+                    parsed_leaders = json.loads(stored_leaders_raw)
+                except (json.JSONDecodeError, TypeError):
+                    parsed_leaders = None
+            if parsed_leaders is None:
+                parsed_leaders = _compute_top_board_leaders(conn, emotion.trade_date)
+            object.__setattr__(emotion, "top_board_leaders", parsed_leaders)
         return emotion
 
     @staticmethod
