@@ -157,20 +157,67 @@ export function EmotionChart({
           暂无数据
         </div>
       ) : (
-        <div
-          aria-label="情绪多日曲线图"
-          role="img"
-          className="h-64 w-full"
-        >
-          <ReactECharts
-            option={option}
-            style={{ height: '100%', width: '100%' }}
-            notMerge
-            lazyUpdate
-            opts={{ renderer: 'canvas' }}
-          />
-        </div>
+        <>
+          <div
+            aria-label="情绪多日曲线图"
+            role="img"
+            className="h-64 w-full"
+          >
+            <ReactECharts
+              option={option}
+              style={{ height: '100%', width: '100%' }}
+              notMerge
+              lazyUpdate
+              opts={{ renderer: 'canvas' }}
+            />
+          </div>
+          {/* 最高板龙头：单独表格，仅展示当前窗口最后一日（最新日）的龙头
+              与 max_consecutive_boards，避免与折线图挤在一起看不清。 */}
+          <TopBoardLeaders latest={trimmed[0]} />
+        </>
       )}
     </section>
+  )
+}
+
+/**
+ * 最高板龙头小表格。
+ *
+ * 修复：原 emotion 曲线把 "最高连板" 画成单数字折线，混在多指标中看不出"是哪只股票"。
+ * 现在拆成单独表格，明示龙头代码，连板数。
+ */
+function TopBoardLeaders({ latest }: { latest: EmotionIndicators }) {
+  const maxBoards = latest.max_consecutive_boards
+  const leaders = latest.top_board_leaders ?? []
+  const hasData = leaders.length > 0 && maxBoards > 0
+
+  return (
+    <div
+      className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+      aria-label={`${latest.trade_date} 最高板龙头`}
+    >
+      <div className="mb-1 flex items-center gap-2">
+        <span className="font-semibold text-slate-800">{latest.trade_date}</span>
+        <span>最高板</span>
+        <span className="rounded bg-sky-100 px-1.5 py-0.5 font-mono text-sky-800">
+          {maxBoards} 板
+        </span>
+      </div>
+      {hasData ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-slate-500">龙头：</span>
+          {leaders.map((code) => (
+            <span
+              key={code}
+              className="rounded bg-white px-2 py-0.5 font-mono text-slate-800 shadow-sm"
+            >
+              {code}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className="text-slate-400">当日暂无龙头数据</div>
+      )}
+    </div>
   )
 }

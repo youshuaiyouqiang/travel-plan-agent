@@ -24,6 +24,11 @@ export interface EmotionIndicators {
   phase: string | null
   phase_confidence: string | null
   phase_reason: string | null
+  /**
+   * 最高板龙头股票代码列表：max_consecutive_boards 对应的所有 stock_code。
+   * 后端从 limit_stocks_daily 多查一次补齐；老行无值时为空数组。
+   */
+  top_board_leaders: string[]
 }
 
 /** 大盘快照。 */

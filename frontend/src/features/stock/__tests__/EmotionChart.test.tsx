@@ -25,6 +25,7 @@ const SAMPLE: EmotionIndicators[] = [
     phase: '高潮',
     phase_confidence: 'high',
     phase_reason: '炸板率低',
+    top_board_leaders: ['603221', '603222'],
   },
   {
     trade_date: '20260727',
@@ -39,6 +40,7 @@ const SAMPLE: EmotionIndicators[] = [
     phase: '修复',
     phase_confidence: 'medium',
     phase_reason: '高位震荡',
+    top_board_leaders: ['000003'],
   },
 ]
 
