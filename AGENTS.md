@@ -14,7 +14,7 @@
 
 ## 2. 技术与目录
 
-- Python 3.11+、FastAPI、Pydantic v2、SQLite、React 18、TypeScript strict、Vite 6。
+- Python 3.14.6+、FastAPI、Pydantic v2、SQLite、React 18、TypeScript strict、Vite 6。
 - Python 依赖以 `requirements.lock` 为准；安装使用 `python -m pip install -r requirements.lock`。
 - 前端依赖以 `frontend/package-lock.json` 为准；安装使用 `npm --prefix frontend ci`。
 
