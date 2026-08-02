@@ -1,13 +1,12 @@
 """P1 迁移注册表与执行器拆分的单元/集成测试。
 
 覆盖：
-- 注册版本恰为 1..20、不重复
-- 空库升级到版本 20
+- 注册版本恰为 1..24、不重复
+- 空库升级到版本 24
 - 已升级库重复初始化幂等
-- 从版本 20 降级再升级保持现有迁移测试断言
+- 从版本 24 降级再升级保持现有迁移测试断言
 - 每个迁移文件少于 800 行
 """
-
 from __future__ import annotations
 
 import os
@@ -28,15 +27,15 @@ from infrastructure.persistence.migrations.registry import MIGRATIONS
 # ── 注册表完整性 ──────────────────────────────────────────
 
 
-def test_registry_has_exactly_23_versions():
-    """注册表必须恰好包含 23 个迁移（Task E 新增 v023 emotion_daily 6 维度字段）。"""
-    assert len(MIGRATIONS) == 23
+def test_registry_has_exactly_24_versions():
+    """注册表必须恰好包含 24 个迁移（v024 新增 top_board_leaders 列）。"""
+    assert len(MIGRATIONS) == 24
 
 
-def test_registry_versions_are_1_to_23_continuous():
-    """版本号必须连续 1..23。"""
+def test_registry_versions_are_1_to_24_continuous():
+    """版本号必须连续 1..24。"""
     versions = [m.version for m in MIGRATIONS]
-    assert versions == list(range(1, 24))
+    assert versions == list(range(1, 25))
 
 
 def test_registry_versions_are_unique():
@@ -91,58 +90,58 @@ def tmp_db(tmp_path, monkeypatch):
         os.unlink(db_path)
 
 
-def test_empty_db_upgrades_to_version_23(tmp_db):
-    """空库 init_db 后 current_version 必须为 23。"""
+def test_empty_db_upgrades_to_version_24(tmp_db):
+    """空库 init_db 后 current_version 必须为 24。"""
     init_db()
     status = get_migration_status()
-    assert status["current_version"] == 23
+    assert status["current_version"] == 24
     assert status["pending_count"] == 0
 
 
 def test_repeated_init_db_is_idempotent(tmp_db):
-    """已升级库重复 init_db 不报错，版本仍为 23。"""
+    """已升级库重复 init_db 不报错，版本仍为 24。"""
     init_db()
     init_db()
     init_db()
     status = get_migration_status()
-    assert status["current_version"] == 23
+    assert status["current_version"] == 24
     assert status["pending_count"] == 0
 
 
-def test_all_23_versions_recorded_in_schema_migrations(tmp_db):
-    """schema_migrations 表必须记录全部 23 个版本。"""
+def test_all_24_versions_recorded_in_schema_migrations(tmp_db):
+    """schema_migrations 表必须记录全部 24 个版本。"""
     init_db()
     conn = get_connection()
     rows = conn.execute("SELECT version FROM schema_migrations ORDER BY version").fetchall()
     versions = [row["version"] for row in rows]
-    assert versions == list(range(1, 24))
+    assert versions == list(range(1, 25))
 
 
 # ── 降级与再升级 ──────────────────────────────────────────
 
 
-def test_downgrade_from_23_to_15_then_upgrade_restores_23(tmp_db):
-    """从版本 23 降级到 15，再升级应恢复到 23。"""
+def test_downgrade_from_24_to_15_then_upgrade_restores_24(tmp_db):
+    """从版本 24 降级到 15，再升级应恢复到 24。"""
     init_db()
-    assert get_migration_status()["current_version"] == 23
+    assert get_migration_status()["current_version"] == 24
 
-    # 降级到 15（保留 1..15，删除 16..23）
+    # 降级到 15（保留 1..15，删除 16..24）
     downgrade(15)
     status_after_downgrade = get_migration_status()
     assert status_after_downgrade["current_version"] == 15
-    assert status_after_downgrade["pending_count"] == 8
+    assert status_after_downgrade["pending_count"] == 9
 
     # 再升级
     init_db()
     status_after_upgrade = get_migration_status()
-    assert status_after_upgrade["current_version"] == 23
+    assert status_after_upgrade["current_version"] == 24
     assert status_after_upgrade["pending_count"] == 0
 
 
-def test_downgrade_to_0_then_full_upgrade_restores_23(tmp_db):
-    """从版本 23 全部降级到 0，再全量升级应恢复到 23。"""
+def test_downgrade_to_0_then_full_upgrade_restores_24(tmp_db):
+    """从版本 24 全部降级到 0，再全量升级应恢复到 24。"""
     init_db()
-    assert get_migration_status()["current_version"] == 23
+    assert get_migration_status()["current_version"] == 24
 
     # 全部降级
     downgrade(0)
@@ -152,16 +151,16 @@ def test_downgrade_to_0_then_full_upgrade_restores_23(tmp_db):
     # 全量升级
     init_db()
     status_after_upgrade = get_migration_status()
-    assert status_after_upgrade["current_version"] == 23
+    assert status_after_upgrade["current_version"] == 24
 
 
 def test_migration_status_reports_pending_correctly(tmp_db):
     """get_migration_status 在部分升级时正确报告 pending。"""
     init_db()
-    # 降级四个版本（19 留下，pending 20/21/22/23）
+    # 降级到 19（留下 1..19，pending 20..24 = 5 个）
     downgrade(19)
     status = get_migration_status()
     assert status["current_version"] == 19
-    assert status["pending_count"] == 4
+    assert status["pending_count"] == 5
     pending_versions = [p["version"] for p in status["pending"]]
-    assert pending_versions == [20, 21, 22, 23]
+    assert pending_versions == [20, 21, 22, 23, 24]

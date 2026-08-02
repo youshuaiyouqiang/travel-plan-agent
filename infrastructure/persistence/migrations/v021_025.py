@@ -268,6 +268,43 @@ def _downgrade_23(conn: Any) -> None:
     )
 
 
+def _upgrade_24(conn: Any) -> None:
+    """Task E v024 修复：emotion_daily 新增 top_board_leaders 列。
+
+    动机（Bug④）：
+    - emotion_daily.max_consecutive_boards 只存了连板数字，缺少"哪只股票"
+    - 业务上最高板龙头（涨停板数最高对应的 stock_code 列表）需要展示
+    - 之前 emotion_daily_fetcher DTO / cache_repository 读取路径都假设该列
+      存在，但 v023 迁移实际未建该列——读路径 silent 返空列表 / 写路径
+      silent skip，UI 显示"暂无龙头数据"
+
+    设计要点：
+    - ALTER TABLE ADD COLUMN TEXT NULL（既有行 NULL，回填后才有值）
+    - 字段语义：JSON 字符串数组，``json.dumps(sorted(stock_codes))``
+    - 不动 v023 历史迁移；本次新增 v024
+
+    回滚（downgrade）= DROP COLUMN。
+    """
+    conn.execute(
+        "ALTER TABLE emotion_daily ADD COLUMN top_board_leaders TEXT NULL"
+    )
+    conn.commit()
+    logger.info(
+        "Migration 24: added top_board_leaders column to emotion_daily"
+    )
+
+
+def _downgrade_24(conn: Any) -> None:
+    """回滚迁移 24 — 删除 top_board_leaders 列。"""
+    conn.execute(
+        "ALTER TABLE emotion_daily DROP COLUMN top_board_leaders"
+    )
+    conn.commit()
+    logger.warning(
+        "Migration 24 downgrade: dropped top_board_leaders from emotion_daily"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=21,
@@ -286,5 +323,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         description="emotion_daily: 18 new columns for 6-dim emotion framework (breadth/strength/resilience/authenticity/height/trend)",
         upgrade=_upgrade_23,
         downgrade=_downgrade_23,
+    ),
+    Migration(
+        version=24,
+        description="emotion_daily: add top_board_leaders column (JSON array of stock codes for highest-board leader)",
+        upgrade=_upgrade_24,
+        downgrade=_downgrade_24,
     ),
 )

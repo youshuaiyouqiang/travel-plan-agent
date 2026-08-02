@@ -59,7 +59,7 @@ def tmp_db(tmp_path, monkeypatch):
 
 def test_registry_has_exactly_23_versions():
     """v023 加入后注册表必须包含 23 个迁移。"""
-    assert len(MIGRATIONS) == 23
+    assert len(MIGRATIONS) == 24
 
 
 def test_registry_versions_are_1_to_23_continuous():

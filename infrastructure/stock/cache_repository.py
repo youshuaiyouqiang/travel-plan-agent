@@ -145,13 +145,21 @@ def _row_to_emotion_indicators(
         trend_20d=row["trend_20d"],
     )
     if conn is not None:
-        # 修复：emotion_daily 表 schema 没存 leaders，但前端要按"最高板龙头"单独表展示。
-        # 读路径多查一次聚合（无 schema 改动，回滚容易）。
-        object.__setattr__(
-            base,
-            "top_board_leaders",
-            _compute_top_board_leaders(conn, base.trade_date),
+        # v024 修复：emotion_daily 表已有 top_board_leaders 列（JSON 字符串数组）；
+        # 优先读列值；若列为 NULL 或解析失败，fallback 到聚合查询
+        # （兼容历史无 leader 数据的行 + 旧部署）。
+        stored_leaders_raw = (
+            row["top_board_leaders"] if "top_board_leaders" in row.keys() else None
         )
+        parsed_leaders: list[str] | None = None
+        if stored_leaders_raw:
+            try:
+                parsed_leaders = json.loads(stored_leaders_raw)
+            except (json.JSONDecodeError, TypeError):
+                parsed_leaders = None
+        if parsed_leaders is None:
+            parsed_leaders = _compute_top_board_leaders(conn, base.trade_date)
+        object.__setattr__(base, "top_board_leaders", parsed_leaders)
     return base
 
 
@@ -344,11 +352,14 @@ class CacheRepository:
             "board_break_total_count, board_break_rebound_count, "
             "rebound_success_ratio, top5d_avg_chg, resilience_level, "
             "authenticity_level, height_level, "
-            "trend_5d, trend_20d"
+            "trend_5d, trend_20d, "
+            # v024 修复：最高板龙头 stock_code 列表（JSON 数组）
+            "top_board_leaders"
             ") VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
-            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?"   # 10
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
+            "?"                                # top_board_leaders
             ")"
         )
         for r in rows:
@@ -386,6 +397,13 @@ class CacheRepository:
                     r.height_level,
                     r.trend_5d,
                     r.trend_20d,
+                    # v024 修复：top_board_leaders 字段持久化（JSON 数组）
+                    # 由 _row_to_emotion_indicators 在读取路径补全
+                    (
+                        json.dumps(r.top_board_leaders, ensure_ascii=False)
+                        if r.top_board_leaders is not None
+                        else None
+                    ),
                 ),
             )
         self._conn.commit()
