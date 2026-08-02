@@ -436,6 +436,12 @@ def build_orchestrator() -> AppContainer:
     )
 
     stock_daily_fetcher_adapter: Any = StockDailyFetcherAdapter()
+    # Task A2：连板高度分层 fetcher 适配器
+    # 从 limit_stocks_daily 聚合写入 board_ladder_daily（无 akshare 调用）
+    from infrastructure.stock.board_ladder_fetcher_adapter import (
+        BoardLadderFetcherAdapter,
+    )
+    board_ladder_fetcher_adapter: Any = BoardLadderFetcherAdapter()
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
         fetchers=[
@@ -444,6 +450,7 @@ def build_orchestrator() -> AppContainer:
             emotion_daily_fetcher_adapter,
             sector_daily_fetcher_adapter,
             stock_daily_fetcher_adapter,
+            board_ladder_fetcher_adapter,
         ],
         correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
     )

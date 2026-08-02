@@ -231,6 +231,25 @@ class SectorDaily(BaseModel):
     limit_up_count: int = 0
 
 
+class BoardLadder(BaseModel):
+    """连板高度分层（按 consecutive_boards 分组统计）。
+
+    Task A2：board_ladder_daily 表（v021 迁移已建但无 fetcher）的单条记录。
+    每条记录表示"当日 N 板涨停股有 M 只"，由 limit_stocks_daily 聚合产生：
+    - 1 板：3 只 → 一条 BoardLadder(boards=1, count=3, stock_codes=[...])
+    - 2 板：2 只 → 一条 BoardLadder(boards=2, count=2, stock_codes=[...])
+    - 3 板：1 只 → 一条 BoardLadder(boards=3, count=1, stock_codes=[...])
+
+    SKILL.md 方法论讲"连板高度"时用此表（如"3 板 1 只代表情绪高位"）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    trade_date: str
+    boards: int  # 连板高度（1=首板，2=2 连板，3=3 连板...）
+    count: int  # 该高度涨停股数量
+    stock_codes: list[str]  # 该高度所有涨停股代码列表
+
+
 class CorrelationResult(BaseModel):
     """庄股/抱团股相关性识别（周复盘专用）。"""
 

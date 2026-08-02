@@ -22,6 +22,10 @@ class CacheWritePort(Protocol):
         self, *, trade_date: str, stocks: list[Any]
     ) -> None: ...
 
+    # 读路径：stock_daily_fetcher / board_ladder_fetcher 需读当日涨停股列表
+    # （fetcher 内部依赖 limit_stocks_daily 已写入的数据做聚合或逐股抓取）
+    def select_limit_stocks(self, trade_date: str) -> list[Any]: ...
+
     # Task 13：大盘指数 fetcher 写路径（market_index_daily）
     def upsert_market_index(
         self, *, trade_date: str, indices: list[Any]
@@ -36,6 +40,13 @@ class CacheWritePort(Protocol):
     # Task 14：板块日线 fetcher 写路径（sector_daily）
     # fetcher 一次写入一天多行（约 100+ 个板块，每板块一行）
     def upsert_sector_daily(
+        self, *, trade_date: str, rows: list[Any]
+    ) -> None: ...
+
+    # Task A2：连板高度分层 fetcher 写路径（board_ladder_daily）
+    # 由 limit_stocks_daily 聚合产生（无 akshare 调用），
+    # 一次写入一天多行（每连板高度一条，约 1-10 条）
+    def upsert_board_ladder(
         self, *, trade_date: str, rows: list[Any]
     ) -> None: ...
 

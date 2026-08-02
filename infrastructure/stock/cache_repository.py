@@ -22,6 +22,7 @@ import uuid
 from typing import Any
 
 from domain.stock.models import (
+    BoardLadder,
     EmotionIndicators,
     LimitStock,
     MarketIndexRow,
@@ -362,6 +363,66 @@ class CacheRepository:
                 pct_chg=row["pct_chg"],
                 leading_stock_codes=json.loads(row["leading_stock_codes"] or "[]"),
                 limit_up_count=row["limit_up_count"],
+            )
+            for row in rows
+        ]
+
+    # ── board_ladder_daily ────────────────────────────────
+    # Task A2：连板高度分层 fetcher 写路径
+    # 由 limit_stocks_daily 聚合产生，无 akshare 调用
+    def upsert_board_ladder(
+        self, *, trade_date: str, rows: list[BoardLadder]
+    ) -> None:
+        """批量 upsert 连板高度分层（一天多行，每高度一行）。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+            rows: BoardLadder DTO 列表（每连板高度一条，约 1-10 条）。
+
+        Raises:
+            ValueError: 当 board_ladder_daily 不在白名单时（防御性校验）。
+        """
+        _validate_table("board_ladder_daily")
+        # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
+        sql = (
+            "INSERT OR REPLACE INTO board_ladder_daily ("
+            "trade_date, boards, count, stock_codes"
+            ") VALUES (?, ?, ?, ?)"
+        )
+        for r in rows:
+            self._conn.execute(
+                sql,
+                (
+                    trade_date,
+                    r.boards,
+                    r.count,
+                    json.dumps(r.stock_codes, ensure_ascii=False),
+                ),
+            )
+        self._conn.commit()
+
+    def select_board_ladder(self, trade_date: str) -> list[BoardLadder]:
+        """查询某日的连板高度分层。
+
+        Args:
+            trade_date: 交易日期（YYYYMMDD）。
+
+        Returns:
+            BoardLadder DTO 列表，按 boards 升序排列；无数据时为空列表。
+        """
+        _validate_table("board_ladder_daily")
+        rows = self._conn.execute(
+            "SELECT trade_date, boards, count, stock_codes "
+            "FROM board_ladder_daily WHERE trade_date = ? "
+            "ORDER BY boards ASC",
+            (trade_date,),
+        ).fetchall()
+        return [
+            BoardLadder(
+                trade_date=row["trade_date"],
+                boards=row["boards"],
+                count=row["count"],
+                stock_codes=json.loads(row["stock_codes"] or "[]"),
             )
             for row in rows
         ]
