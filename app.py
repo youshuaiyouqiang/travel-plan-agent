@@ -452,13 +452,21 @@ def build_orchestrator() -> AppContainer:
     )
     stock_pipeline: Any = StockPipelineService(
         repo=stock_cache_repo,
+        # fetcher 执行顺序遵循"写→读"依赖链（pipeline 串行调用，前序写入对后续可见）：
+        # - limit_*：写 limit_stocks_daily（涨停 / 炸板股池），无依赖，最先跑
+        # - market_index / sector_daily：独立 akshare 源，无表间依赖
+        # - stock_daily：写个股 K 线，依赖 limit_stocks_daily（确定抓取范围）
+        # - emotion_daily：读"今日 stock_daily"算昨日涨停今日溢价 + 断板反包成功率，
+        #   必须在 stock_daily_fetcher 之后跑，否则读到空表 → 降级为新字段 None
+        #   （Bug 修复：原顺序 emotion_daily 在 stock_daily 之前，导致情绪周期新字段全降级）
+        # - board_ladder：从 limit_stocks_daily 聚合，位置无关，放最后
         fetchers=[
             limit_fetcher_adapter,
             limit_broken_fetcher_adapter,
             market_index_fetcher_adapter,
-            emotion_daily_fetcher_adapter,
             sector_daily_fetcher_adapter,
             stock_daily_fetcher_adapter,
+            emotion_daily_fetcher_adapter,
             board_ladder_fetcher_adapter,
         ],
         correlation_analyzer=None,  # 周复盘相关性分析器后续 Task 注入
