@@ -1,7 +1,11 @@
 """迁移版本 21–25。
 
-当前含 v21（股票复盘 8 张数据表）和 v22（stock_fetch_log 单股抓取日志）。
-23–25 预留，待后续 Task 补充。
+当前含：
+- v21 股票复盘 8 张数据表
+- v22 stock_fetch_log 单股抓取日志
+- v23 emotion_daily 6 维度情绪观察框架（18 字段）
+- v24 emotion_daily top_board_leaders 龙头代码列
+- v25 emotion_daily 情绪周期折线图 5 字段（风格得分 + 全局得分 + 阶段）
 历史迁移（v1–v20）的 SQL 文本与版本号不得修改。
 """
 
@@ -305,6 +309,56 @@ def _downgrade_24(conn: Any) -> None:
     )
 
 
+# 情绪周期折线图 v025：emotion_daily 新增 5 个字段（开发文档 §6.2）。
+# - 3 个风格得分（打板 / 趋势 / 反包），0-100，反包可能为 NULL
+# - 全局情绪得分 0-100
+# - 情绪阶段（冰点 / 强分歧 / 弱分歧 / 弱修复 / 强修复 / 高潮）
+# 全部允许 NULL（默认 None），由 emotion_daily_fetcher 写入计算结果。
+# 与废弃的 phase / phase_confidence / phase_reason 语义无关，v1 不动旧三列。
+_EMOTION_V025_NEW_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("board_style_score", "REAL"),
+    ("trend_style_score", "REAL"),
+    ("rebound_style_score", "REAL"),
+    ("emotion_score", "REAL"),
+    ("emotion_phase", "TEXT"),
+)
+
+
+def _upgrade_25(conn: Any) -> None:
+    """v025：emotion_daily 新增情绪周期 5 字段（风格得分 + 全局得分 + 阶段）。
+
+    设计要点（开发文档 §7.5）：
+    - 沿用 v023/v024 风格：``for`` 循环 + 单条 ``conn.execute``，便于 AST 扫描
+    - 全部 ALTER TABLE ADD COLUMN，允许 NULL 默认值
+    - 既有行的新字段自动为 NULL（fetcher 重抓后回填）
+    - 不修改 phase / phase_confidence / phase_reason（保留 schema，不再写入）
+    - 回滚用 DROP COLUMN（SQLite 3.35+ 支持）
+
+    表名 emotion_daily 为硬编码字面量，列名 / 列型来自模块级常量元组
+    （非用户输入），无 SQL 注入风险。
+    """
+    for col, col_type in _EMOTION_V025_NEW_COLUMNS:
+        conn.execute(
+            f"ALTER TABLE emotion_daily ADD COLUMN {col} {col_type}"
+        )
+    conn.commit()
+    logger.info(
+        "Migration 25: added %d emotion_cycle columns to emotion_daily",
+        len(_EMOTION_V025_NEW_COLUMNS),
+    )
+
+
+def _downgrade_25(conn: Any) -> None:
+    """回滚 v025 — 删除 emotion_daily 的 5 个情绪周期字段。"""
+    for col, _ in _EMOTION_V025_NEW_COLUMNS:
+        conn.execute(f"ALTER TABLE emotion_daily DROP COLUMN {col}")
+    conn.commit()
+    logger.warning(
+        "Migration 25 downgrade: dropped %d columns from emotion_daily",
+        len(_EMOTION_V025_NEW_COLUMNS),
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         version=21,
@@ -329,5 +383,11 @@ MIGRATIONS: tuple[Migration, ...] = (
         description="emotion_daily: add top_board_leaders column (JSON array of stock codes for highest-board leader)",
         upgrade=_upgrade_24,
         downgrade=_downgrade_24,
+    ),
+    Migration(
+        version=25,
+        description="emotion_daily: 5 emotion_cycle columns (board/trend/rebound style scores + emotion_score + emotion_phase)",
+        upgrade=_upgrade_25,
+        downgrade=_downgrade_25,
     ),
 )
