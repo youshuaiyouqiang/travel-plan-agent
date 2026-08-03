@@ -17,7 +17,7 @@ import { EmotionChart } from './EmotionChart'
 import { MarketOverview } from './MarketOverview'
 import { ReviewTrigger } from './ReviewTrigger'
 import { ReviewReportView } from './ReviewReport'
-import { SectorRotation } from './SectorRotation'
+import { SectorHeatmap } from './SectorHeatmap'
 import { Watchlist } from './Watchlist'
 import type {
   MarketSnapshot,
@@ -93,8 +93,11 @@ function StockIndexBody({
   const [emotionLoading, setEmotionLoading] = useState(true)
   const [emotionError, setEmotionError] = useState<string | null>(null)
 
-  // 板块轮动
-  const [sectors, setSectors] = useState<SectorPerformance[]>([])
+  // 板块轮动（多日热力图）
+  const [sectorChart, setSectorChart] = useState<{
+    series: SectorPerformance[]
+    window_days: number
+  } | null>(null)
   const [sectorsLoading, setSectorsLoading] = useState(true)
   const [sectorsError, setSectorsError] = useState<string | null>(null)
 
@@ -123,7 +126,7 @@ function StockIndexBody({
     const [snap, emo, sec, wl, rep] = await Promise.allSettled([
       stockApi.getMarketSnapshot(tradeDate),
       stockApi.getEmotionChart(tradeDate, 60),
-      stockApi.getSectors(tradeDate),
+      stockApi.getSectorChart(tradeDate, 10),
       stockApi.getWatchlist(),
       stockApi.listReports(20),
     ])
@@ -149,13 +152,16 @@ function StockIndexBody({
       )
     }
     if (sec.status === 'fulfilled') {
-      setSectors(sec.value.items)
+      setSectorChart({
+        series: sec.value.series,
+        window_days: sec.value.window_days,
+      })
     } else {
-      setSectors([])
+      setSectorChart(null)
       setSectorsError(
         sec.reason instanceof StockApiError
           ? sec.reason.message
-          : '获取板块表现失败',
+          : '获取板块轮动失败',
       )
     }
     if (wl.status === 'fulfilled') {
@@ -276,9 +282,10 @@ function StockIndexBody({
             loading={emotionLoading}
             error={emotionError}
           />
-          <SectorRotation
-            items={sectors}
-            tradeDate={tradeDate}
+          <SectorHeatmap
+            series={sectorChart?.series ?? []}
+            endDate={tradeDate}
+            days={sectorChart?.window_days ?? 10}
             loading={sectorsLoading}
             error={sectorsError}
           />
