@@ -156,6 +156,12 @@ def _emotion_dict(e: EmotionIndicators) -> dict[str, Any]:
         "phase_confidence": e.phase_confidence,
         "phase_reason": e.phase_reason,
         "top_board_leaders": e.top_board_leaders,
+        # v025 情绪周期字段
+        "board_style_score": e.board_style_score,
+        "trend_style_score": e.trend_style_score,
+        "rebound_style_score": e.rebound_style_score,
+        "emotion_score": e.emotion_score,
+        "emotion_phase": e.emotion_phase,
     }
 
 

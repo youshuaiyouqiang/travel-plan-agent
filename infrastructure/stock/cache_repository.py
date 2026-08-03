@@ -143,6 +143,12 @@ def _row_to_emotion_indicators(
         height_level=row["height_level"],
         trend_5d=row["trend_5d"],
         trend_20d=row["trend_20d"],
+        # v025 情绪周期字段（NULL 自动转 None）
+        board_style_score=row["board_style_score"],
+        trend_style_score=row["trend_style_score"],
+        rebound_style_score=row["rebound_style_score"],
+        emotion_score=row["emotion_score"],
+        emotion_phase=row["emotion_phase"],
     )
     if conn is not None:
         # v024 修复：emotion_daily 表已有 top_board_leaders 列（JSON 字符串数组）；
@@ -356,6 +362,7 @@ class CacheRepository:
         _validate_table("emotion_daily")
         # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
         # Task E v023：新增 18 个 6 维度字段（共 30 列 = 12 旧 + 18 新）
+        # v025：新增 5 个情绪周期字段（共 36 列 = 31 + 5）
         # 占位符按 10 个一组分行书写，便于人工核对数量
         sql = (
             "INSERT OR REPLACE INTO emotion_daily ("
@@ -372,12 +379,15 @@ class CacheRepository:
             "authenticity_level, height_level, "
             "trend_5d, trend_20d, "
             # v024 修复：最高板龙头 stock_code 列表（JSON 数组）
-            "top_board_leaders"
+            "top_board_leaders, "
+            # v025 情绪周期：风格得分 + 全局得分 + 阶段
+            "board_style_score, trend_style_score, rebound_style_score, "
+            "emotion_score, emotion_phase"
             ") VALUES ("
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
             "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "  # 10
-            "?"                                # top_board_leaders
+            "?, ?, ?, ?, ?, ?"                 # top_board_leaders + 5 v025
             ")"
         )
         for r in rows:
@@ -422,6 +432,12 @@ class CacheRepository:
                         if r.top_board_leaders is not None
                         else None
                     ),
+                    # v025 情绪周期字段
+                    r.board_style_score,
+                    r.trend_style_score,
+                    r.rebound_style_score,
+                    r.emotion_score,
+                    r.emotion_phase,
                 ),
             )
         self._conn.commit()

@@ -701,6 +701,12 @@ class SqliteStockDataSource:
             height_level=row["height_level"],
             trend_5d=row["trend_5d"],
             trend_20d=row["trend_20d"],
+            # v025 情绪周期字段（NULL 自动转 None）
+            board_style_score=row["board_style_score"],
+            trend_style_score=row["trend_style_score"],
+            rebound_style_score=row["rebound_style_score"],
+            emotion_score=row["emotion_score"],
+            emotion_phase=row["emotion_phase"],
         )
         if conn is not None:
             # v024 修复：emotion_daily 表已有 top_board_leaders 列；
