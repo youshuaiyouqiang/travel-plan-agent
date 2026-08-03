@@ -83,6 +83,13 @@ class EmotionIndicators(BaseModel):
     # 不入库（避免再开 schema 迁移），读路径从 limit_stocks_daily 多查一次聚合
     # 写入时由 fetcher 填；老行（DB 已有但 fetcher 未重写）读路径补全
     top_board_leaders: list[str] = []
+    # 情绪周期（v025 新增）：风格得分 + 全局得分 + 阶段
+    # 全部允许 None——冷启动 / 历史行 / 反包无数据时保持 None
+    board_style_score: float | None = None
+    trend_style_score: float | None = None
+    rebound_style_score: float | None = None
+    emotion_score: float | None = None
+    emotion_phase: str | None = None
 
 
 class EmotionRawData(BaseModel):

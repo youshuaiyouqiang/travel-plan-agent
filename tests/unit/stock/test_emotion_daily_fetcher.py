@@ -810,3 +810,307 @@ class TestEmotionFetcherHistoricalBranch:
         assert r.broken_limit_ratio == pytest.approx(0.4)
         assert r.max_consecutive_boards == 2
         assert r.top_board_leaders == ["000002"]  # 唯一 2 板龙头
+
+
+# ── Task 3：情绪周期（昨日涨停溢价 + 风格得分 + 阶段）──────────────
+
+
+class _FakePremiumDeps:
+    """_compute_yesterday_premium 的最小依赖 stub。
+
+    只实现 select_limit_stocks / select_stock_daily（_compute_yesterday_premium
+    仅需这两个）；用 dict 按 trade_date 提供数据。传给函数时以 Any 类型绕开
+    _FetcherDeps Protocol 的 mypy 校验（运行期 Protocol 是结构化鸭类型）。
+    """
+
+    def __init__(
+        self,
+        limit_stocks_by_date: dict[str, list[Any]] | None = None,
+        stock_daily_by_date: dict[str, list[Any]] | None = None,
+    ) -> None:
+        self._limit = limit_stocks_by_date or {}
+        self._daily = stock_daily_by_date or {}
+
+    def select_limit_stocks(self, trade_date: str) -> list[Any]:
+        return self._limit.get(trade_date, [])
+
+    def select_stock_daily(self, trade_date: str) -> list[Any]:
+        return self._daily.get(trade_date, [])
+
+
+class TestEmotionCycleYesterdayPremium:
+    """Task 3：昨日涨停今日溢价计算（_compute_yesterday_premium，开发文档 §3.3 §7.2）。"""
+
+    def test_yesterday_premium_normal(self) -> None:
+        """昨日 2 只非 ST 涨停股 + 今日 stock_daily → 返回算术平均。
+
+        broken 股不算涨停不参与；今日涨幅 3.0% / 5.0% → (3.0+5.0)/2 = 4.0。
+        """
+        from domain.stock.models import EmotionIndicators, LimitStock, StockDaily
+        from infrastructure.stock.emotion_daily_fetcher import _compute_yesterday_premium
+
+        yesterday = EmotionIndicators(
+            trade_date="20260729",
+            limit_up_count=2, limit_down_count=0, valid_limit_up_count=2,
+            broken_limit_ratio=0.0, max_consecutive_boards=1,
+            yesterday_limit_up_today_premium=None, total_volume=None,
+            volume_change_pct=None, phase=None, phase_confidence=None,
+            phase_reason=None,
+        )
+        limit_stocks = [
+            LimitStock(trade_date="20260729", stock_code="000001", stock_name="甲股",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+            LimitStock(trade_date="20260729", stock_code="000002", stock_name="乙股",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:30:00", last_limit_time="10:30:00",
+                       open_count=0, is_valid_limit_up=True),
+            # broken 不算涨停
+            LimitStock(trade_date="20260729", stock_code="000003", stock_name="丙股",
+                       limit_type="broken", consecutive_boards=0,
+                       first_limit_time=None, last_limit_time="14:00:00",
+                       open_count=1, is_valid_limit_up=False),
+        ]
+        stock_daily = [
+            StockDaily(trade_date="20260730", stock_code="000001",
+                       open=10.0, close=10.3, high=10.5, low=9.9,
+                       volume=1e6, pct_chg=3.0, turnover=1e7),
+            StockDaily(trade_date="20260730", stock_code="000002",
+                       open=10.0, close=10.5, high=10.6, low=9.8,
+                       volume=2e6, pct_chg=5.0, turnover=2e7),
+            StockDaily(trade_date="20260730", stock_code="000003",
+                       open=10.0, close=10.1, high=10.2, low=9.9,
+                       volume=5e5, pct_chg=1.0, turnover=5e6),
+        ]
+        deps: Any = _FakePremiumDeps(
+            limit_stocks_by_date={"20260729": limit_stocks},
+            stock_daily_by_date={"20260730": stock_daily},
+        )
+        assert _compute_yesterday_premium("20260730", yesterday, deps) == pytest.approx(4.0)
+
+    def test_yesterday_premium_st_filtered(self) -> None:
+        """ST/*ST/退市股被 is_st_stock 过滤，只算非 ST 涨停股的溢价。"""
+        from domain.stock.models import EmotionIndicators, LimitStock, StockDaily
+        from infrastructure.stock.emotion_daily_fetcher import _compute_yesterday_premium
+
+        yesterday = EmotionIndicators(
+            trade_date="20260729",
+            limit_up_count=3, limit_down_count=0, valid_limit_up_count=3,
+            broken_limit_ratio=0.0, max_consecutive_boards=1,
+            yesterday_limit_up_today_premium=None, total_volume=None,
+            volume_change_pct=None, phase=None, phase_confidence=None,
+            phase_reason=None,
+        )
+        limit_stocks = [
+            LimitStock(trade_date="20260729", stock_code="000001", stock_name="正常股",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+            LimitStock(trade_date="20260729", stock_code="000002", stock_name="ST退市",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+            LimitStock(trade_date="20260729", stock_code="000003", stock_name="*ST股",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+        ]
+        stock_daily = [
+            StockDaily(trade_date="20260730", stock_code="000001",
+                       open=10.0, close=10.4, high=10.5, low=9.9,
+                       volume=1e6, pct_chg=4.0, turnover=1e7),
+            StockDaily(trade_date="20260730", stock_code="000002",
+                       open=5.0, close=5.3, high=5.4, low=4.9,
+                       volume=1e6, pct_chg=6.0, turnover=5e6),
+            StockDaily(trade_date="20260730", stock_code="000003",
+                       open=3.0, close=3.15, high=3.2, low=2.95,
+                       volume=1e6, pct_chg=5.0, turnover=3e6),
+        ]
+        deps: Any = _FakePremiumDeps(
+            limit_stocks_by_date={"20260729": limit_stocks},
+            stock_daily_by_date={"20260730": stock_daily},
+        )
+        # ST退市 / *ST股 被过滤 → 只算 000001 的 4.0
+        assert _compute_yesterday_premium("20260730", yesterday, deps) == pytest.approx(4.0)
+
+    def test_yesterday_premium_no_yesterday(self) -> None:
+        """yesterday=None（无昨日数据）→ 返回 None（冰点期无法计算溢价）。"""
+        from infrastructure.stock.emotion_daily_fetcher import _compute_yesterday_premium
+
+        deps: Any = _FakePremiumDeps()
+        assert _compute_yesterday_premium("20260730", None, deps) is None
+
+    def test_yesterday_premium_no_stock_daily(self) -> None:
+        """昨日有涨停但今日 stock_daily 缺失 → 返回 None。"""
+        from domain.stock.models import EmotionIndicators, LimitStock
+        from infrastructure.stock.emotion_daily_fetcher import _compute_yesterday_premium
+
+        yesterday = EmotionIndicators(
+            trade_date="20260729",
+            limit_up_count=1, limit_down_count=0, valid_limit_up_count=1,
+            broken_limit_ratio=0.0, max_consecutive_boards=1,
+            yesterday_limit_up_today_premium=None, total_volume=None,
+            volume_change_pct=None, phase=None, phase_confidence=None,
+            phase_reason=None,
+        )
+        limit_stocks = [
+            LimitStock(trade_date="20260729", stock_code="000001", stock_name="甲股",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+        ]
+        deps: Any = _FakePremiumDeps(
+            limit_stocks_by_date={"20260729": limit_stocks},
+            stock_daily_by_date={},  # 今日 stock_daily 缺失
+        )
+        assert _compute_yesterday_premium("20260730", yesterday, deps) is None
+
+    def test_yesterday_premium_no_yesterday_limit_up(self) -> None:
+        """昨日 limit_stocks 为空（昨日无涨停）→ 返回 None。"""
+        from domain.stock.models import EmotionIndicators
+        from infrastructure.stock.emotion_daily_fetcher import _compute_yesterday_premium
+
+        yesterday = EmotionIndicators(
+            trade_date="20260729",
+            limit_up_count=0, limit_down_count=0, valid_limit_up_count=0,
+            broken_limit_ratio=0.0, max_consecutive_boards=0,
+            yesterday_limit_up_today_premium=None, total_volume=None,
+            volume_change_pct=None, phase=None, phase_confidence=None,
+            phase_reason=None,
+        )
+        deps: Any = _FakePremiumDeps(
+            limit_stocks_by_date={"20260729": []},
+            stock_daily_by_date={"20260730": []},
+        )
+        assert _compute_yesterday_premium("20260730", yesterday, deps) is None
+
+
+class TestEmotionCycleFetcherIntegration:
+    """Task 3：fetcher 写入情绪周期字段（emotion_phase / emotion_score / 风格得分）。
+
+    Task 3 仅改 fetcher 计算逻辑 + DTO 字段；读写路径（cache_repository 写 /
+    sqlite_data_source 读）属 Task 4，故本测试通过 spy 捕获传给 upsert_emotion_daily
+    的 EmotionIndicators 验证新字段，不依赖 DB 持久化读回。
+    """
+
+    @pytest.mark.asyncio
+    async def test_emotion_phase_written(self, tmp_db) -> None:
+        """完整 fetcher 流程 → 捕获 EmotionIndicators，验证情绪周期字段被写入。
+
+        昨日 2 涨停（600000/600001），今日 stock_daily 涨幅 6.0%/-2.0%
+        → 昨日涨停今日溢价 = (6.0 + -2.0) / 2 = 2.0。
+        """
+        from domain.stock.models import LimitStock, StockDaily
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+
+        # 1. 历史 emotion_daily（近 10 日，用于 day_3d_ago + percentile + trend）
+        _seed_history_emotion(repo, end_date="20260729", days=10)
+
+        # 2. 昨日 limit_stocks + 今日 stock_daily（用于溢价 + 韧性）
+        yesterday_stocks = [
+            LimitStock(trade_date="20260729", stock_code="600000", stock_name="A",
+                       limit_type="up", consecutive_boards=2,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+            LimitStock(trade_date="20260729", stock_code="600001", stock_name="B",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:30:00", last_limit_time="10:30:00",
+                       open_count=0, is_valid_limit_up=True),
+        ]
+        repo.upsert_limit_stocks(trade_date="20260729", stocks=yesterday_stocks)
+        today_stocks = [
+            StockDaily(trade_date="20260730", stock_code="600000",
+                       open=10.0, close=10.6, high=10.8, low=9.9,
+                       volume=1e6, pct_chg=6.0, turnover=1e7),
+            StockDaily(trade_date="20260730", stock_code="600001",
+                       open=10.0, close=9.8, high=10.1, low=9.7,
+                       volume=5e5, pct_chg=-2.0, turnover=5e6),
+        ]
+        repo.upsert_stock_daily(trade_date="20260730", rows=today_stocks)
+
+        # 3. 今日 limit_stocks（用于 valid_count + max_boards）
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        # 4. mock akshare + spy 捕获 upsert 的 EmotionIndicators
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 1.2e12}]
+            )
+            mock_ak.stock_fund_flow_individual.return_value = _fake_fund_flow_df()
+            with patch.object(
+                repo, "upsert_emotion_daily", wraps=repo.upsert_emotion_daily
+            ) as spy:
+                count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        # 捕获传给 upsert_emotion_daily 的 EmotionIndicators（不依赖读路径）
+        captured = spy.call_args.kwargs["rows"][0]
+
+        # 昨日涨停今日溢价：(6.0 + -2.0) / 2 = 2.0
+        assert captured.yesterday_limit_up_today_premium == pytest.approx(2.0)
+
+        # 三风格得分（打板 / 趋势始终可算；反包可能 None 但本场景有断板反包数据）
+        assert captured.board_style_score is not None
+        assert 0 <= captured.board_style_score <= 100
+        assert captured.trend_style_score is not None
+        assert 0 <= captured.trend_style_score <= 100
+
+        # 全局情绪得分 0-100
+        assert captured.emotion_score is not None
+        assert 0 <= captured.emotion_score <= 100
+
+        # 阶段为 6 阶段之一
+        assert captured.emotion_phase in {
+            "冰点", "强分歧", "弱分歧", "弱修复", "强修复", "高潮"
+        }
+
+    @pytest.mark.asyncio
+    async def test_emotion_cycle_no_history_uses_neutral_momentum(self, tmp_db) -> None:
+        """无历史 emotion_daily（冷启动）→ day_3d_ago=None，动量视为 0，阶段按得分粗判。
+
+        此时 score_3d_ago=None → compute_raw_phase 动量=0；emotion_phase 仍为合法阶段。
+        """
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+        # 不 seed 历史 emotion_daily（冷启动）
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            mock_ak.stock_market_activity_legu.return_value = _fake_activity_df()
+            mock_ak.stock_zh_index_spot_em.return_value = pd.DataFrame(
+                [{"code": "sh000001", "成交额": 1.0e12}]
+            )
+            mock_ak.stock_fund_flow_individual.return_value = _fake_fund_flow_df()
+            with patch.object(
+                repo, "upsert_emotion_daily", wraps=repo.upsert_emotion_daily
+            ) as spy:
+                count = await adapter.run(trade_date="20260730", repo=repo)
+
+        assert count == 1
+        captured = spy.call_args.kwargs["rows"][0]
+        # 冷启动：昨日无数据 → 溢价 None
+        assert captured.yesterday_limit_up_today_premium is None
+        # 但得分与阶段仍可计算（board 用 limit_up_count 降级，trend 用 top20）
+        assert captured.emotion_score is not None
+        assert captured.emotion_phase in {
+            "冰点", "强分歧", "弱分歧", "弱修复", "强修复", "高潮"
+        }

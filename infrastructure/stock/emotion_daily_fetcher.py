@@ -25,6 +25,13 @@ import logging
 from datetime import datetime
 from typing import Any, Protocol
 
+from domain.stock.emotion_cycle import (
+    compute_board_style_score,
+    compute_emotion_score,
+    compute_raw_phase,
+    compute_rebound_style_score,
+    compute_trend_style_score,
+)
 from domain.stock.emotion_dimensions import (
     compute_authenticity_level,
     compute_breadth_level,
@@ -39,6 +46,7 @@ from domain.stock.emotion_dimensions import (
 from domain.stock.heuristics import (
     calculate_broken_limit_ratio,
     count_valid_limit_ups,
+    is_st_stock,
     max_consecutive_boards,
 )
 from domain.stock.models import EmotionIndicators, EmotionRawData, StockDaily, Top20VolumeSnapshot
@@ -255,8 +263,58 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         trade_date, yesterday, deps
     )
 
-    # yesterday_limit_up_today_premium 暂留 None
-    # （需 stock_daily fetcher 完成后基于个股 K 线计算）
+    # ── 情绪周期（v025）：昨日涨停今日溢价 + 三风格得分 + 阶段 ──
+    # 复用上方已抓取的 history_asc（21 日 ASC，含今日已过滤），取前 3 日做二阶。
+    # 3 日前那一日 = history_asc[-3]（ASC 序：最旧 → 最新；-3 即第 3 个最新之前）。
+    # 开发文档原文 history_asc[2] 为索引错误（仅当 history_asc 长度恰好 3 时才对），
+    # 此处统一用 -3 取"3 日前"。
+    yesterday_premium = _compute_yesterday_premium(
+        trade_date, yesterday, deps
+    )
+    day_3d_ago = history_asc[-3] if len(history_asc) >= 3 else None
+
+    # 打板风格得分（始终可算：涨停数必存在，溢价 None 时降级用分位数）
+    board_score = compute_board_style_score(
+        yesterday_premium=yesterday_premium,
+        limit_up_count=effective_limit_up_count,
+        limit_up_count_3d_ago=(
+            day_3d_ago.limit_up_count if day_3d_ago is not None else None
+        ),
+        limit_up_percentile=percentile,
+    )
+
+    # 趋势风格得分（始终可算：top20 None 时降级用 adv_decl_ratio）
+    trend_score = compute_trend_style_score(
+        top20_avg_chg=top20_avg_chg,
+        adv_count=raw.adv_count,
+        adv_count_3d_ago=(
+            day_3d_ago.adv_count if day_3d_ago is not None else None
+        ),
+        adv_decl_ratio=adv_decl_ratio,
+    )
+
+    # 反包风格得分（rebound_ratio None 时返回 None，全局合成时跳过）
+    rebound_score = compute_rebound_style_score(
+        rebound_ratio=resilience_result["rebound_success_ratio"],
+        rebound_ratio_3d_ago=(
+            day_3d_ago.rebound_success_ratio
+            if day_3d_ago is not None else None
+        ),
+    )
+
+    # 全局情绪得分（等权合成，None 跳过；全 None 返回 50.0 中性）
+    emotion_score_val = compute_emotion_score(
+        board_score, trend_score, rebound_score
+    )
+
+    # 阶段判定（原始阶段，无防抖；防抖见开发文档 §13 后续扩展）
+    # day_3d_ago.emotion_score 对历史老行为 None（v025 之前的行未写该列），
+    # 此时 compute_raw_phase 把动量视为 0，按纯得分粗判——符合预期（老数据降级）。
+    emotion_phase = compute_raw_phase(
+        emotion_score_val,
+        day_3d_ago.emotion_score if day_3d_ago is not None else None,
+    )
+
     row = EmotionIndicators(
         trade_date=raw.trade_date,
         # 修复：优先用 limit_stocks_daily 聚合的真实涨停数，akshare 实时截面
@@ -266,7 +324,7 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         valid_limit_up_count=valid_count,
         broken_limit_ratio=broken_ratio,
         max_consecutive_boards=max_boards,
-        yesterday_limit_up_today_premium=None,
+        yesterday_limit_up_today_premium=yesterday_premium,
         total_volume=raw.total_volume,
         volume_change_pct=volume_change_pct,
         phase=None,
@@ -293,20 +351,90 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
         height_level=height_level,
         trend_5d=trend_5d,
         trend_20d=trend_20d,
+        # v025 情绪周期字段
+        board_style_score=board_score,
+        trend_style_score=trend_score,
+        rebound_style_score=rebound_score,
+        emotion_score=emotion_score_val,
+        emotion_phase=emotion_phase,
     )
     deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
     logger.info(
         "emotion_daily_fetcher.run: trade_date=%s limit_up=%d valid=%d "
         "max_boards=%d leaders=%s total_volume=%s height=%s breadth=%s "
         "strength=%s resilience=%s authenticity=%s trend_5d=%s "
-        "trend_20d=%s style=%s",
+        "trend_20d=%s style=%s premium=%s board_score=%s trend_score=%s "
+        "rebound_score=%s emotion_score=%s phase=%s",
         trade_date, effective_limit_up_count, valid_count, max_boards,
         top_board_leaders,
         raw.total_volume, height_level, breadth_level, strength_level,
         resilience_result["resilience_level"], authenticity_level,
         trend_5d, trend_20d, market_style,
+        yesterday_premium, board_score, trend_score, rebound_score,
+        emotion_score_val, emotion_phase,
     )
     return 1
+
+
+def _compute_yesterday_premium(
+    trade_date: str,
+    yesterday: EmotionIndicators | None,
+    deps: _FetcherDeps,
+) -> float | None:
+    """计算昨日涨停今日溢价（开发文档 §3.3）。
+
+    流程：
+    1. 取昨日 limit_stocks_daily 中 limit_type='up' 的记录
+    2. 过滤 ST 股（is_st_stock 复用 domain.stock.heuristics）
+    3. 取今日 stock_daily 中这些股票的 pct_chg
+    4. 返回算术平均值
+
+    降级策略：
+    - yesterday=None（无昨日数据）→ None
+    - 昨日 limit_stocks 为空（昨日无涨停，冰点期）→ None
+    - 过滤 ST 后无剩余代码 → None
+    - 今日 stock_daily 缺失 → None
+    - 部分代码今日无 K 线 → 只算能查到的，全部缺失返回 None
+
+    Args:
+        trade_date: 今日交易日（YYYYMMDD）。
+        yesterday: 昨日 EmotionIndicators（含 trade_date 用于查 limit_stocks）。
+        deps: 依赖（用于 select_limit_stocks + select_stock_daily）。
+
+    Returns:
+        昨日涨停今日溢价（百分比，如 2.0 表示 +2%）；无法计算时返回 None。
+    """
+    if yesterday is None:
+        return None
+
+    yesterday_limit_stocks = deps.select_limit_stocks(yesterday.trade_date)
+    if not yesterday_limit_stocks:
+        return None
+
+    # 过滤 ST + 只取涨停
+    codes = {
+        s.stock_code
+        for s in yesterday_limit_stocks
+        if s.limit_type == "up" and not is_st_stock(s.stock_name)
+    }
+    if not codes:
+        return None
+
+    today_stock_daily = deps.select_stock_daily(trade_date)
+    if not today_stock_daily:
+        return None
+
+    # 构建 code → pct_chg 映射（仅保留非 None 涨幅，避免 mypy list[float | None] 报错）
+    today_chg_map: dict[str, float] = {
+        s.stock_code: s.pct_chg
+        for s in today_stock_daily
+        if s.pct_chg is not None
+    }
+    chgs = [today_chg_map[c] for c in codes if c in today_chg_map]
+    if not chgs:
+        return None
+
+    return sum(chgs) / len(chgs)
 
 
 def _compute_resilience(
@@ -512,6 +640,12 @@ async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
         height_level=None,
         trend_5d=None,
         trend_20d=None,
+        # v025 情绪周期字段：历史日期无实时源 + 无 stock_daily，全部 None
+        board_style_score=None,
+        trend_style_score=None,
+        rebound_style_score=None,
+        emotion_score=None,
+        emotion_phase=None,
     )
     deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
     logger.info(
