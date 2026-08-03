@@ -14,6 +14,7 @@ import { ArrowLeft, TrendingUp, RefreshCw, FileText } from 'lucide-react'
 import { AppLayout } from '../../components/AppLayout'
 import { stockApi, StockApiError } from './api'
 import { EmotionChart } from './EmotionChart'
+import { EmotionCycleChart } from './EmotionCycleChart'
 import { MarketOverview } from './MarketOverview'
 import { ReviewTrigger } from './ReviewTrigger'
 import { ReviewReportView } from './ReviewReport'
@@ -279,6 +280,14 @@ function StockIndexBody({
             windowDays={emotionWindow}
             endDate={tradeDate}
             onWindowChange={onEmotionWindowChange}
+            loading={emotionLoading}
+            error={emotionError}
+          />
+          {/* 情绪周期折线图（Task 5）：复用同一 API 响应，无需额外请求 */}
+          <EmotionCycleChart
+            series={emotion?.series ?? []}
+            endDate={tradeDate}
+            days={20}
             loading={emotionLoading}
             error={emotionError}
           />

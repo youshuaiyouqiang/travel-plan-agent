@@ -35,6 +35,17 @@ export interface EmotionIndicators {
    * 后端从 limit_stocks_daily 解析名称；老行无值时为空数组。
    */
   top_board_leaders: BoardLeader[]
+  // ── 情绪周期（v025 新增） ──────────────────────────────
+  /** 打板风格得分 0-100（老行可能为 null）。 */
+  board_style_score: number | null
+  /** 趋势风格得分 0-100（老行可能为 null）。 */
+  trend_style_score: number | null
+  /** 反包风格得分 0-100（冰点期/数据缺失时为 null）。 */
+  rebound_style_score: number | null
+  /** 全局情绪得分 0-100（等权合成，全 None 时中性 50）。 */
+  emotion_score: number | null
+  /** 情绪阶段：冰点 / 强分歧 / 弱分歧 / 弱修复 / 强修复 / 高潮。 */
+  emotion_phase: string | null
 }
 
 /** 大盘快照。 */

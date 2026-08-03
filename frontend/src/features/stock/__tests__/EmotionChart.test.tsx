@@ -29,6 +29,11 @@ const SAMPLE: EmotionIndicators[] = [
       { code: '603221', name: '测试股A' },
       { code: '603222', name: '测试股B' },
     ],
+    board_style_score: 70.0,
+    trend_style_score: 60.0,
+    rebound_style_score: 55.0,
+    emotion_score: 61.7,
+    emotion_phase: '强修复',
   },
   {
     trade_date: '20260727',
@@ -44,6 +49,11 @@ const SAMPLE: EmotionIndicators[] = [
     phase_confidence: 'medium',
     phase_reason: '高位震荡',
     top_board_leaders: [{ code: '000003', name: '测试股C' }],
+    board_style_score: 45.0,
+    trend_style_score: 50.0,
+    rebound_style_score: null,
+    emotion_score: 47.5,
+    emotion_phase: '弱修复',
   },
 ]
 
