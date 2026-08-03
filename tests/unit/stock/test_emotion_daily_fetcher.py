@@ -87,6 +87,13 @@ def _seed_limit_stocks(repo: Any, trade_date: str) -> None:
             first_limit_time=None, last_limit_time=None,
             open_count=0, is_valid_limit_up=False,
         ),
+        # 1 个炸板股（limit_type="broken"，验证 broken_ratio 走 DB 聚合）
+        LimitStock(
+            trade_date=trade_date, stock_code="000006", stock_name="F",
+            limit_type="broken", consecutive_boards=0,
+            first_limit_time=None, last_limit_time="14:30:00",
+            open_count=2, is_valid_limit_up=False,
+        ),
     ]
     repo.upsert_limit_stocks(trade_date=trade_date, stocks=stocks)
 
@@ -152,8 +159,8 @@ class TestEmotionFetcherSuccess:
         # 聚合字段（来自 limit_stocks_daily）
         assert r.valid_limit_up_count == 3  # 3 个一次性封死
         # 修复前 fetcher 用 akshare "炸板"=99 算 → broken_ratio ≈ 99/(99+99) ≈ 0.5
-        # 现在 db 没 broken 行 → 0；broken_ratio 仅在 db 真有 broken 行时非零
-        assert r.broken_limit_ratio == 0.0
+        # 现在 db 有 1 个 broken 行 → broken_ratio = 1/(4+1) = 0.2（DB 优先）
+        assert r.broken_limit_ratio == pytest.approx(0.2)
         assert r.max_consecutive_boards == 5  # 3 只涨停中最大连板
         # 龙头股票：5 板的 000003 必须出现在 top_board_leaders
         assert "000003" in r.top_board_leaders
@@ -581,8 +588,8 @@ class TestEmotionFetcherSixDimensions:
         assert r.top20_volume_up_count == 20
         assert r.market_style is not None  # 有 height_level 才有 market_style
 
-        # 维度 5：真实度（db 没 broken 行 → broken_ratio=0 → "真实"）
-        assert r.authenticity_level == "真实"
+        # 维度 5：真实度（db 有 1 个 broken 行 → broken_ratio=0.2 → "偏真"）
+        assert r.authenticity_level == "偏真"
 
         # 维度 1：高度（有历史数据 → 非 None）
         assert r.height_level is not None
@@ -713,7 +720,7 @@ class TestEmotionFetcherHistoricalBranch:
 
         # limit_stocks 聚合字段：db 真实值
         assert r.limit_up_count == 4
-        assert r.broken_limit_ratio == 0.0  # db 无 broken 行
+        assert r.broken_limit_ratio == pytest.approx(0.2)  # db 有 1 个 broken 行: 1/(4+1)
         assert r.max_consecutive_boards == 5
         assert "000003" in r.top_board_leaders
         assert r.valid_limit_up_count == 3

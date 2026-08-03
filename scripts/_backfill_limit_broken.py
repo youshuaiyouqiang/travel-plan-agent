@@ -73,9 +73,6 @@ async def _apply(conn_path: Path, dates: list[str]) -> dict[str, int]:
     from infrastructure.persistence.connection import reset_connection
     from infrastructure.stock.cache_repository import CacheRepository
     from infrastructure.stock import limit_broken_fetcher
-    from infrastructure.stock.sqlite_data_source import (
-        SqliteStockDataSource,
-    )
 
     reset_connection()
     sqlite_conn = sqlite3.connect(conn_path)

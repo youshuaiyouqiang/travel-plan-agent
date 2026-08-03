@@ -10,6 +10,12 @@
  * - 任务状态枚举与 ReviewTaskStatus.value 对齐（running/completed/...）
  */
 
+/** 龙头股票（代码 + 名称）。 */
+export interface BoardLeader {
+  code: string
+  name: string
+}
+
 /** 单日情绪指标（截面）。 */
 export interface EmotionIndicators {
   trade_date: string
@@ -25,10 +31,10 @@ export interface EmotionIndicators {
   phase_confidence: string | null
   phase_reason: string | null
   /**
-   * 最高板龙头股票代码列表：max_consecutive_boards 对应的所有 stock_code。
-   * 后端从 limit_stocks_daily 多查一次补齐；老行无值时为空数组。
+   * 最高板龙头股票列表：max_consecutive_boards 对应的所有股票。
+   * 后端从 limit_stocks_daily 解析名称；老行无值时为空数组。
    */
-  top_board_leaders: string[]
+  top_board_leaders: BoardLeader[]
 }
 
 /** 大盘快照。 */

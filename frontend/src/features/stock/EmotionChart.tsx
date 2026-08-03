@@ -11,7 +11,7 @@
 import { useMemo, useState } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
-import type { EmotionIndicators } from './types'
+import type { BoardLeader, EmotionIndicators } from './types'
 
 /** 窗口切换选项。 */
 const WINDOW_OPTIONS = [5, 10, 20, 60] as const
@@ -188,21 +188,23 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
     if (items.length === 0) return undefined
     // series 倒序展示
     const ordered = [...items].reverse()
-    // 兜底（运行时）：后端响应可能缺 top_board_leaders 字段
-    // （TypeScript 类型是 required，但运行时不可信）
-    const safeLeaders = (e: EmotionIndicators): string[] =>
+    // 兆底（运行时）：后端响应可能缺 top_board_leaders 字段
+    const safeLeaders = (e: EmotionIndicators): BoardLeader[] =>
       e.top_board_leaders ?? []
-    // 计算"断板位置"（连板高度下降的数据点）→ 视觉强调
+    // 取龙头显示名（优先名称，无名称时回落代码）
+    const leaderName = (l: BoardLeader): string => l.name || l.code
+    // 计算“断板位置”（连板高度下降的数据点）→ 视觉强调
     const downPoints = ordered
       .map((e, idx) => {
         if (idx === 0) return null
         const prev = ordered[idx - 1]?.max_consecutive_boards ?? 0
         if (e.max_consecutive_boards < prev) {
+          const leaders = safeLeaders(e)
           return {
             name: '断板',
             xAxis: e.trade_date,
             yAxis: e.max_consecutive_boards,
-            value: `${safeLeaders(e)[0] ?? '—'}`,
+            value: leaders.length > 0 ? leaderName(leaders[0]) : '—',
           }
         }
         return null
@@ -217,7 +219,7 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           name: '最新龙头',
           xAxis: latest.trade_date,
           yAxis: latest.max_consecutive_boards,
-          value: `${latestLeaders[0] ?? '—'}`,
+          value: latestLeaders.length > 0 ? leaderName(latestLeaders[0]) : '—',
         }
       : null
 
@@ -233,10 +235,11 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           const p = arr[0]
           if (!p) return ''
           const idx = ordered.findIndex((e) => e.trade_date === p.axisValue)
-          const leaders =
-            idx >= 0 ? ordered[idx]?.top_board_leaders ?? [] : []
+          const leaders = idx >= 0 ? safeLeaders(ordered[idx]) : []
           const leadersStr =
-            leaders.length > 0 ? leaders.join(', ') : '暂无龙头'
+            leaders.length > 0
+              ? leaders.map(leaderName).join(', ')
+              : '暂无龙头'
           return [
             `${p.axisValue}`,
             `${p.marker}最高板：${p.data} 板`,
@@ -252,13 +255,13 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
         axisLabel: {
           interval: 0,
           formatter: (val: string, idx: number) => {
-            const leaders = ordered[idx]?.top_board_leaders ?? []
-            const firstLeader = leaders[0] ?? '—'
-            return `{date|${val}}\n{leader|${firstLeader}${leaders.length > 1 ? ` 等${leaders.length}只` : ''}}`
+            const leaders = safeLeaders(ordered[idx])
+            const firstName = leaders.length > 0 ? leaderName(leaders[0]) : '—'
+            return `{date|${val}}\n{leader|${firstName}${leaders.length > 1 ? ` 等${leaders.length}只` : ''}}`
           },
           rich: {
             date: { color: '#475569', fontSize: 11 },
-            leader: { color: '#0ea5e9', fontSize: 10, fontFamily: 'monospace' },
+            leader: { color: '#0ea5e9', fontSize: 10 },
           },
         },
       },
@@ -278,13 +281,12 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           label: {
             show: true,
             position: 'top',
-            // 每点 label 显示"X 板\n龙头代码"
             formatter: (params: unknown) => {
               const p = params as { value: number; dataIndex: number }
               const idx = p.dataIndex
-              const leaders = ordered[idx]?.top_board_leaders ?? []
-              const code = leaders[0] ?? '—'
-              return `${p.value} 板\n${code}`
+              const leaders = safeLeaders(ordered[idx])
+              const name = leaders.length > 0 ? leaderName(leaders[0]) : '—'
+              return `${p.value} 板\n${name}`
             },
             color: '#0ea5e9',
             fontSize: 10,
@@ -296,7 +298,6 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
           },
           lineStyle: { width: 2 },
           areaStyle: { color: 'rgba(14,165,233,0.1)' },
-          // 断板处 + 最新龙头 → markPoint 强化
           markPoint: {
             symbol: 'pin',
             symbolSize: [50, 28],
@@ -308,13 +309,11 @@ function TopBoardChart({ items }: { items: EmotionIndicators[] }) {
               show: true,
               color: '#ffffff',
               fontSize: 9,
-              fontFamily: 'monospace',
               formatter: (params: unknown) => {
                 const p = params as { name: string; value: string }
                 return p.value
               },
             },
-            // 颜色用 data[i].itemStyle 区分：最新龙头红、断板橙
             itemStyle: {
               color: '#dc2626',
             },

@@ -168,8 +168,12 @@ async def run(trade_date: str, deps: _FetcherDeps) -> int:
     effective_limit_up_count = (
         db_limit_up_count if db_limit_up_count > 0 else raw.limit_up_count
     )
+    # Bug 修复：原条件 (db_limit_up_count + db_broken_count) > 0 在
+    # limit_broken_fetcher 失败（db_broken_count=0）但 limit_fetcher 成功时
+    # 仍使用 0，导致炸板率被错误计算为 0%。
+    # 修复：仅当 db 确实有 broken 记录时才用 db 值；否则回落 akshare。
     effective_broken_count = (
-        db_broken_count if (db_limit_up_count + db_broken_count) > 0
+        db_broken_count if db_broken_count > 0
         else raw.broken_count
     )
     broken_ratio = calculate_broken_limit_ratio(

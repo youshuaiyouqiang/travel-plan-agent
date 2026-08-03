@@ -57,15 +57,15 @@ def tmp_db(tmp_path, monkeypatch):
 # ── 注册表完整性 ──────────────────────────────────────────
 
 
-def test_registry_has_exactly_23_versions():
-    """v023 加入后注册表必须包含 23 个迁移。"""
+def test_registry_has_exactly_24_versions():
+    """v024 加入后注册表必须包含 24 个迁移。"""
     assert len(MIGRATIONS) == 24
 
 
-def test_registry_versions_are_1_to_23_continuous():
-    """版本号必须连续 1..23。"""
+def test_registry_versions_are_1_to_24_continuous():
+    """版本号必须连续 1..24。"""
     versions = [m.version for m in MIGRATIONS]
-    assert versions == list(range(1, 24))
+    assert versions == list(range(1, 25))
 
 
 # ── 迁移效果 ──────────────────────────────────────────────
@@ -165,5 +165,5 @@ def test_migration_v023_idempotent(tmp_db):
     init_db()
     init_db()
     status = get_migration_status()
-    assert status["current_version"] == 23
+    assert status["current_version"] == 24
     assert status["pending_count"] == 0

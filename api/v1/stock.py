@@ -155,7 +155,20 @@ def _emotion_dict(e: EmotionIndicators) -> dict[str, Any]:
         "phase": e.phase,
         "phase_confidence": e.phase_confidence,
         "phase_reason": e.phase_reason,
+        "top_board_leaders": e.top_board_leaders,
     }
+
+
+def _emotion_dict_with_names(
+    e: EmotionIndicators, code_name_map: dict[str, str]
+) -> dict[str, Any]:
+    """序列化情绪指标，并将 top_board_leaders 代码解析为股票名称。"""
+    d = _emotion_dict(e)
+    d["top_board_leaders"] = [
+        {"code": code, "name": code_name_map.get(code, code)}
+        for code in e.top_board_leaders
+    ]
+    return d
 
 
 def _signal_dict(s: SignalStock) -> dict[str, Any]:
@@ -288,8 +301,21 @@ async def get_emotion_chart(
     if svc is None:
         raise NotFoundException("stock", "query_service")
     rows = await svc.get_emotion_trend(end_date, days)
+    # 构建 code→name 映射：从 limit_stocks_daily 解析龙头股票名称
+    repo = _get_cache_repo(request)
+    code_name_map: dict[str, str] = {}
+    if repo is not None:
+        for r in rows:
+            if r.top_board_leaders:
+                try:
+                    limit_stocks = repo.select_limit_stocks(r.trade_date)
+                    for s in limit_stocks:
+                        if s.stock_code in r.top_board_leaders:
+                            code_name_map[s.stock_code] = s.stock_name
+                except Exception:  # noqa: BLE001
+                    pass
     return {
-        "series": [_emotion_dict(r) for r in rows],
+        "series": [_emotion_dict_with_names(r, code_name_map) for r in rows],
         "window_days": days,
         "end_date": end_date,
     }

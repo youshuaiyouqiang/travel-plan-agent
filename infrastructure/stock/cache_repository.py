@@ -183,7 +183,11 @@ class CacheRepository:
     def upsert_limit_stocks(
         self, trade_date: str, stocks: list[LimitStock]
     ) -> None:
-        """批量 upsert 涨停股池。
+        """批量写入涨停股池（先删后插，确保完全覆盖）。
+
+        语义：每次抓取结果代表该日完整股池快照。
+        盘中拓取可能包含临时涨停但尾盘未封住的股票，收盘后重新抓取
+        必须覆盖而非追加，否则旧数据残留导致涨停数虚高。
 
         Args:
             trade_date: 交易日期（YYYYMMDD）。
@@ -193,9 +197,23 @@ class CacheRepository:
             ValueError: 当 limit_stocks_daily 不在白名单时（防御性校验）。
         """
         _validate_table("limit_stocks_daily")
+        # 空列表保护：fetch 返回空结果时不覆盖已有数据。
+        # 场景：周末/节假日 akshare 可能返回空，不能因此清空有效数据。
+        if not stocks:
+            return
+        # 先删除该日同类型旧数据，确保新抓取结果完全覆盖。
+        # 按 limit_type 分别删除：limit_fetcher 写 "up"，
+        # limit_broken_fetcher 写 "broken"，互不影响。
+        types_in_batch = {s.limit_type for s in stocks}
+        for lt in types_in_batch:
+            self._conn.execute(
+                "DELETE FROM limit_stocks_daily "
+                "WHERE trade_date = ? AND limit_type = ?",
+                (trade_date, lt),
+            )
         # 表名直接写在 SQL 字符串字面量中（白名单内），全部 ? 占位符
         sql = (
-            "INSERT OR REPLACE INTO limit_stocks_daily "
+            "INSERT INTO limit_stocks_daily "
             "(trade_date, stock_code, stock_name, limit_type, "
             "consecutive_boards, first_limit_time, last_limit_time, "
             "open_count, is_valid_limit_up) "
