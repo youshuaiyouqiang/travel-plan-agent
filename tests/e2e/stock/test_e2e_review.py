@@ -240,7 +240,7 @@ class FakeStockDataSource:
         from domain.stock.models import CorrelationResult
         return CorrelationResult(end_date=end_date, window_days=days)
 
-    async def get_sector_history(self, sector_name: str, days: int):
+    async def get_sector_history(self, sector_name: str, days: int, end_date: str):
         return []
 
     async def get_limit_stocks(self, trade_date: str):

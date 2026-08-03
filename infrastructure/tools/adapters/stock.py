@@ -194,8 +194,11 @@ async def _get_sector_divergence(arguments: dict) -> dict:
 async def _get_sector_history(arguments: dict) -> dict:
     sector_name = str(arguments.get("sector_name", "")).strip()
     days = int(arguments.get("days", 10) or 10)
+    end_date = str(arguments.get("end_date", "")).strip()
+    if not end_date:
+        end_date = _normalize_trade_date(None) or ""
     ds = _get_data_source()
-    return await _call(ds.get_sector_history(sector_name, days))
+    return await _call(ds.get_sector_history(sector_name, days, end_date))
 
 
 async def _get_watchlist(_arguments: dict) -> dict:
@@ -383,6 +386,7 @@ def get_stock_specs() -> list[ToolSpec]:
                 "properties": {
                     "sector_name": {"type": "string", "description": "板块名(空字符串=全板块)"},
                     "days": {"type": "integer", "description": "天数,默认10,范围1-60", "default": 10},
+                    "end_date": {"type": "string", "description": "截止日期YYYYMMDD(默认今天)"},
                 },
             },
         ),

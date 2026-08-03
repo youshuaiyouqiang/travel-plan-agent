@@ -876,7 +876,7 @@ class AkshareClient:
     async def get_correlation(self, end_date: str, days: int) -> Any:  # type: ignore[override]
         raise NotImplementedError("get_correlation 计划在 Task 3 实现（周复盘专用）")
 
-    async def get_sector_history(self, sector_name: str, days: int) -> Any:  # type: ignore[override]
+    async def get_sector_history(self, sector_name: str, days: int, end_date: str) -> Any:  # type: ignore[override]
         raise NotImplementedError("get_sector_history 计划在 Task 3 实现")
 
     # ── Task 18：非交易日复盘回退（akshare 不实现——SQLite 读缓存） ──

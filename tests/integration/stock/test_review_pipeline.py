@@ -214,8 +214,8 @@ class FakeStockDataSource:
         self.calls.append(("get_correlation", end_date, days))
         return CorrelationResult(end_date=end_date, window_days=days)
 
-    async def get_sector_history(self, sector_name: str, days: int):
-        self.calls.append(("get_sector_history", sector_name, days))
+    async def get_sector_history(self, sector_name: str, days: int, end_date: str):
+        self.calls.append(("get_sector_history", sector_name, days, end_date))
         return []
 
     async def get_limit_stocks(self, trade_date: str):

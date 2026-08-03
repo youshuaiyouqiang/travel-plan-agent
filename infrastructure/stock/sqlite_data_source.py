@@ -395,26 +395,40 @@ class SqliteStockDataSource:
         return CorrelationResult(end_date=end_date, window_days=days)
 
     async def get_sector_history(
-        self, sector_name: str, days: int
+        self, sector_name: str, days: int, end_date: str
     ) -> list[SectorDaily]:
-        """板块多日：sector_name 为空时返全板块。"""
+        """板块多日：sector_name 为空时返全板块。
+
+        Bug 修复：原 SQL ``LIMIT ?`` 限制的是**行数**而非**天数**。
+        当 sector_name 为空时，90 个板块 × 1 天 = 90 行，
+        ``LIMIT 10`` 只返回最近 1 天的 10 行，无法展示多日轮动。
+
+        修复：先用子查询取 ``<= end_date`` 的最近 N 个**交易日**，
+        再关联全板块数据，确保返回 N 天 × 所有板块。
+        """
         _validate_table("sector_daily")
         bounded_days = max(1, min(int(days), 60))
         if sector_name:
             rows = self._conn.execute(
                 "SELECT trade_date, sector_code, sector_name, pct_chg, "
                 "leading_stock_codes, limit_up_count "
-                "FROM sector_daily WHERE sector_name = ? "
-                "ORDER BY trade_date DESC LIMIT ?",
-                (sector_name, bounded_days),
+                "FROM sector_daily "
+                "WHERE sector_name = ? AND trade_date IN ("
+                "  SELECT DISTINCT trade_date FROM sector_daily "
+                "  WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT ?"
+                ") ORDER BY trade_date DESC, sector_code ASC",
+                (sector_name, end_date, bounded_days),
             ).fetchall()
         else:
             rows = self._conn.execute(
                 "SELECT trade_date, sector_code, sector_name, pct_chg, "
                 "leading_stock_codes, limit_up_count "
                 "FROM sector_daily "
-                "ORDER BY trade_date DESC LIMIT ?",
-                (bounded_days,),
+                "WHERE trade_date IN ("
+                "  SELECT DISTINCT trade_date FROM sector_daily "
+                "  WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT ?"
+                ") ORDER BY trade_date DESC, sector_code ASC",
+                (end_date, bounded_days),
             ).fetchall()
         return [
             SectorDaily(

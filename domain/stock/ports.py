@@ -71,7 +71,7 @@ class StockDataSource(Protocol):
         self, end_date: str, days: int
     ) -> CorrelationResult: ...  # 周复盘专用
     async def get_sector_history(
-        self, sector_name: str, days: int
+        self, sector_name: str, days: int, end_date: str
     ) -> list[SectorDaily]: ...
     async def get_limit_stocks(self, trade_date: str) -> list[LimitStock]: ...
     # Task 10：启动期缓存回填的"是否已有数据"判定端口方法

@@ -55,7 +55,7 @@ class StockQueryService:
         if days <= 0 or days > 60:
             days = 10
         try:
-            return await self._data.get_sector_history("", days)  # 全板块
+            return await self._data.get_sector_history("", days, end_date)  # 全板块
         except Exception as e:
             logger.error(
                 "get_sector_chart failed end_date=%s days=%d: %s",
