@@ -126,7 +126,7 @@ function StockIndexBody({
     const [snap, emo, sec, wl, rep] = await Promise.allSettled([
       stockApi.getMarketSnapshot(tradeDate),
       stockApi.getEmotionChart(tradeDate, 60),
-      stockApi.getSectorChart(tradeDate, 10),
+      stockApi.getSectorChart(tradeDate, 60),
       stockApi.getWatchlist(),
       stockApi.listReports(20),
     ])
@@ -285,7 +285,7 @@ function StockIndexBody({
           <SectorHeatmap
             series={sectorChart?.series ?? []}
             endDate={tradeDate}
-            days={sectorChart?.window_days ?? 10}
+            days={10}
             loading={sectorsLoading}
             error={sectorsError}
           />
