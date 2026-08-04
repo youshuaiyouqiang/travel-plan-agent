@@ -292,4 +292,32 @@ describe('EmotionCycleChart', () => {
       container.querySelector('[aria-label="情绪周期折线图"]'),
     ).toBeInTheDocument()
   })
+
+  // ── 段衔接端点共享测试（防止"断断续续"回归） ─────────────
+  it('相邻段在转折点共享 X 索引，视觉上形成连续折线', () => {
+    // 5 个连续日：弱修复→弱修复→强修复→高潮→高潮
+    // 段 A（弱修复）=[0,1,2]、段 B（强修复）=[2,3]、段 C（高潮）=[3,4]
+    // 关键：段 A 末点 2 = 段 B 首点 2；段 B 末点 3 = 段 C 首点 3
+    // —— 验证 ECharts series 数据无丢失（连续渲染、不留空段）
+    const CONTINUOUS: EmotionIndicators[] = [
+      makeEmotion('20260725', { emotion_score: 25.0, emotion_phase: '弱修复' }),
+      makeEmotion('20260726', { emotion_score: 35.0, emotion_phase: '弱修复' }),
+      makeEmotion('20260727', { emotion_score: 65.0, emotion_phase: '强修复' }),
+      makeEmotion('20260728', { emotion_score: 85.0, emotion_phase: '高潮' }),
+      makeEmotion('20260729', { emotion_score: 90.0, emotion_phase: '高潮' }),
+    ]
+    const { container } = render(
+      <EmotionCycleChart series={CONTINUOUS} endDate="20260729" days={10} />,
+    )
+    expect(
+      container.querySelector('[aria-label="情绪周期折线图"]'),
+    ).toBeInTheDocument()
+    // 三种阶段全出现在徽章中（说明 buildSegments 把数据正确拆分）
+    const section = container.querySelector(
+      'section[aria-label="情绪周期折线图"]',
+    )
+    expect(section?.textContent).toContain('弱修复')
+    expect(section?.textContent).toContain('强修复')
+    expect(section?.textContent).toContain('高潮')
+  })
 })

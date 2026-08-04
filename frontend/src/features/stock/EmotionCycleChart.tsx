@@ -185,34 +185,49 @@ export function EmotionCycleChart({
         silent: boolean
         tooltip: { show: boolean }
       }> = []
+      if (scores.length === 0) return result
+      // 拆分逻辑：扫描 [0, n]，每当 phase 变化时关闭当前段。
+      // 关键：当前段数据范围 [segStart, i]（**含 i**），让段 A 末点 =
+      // 段 B 首点（同一 X 索引 i）。这样在 X=i 转折处两条 line "重合"，
+      // 视觉上是连续折线，X=i-1→i 段 A 染色，X=i→i+1 段 B 染色。
+      // 末段在 i === n-1 时关闭（仅含到 n-1，避免越界）。
+      const points: Array<[number, number | null, string | null]> = scores.map(
+        (s, idx) => [idx, s, phases[idx] ?? null],
+      )
       let segStart = 0
-      let segPhase: string | null = phases[0] ?? null
-      for (let i = 1; i <= scores.length; i++) {
-        const p = i < scores.length ? phases[i] : null
-        if (p !== segPhase) {
-          const data: Array<[number, number | null]> = []
-          for (let j = segStart; j < i; j++) {
-            data.push([j, scores[j]])
-          }
-          const phaseName = segPhase ?? '—'
-          const color = segPhase != null ? PHASE_COLOR[segPhase] : FALLBACK_COLOR
-          result.push({
-            name: `${baseName}·${phaseName}`,
-            type: 'line',
-            data,
-            connectNulls: false,  // 段内强制连续，跨段不连
-            smooth: false,
-            symbol: 'none',
-            lineStyle: { width: lineWidth, color },
-            showSymbol: false,
-            legendHoverLink: false,
-            z: baseName === '全局' ? 3 : baseName === '打板' ? 2 : 1,
-            silent: true,  // 段不响应 hover/tooltip，由主 series 显示
-            tooltip: { show: false },
-          })
-          segStart = i
-          segPhase = p
+      let segPhase: string | null = points[0]?.[2] ?? null
+      // 末段在 i === n-1 后无下一阶段变化，循环到 n 时再统一关闭
+      for (let i = 1; i <= points.length; i++) {
+        const p = i < points.length ? points[i]?.[2] : null
+        const isBoundary = i === points.length || p !== segPhase
+        if (!isBoundary) continue
+        // 段数据点 [segStart, i]（含 i，i 是段 B 的首点 = 段 A 末点）
+        // 但末段（i === n）只取 [segStart, n-1]
+        const data: Array<[number, number | null]> = []
+        const end = i === points.length ? i - 1 : i
+        for (let j = segStart; j <= end; j++) {
+          const pt = points[j]
+          if (pt) data.push([pt[0], pt[1]])
         }
+        const phaseName = segPhase ?? '—'
+        const color = segPhase != null ? PHASE_COLOR[segPhase] : FALLBACK_COLOR
+        result.push({
+          name: `${baseName}·${phaseName}`,
+          type: 'line',
+          data,
+          connectNulls: false,
+          smooth: false,
+          symbol: 'none',
+          lineStyle: { width: lineWidth, color },
+          showSymbol: false,
+          legendHoverLink: false,
+          z: baseName === '全局' ? 3 : baseName === '打板' ? 2 : 1,
+          silent: true,
+          tooltip: { show: false },
+        })
+        // 下一段从 i 开始（i 已是共享的转折点）
+        segStart = i
+        segPhase = p
       }
       return result
     }
