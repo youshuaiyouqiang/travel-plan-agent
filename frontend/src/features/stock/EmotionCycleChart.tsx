@@ -232,30 +232,15 @@ export function EmotionCycleChart({
         textStyle: { fontSize: 11, color: '#475569' },
       },
       grid: { left: 50, right: 50, top: 40, bottom: 50 },
-      // 三条线各自分段着色：每个 visualMap 对应一个 seriesIndex
-      visualMap: [
-        {
-          type: 'piecewise',
-          dimension: 2,
-          seriesIndex: 0,
-          show: false,
-          pieces: PHASE_PIECES,
-        },
-        {
-          type: 'piecewise',
-          dimension: 2,
-          seriesIndex: 1,
-          show: false,
-          pieces: PHASE_PIECES,
-        },
-        {
-          type: 'piecewise',
-          dimension: 2,
-          seriesIndex: 2,
-          show: false,
-          pieces: PHASE_PIECES,
-        },
-      ],
+      // 单个 visualMap 对所有 series 生效（不指定 seriesIndex = 全部），
+      // 各 series 数据第 3 维（dimension 2）各自存放阶段编码，独立匹配 pieces。
+      // 关键：lineStyle 不可设 color，否则会覆盖 visualMap 导致整线灰色。
+      visualMap: {
+        type: 'piecewise',
+        dimension: 2,
+        show: false,
+        pieces: PHASE_PIECES,
+      },
       xAxis: {
         type: 'category',
         data: tradeDates.map(fmtDateShort),
@@ -279,7 +264,8 @@ export function EmotionCycleChart({
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 3.5, color: FALLBACK_COLOR },
+          // lineStyle 不可设 color——否则覆盖 visualMap 分段着色
+          lineStyle: { width: 3.5 },
         },
         {
           name: '打板',
@@ -288,7 +274,7 @@ export function EmotionCycleChart({
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 2.0, color: FALLBACK_COLOR },
+          lineStyle: { width: 2.0 },
         },
         {
           name: '趋势',
@@ -297,7 +283,7 @@ export function EmotionCycleChart({
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 1.5, color: FALLBACK_COLOR },
+          lineStyle: { width: 1.5 },
         },
       ],
     }
