@@ -23,16 +23,6 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import type { EmotionIndicators } from './types'
 
-/** 阶段 → 数字编码（供 visualMap piecewise 分段着色）。 */
-const PHASE_CODE: Record<string, number> = {
-  冰点: 0,
-  强分歧: 1,
-  弱分歧: 2,
-  弱修复: 3,
-  强修复: 4,
-  高潮: 5,
-}
-
 /** 线段配色：下跌绿/蓝、上涨红、高潮紫（与 A 股红涨绿跌一致）。 */
 const PHASE_COLOR: Record<string, string> = {
   冰点: '#1e3a8a', // 深蓝：最深跌
@@ -46,17 +36,8 @@ const PHASE_COLOR: Record<string, string> = {
 /** 未知阶段（null / 数据不足）的降级色。 */
 const FALLBACK_COLOR = '#cbd5e1'
 
-/** 阶段名称列表（用于图例 + visualMap pieces）。 */
+/** 阶段名称列表（用于图例）。 */
 const PHASE_NAMES = ['冰点', '强分歧', '弱分歧', '弱修复', '强修复', '高潮'] as const
-
-/** visualMap pieces（6 阶段 + 1 降级灰）。 */
-const PHASE_PIECES = [
-  ...PHASE_NAMES.map((name) => ({
-    value: PHASE_CODE[name],
-    color: PHASE_COLOR[name],
-  })),
-  { value: -1, color: FALLBACK_COLOR },
-]
 
 export interface EmotionCycleChartProps {
   /** 多日情绪指标（来自 /charts/emotion，建议传 60 天供滑块浏览）。 */
@@ -75,12 +56,6 @@ export interface EmotionCycleChartProps {
 function fmtDateShort(s: string): string {
   if (s.length !== 8) return s
   return `${s.slice(4, 6)}-${s.slice(6, 8)}`
-}
-
-/** 取阶段编码（null/未知阶段 → -1，visualMap 映射灰色）。 */
-function phaseCode(phase: string | null | undefined): number {
-  if (phase == null) return -1
-  return PHASE_CODE[phase] ?? -1
 }
 
 /**
@@ -183,16 +158,77 @@ export function EmotionCycleChart({
 
     const tradeDates = visible.map((e) => e.trade_date)
 
-    // 三条线数据：[x索引, 得分, 阶段编码]；得分 null 用 null（connectNulls 跳过）
-    const globalData: [number, number | null, number][] = visible.map(
-      (e, i) => [i, e.emotion_score, phaseCode(visiblePhases[i]?.globalPhase)],
-    )
-    const boardData: [number, number | null, number][] = visible.map(
-      (e, i) => [i, e.board_style_score, phaseCode(visiblePhases[i]?.boardPhase)],
-    )
-    const trendData: [number, number | null, number][] = visible.map(
-      (e, i) => [i, e.trend_style_score, phaseCode(visiblePhases[i]?.trendPhase)],
-    )
+    // 拆分策略（确保颜色生效）：
+    // 把每条"风格线"按阶段拆成 6 段 series（每个阶段一段），每段设固定
+    // lineStyle.color 即可。相邻段端点重合 → 视觉上是连续折线，但每段
+    // 颜色由 visualMap palette 直接控制，不会被 legend 默认配色覆盖。
+    //
+    // 输入：scores=[v0,v1,...]、phases=[p0,p1,...]
+    // 输出：6 个 segment series（每段含连续相同阶段的点）
+    function buildSegments(
+      baseName: string,
+      scores: Array<number | null>,
+      phases: Array<string | null>,
+      lineWidth: number,
+    ) {
+      const result: Array<{
+        name: string
+        type: 'line'
+        data: Array<[number, number | null]>
+        connectNulls: boolean
+        smooth: boolean
+        symbol: 'none'
+        lineStyle: { width: number; color: string }
+        showSymbol: false
+        legendHoverLink: false
+        z: number
+        silent: boolean
+        tooltip: { show: boolean }
+      }> = []
+      let segStart = 0
+      let segPhase: string | null = phases[0] ?? null
+      for (let i = 1; i <= scores.length; i++) {
+        const p = i < scores.length ? phases[i] : null
+        if (p !== segPhase) {
+          const data: Array<[number, number | null]> = []
+          for (let j = segStart; j < i; j++) {
+            data.push([j, scores[j]])
+          }
+          const phaseName = segPhase ?? '—'
+          const color = segPhase != null ? PHASE_COLOR[segPhase] : FALLBACK_COLOR
+          result.push({
+            name: `${baseName}·${phaseName}`,
+            type: 'line',
+            data,
+            connectNulls: false,  // 段内强制连续，跨段不连
+            smooth: false,
+            symbol: 'none',
+            lineStyle: { width: lineWidth, color },
+            showSymbol: false,
+            legendHoverLink: false,
+            z: baseName === '全局' ? 3 : baseName === '打板' ? 2 : 1,
+            silent: true,  // 段不响应 hover/tooltip，由主 series 显示
+            tooltip: { show: false },
+          })
+          segStart = i
+          segPhase = p
+        }
+      }
+      return result
+    }
+
+    const globalScores = visible.map((e) => e.emotion_score)
+    const boardScores = visible.map((e) => e.board_style_score)
+    const trendScores = visible.map((e) => e.trend_style_score)
+    const globalPhases = visiblePhases.map((p) => p?.globalPhase ?? null)
+    const boardPhases = visiblePhases.map((p) => p?.boardPhase ?? null)
+    const trendPhases = visiblePhases.map((p) => p?.trendPhase ?? null)
+
+    const seriesArr = [
+      ...buildSegments('全局', globalScores, globalPhases, 3.5),
+      ...buildSegments('打板', boardScores, boardPhases, 2.0),
+      ...buildSegments('趋势', trendScores, trendPhases, 1.5),
+    ]
 
     return {
       tooltip: {
@@ -201,7 +237,7 @@ export function EmotionCycleChart({
           const arr = params as Array<{
             dataIndex: number
             seriesName: string
-            value: number | [number, number | null, number]
+            value: number | [number, number | null]
           }>
           if (arr.length === 0) return ''
           const idx = arr[0].dataIndex
@@ -209,38 +245,36 @@ export function EmotionCycleChart({
           const ph = visiblePhases[idx]
           const globalPhaseStr = ph?.globalPhase ?? '—'
           const lines = [`<b>${fmtDateShort(dt)}</b> · 全局阶段：${globalPhaseStr}`]
+          // 段 series（name 含 "·"）被 silent，只显示主 series 风格的信息
+          const seen = new Set<string>()
           for (const p of arr) {
-            let val: number | null = null
-            if (Array.isArray(p.value)) {
-              val = p.value[1]
-            } else {
-              val = p.value
-            }
-            const valStr = val == null ? '—' : val.toFixed(1)
+            const baseName = p.seriesName.split('·')[0] ?? p.seriesName
+            if (seen.has(baseName)) continue
+            seen.add(baseName)
+            const e = visible[idx]
+            let score: number | null = null
             let phaseStr = '—'
-            if (p.seriesName === '全局') phaseStr = ph?.globalPhase ?? '—'
-            else if (p.seriesName === '打板') phaseStr = ph?.boardPhase ?? '—'
-            else if (p.seriesName === '趋势') phaseStr = ph?.trendPhase ?? '—'
-            lines.push(`${p.seriesName}：${valStr}（${phaseStr}）`)
+            if (baseName === '全局') {
+              score = e?.emotion_score ?? null
+              phaseStr = ph?.globalPhase ?? '—'
+            } else if (baseName === '打板') {
+              score = e?.board_style_score ?? null
+              phaseStr = ph?.boardPhase ?? '—'
+            } else if (baseName === '趋势') {
+              score = e?.trend_style_score ?? null
+              phaseStr = ph?.trendPhase ?? '—'
+            }
+            const valStr = score == null ? '—' : score.toFixed(1)
+            lines.push(`${baseName}：${valStr}（${phaseStr}）`)
           }
           return lines.join('<br/>')
         },
       },
       legend: {
-        data: ['全局', '打板', '趋势'],
-        top: 0,
-        textStyle: { fontSize: 11, color: '#475569' },
+        // 不显示 legend——避免 legend 默认配色视觉上覆盖分段着色
+        show: false,
       },
       grid: { left: 50, right: 50, top: 40, bottom: 50 },
-      // 单个 visualMap 对所有 series 生效（不指定 seriesIndex = 全部），
-      // 各 series 数据第 3 维（dimension 2）各自存放阶段编码，独立匹配 pieces。
-      // 关键：lineStyle 不可设 color，否则会覆盖 visualMap 导致整线灰色。
-      visualMap: {
-        type: 'piecewise',
-        dimension: 2,
-        show: false,
-        pieces: PHASE_PIECES,
-      },
       xAxis: {
         type: 'category',
         data: tradeDates.map(fmtDateShort),
@@ -256,36 +290,7 @@ export function EmotionCycleChart({
         axisLabel: { fontSize: 11, color: '#475569' },
         splitLine: { lineStyle: { color: '#f1f5f9' } },
       },
-      series: [
-        {
-          name: '全局',
-          type: 'line',
-          data: globalData,
-          connectNulls: true,
-          smooth: false,
-          symbol: 'none',
-          // lineStyle 不可设 color——否则覆盖 visualMap 分段着色
-          lineStyle: { width: 3.5 },
-        },
-        {
-          name: '打板',
-          type: 'line',
-          data: boardData,
-          connectNulls: true,
-          smooth: false,
-          symbol: 'none',
-          lineStyle: { width: 2.0 },
-        },
-        {
-          name: '趋势',
-          type: 'line',
-          data: trendData,
-          connectNulls: true,
-          smooth: false,
-          symbol: 'none',
-          lineStyle: { width: 1.5 },
-        },
-      ],
+      series: seriesArr,
     }
   }, [visible, visiblePhases])
 
@@ -306,6 +311,7 @@ export function EmotionCycleChart({
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           三线均按各自阶段分段着色（红涨绿跌） · 直观展现三种赚钱风格的共生与竞争
+          · 线宽：全局 3.5 / 打板 2.0 / 趋势 1.5
         </p>
         {/* 当前阶段标注：三条线各自 */}
         {latest && latestPhases && (

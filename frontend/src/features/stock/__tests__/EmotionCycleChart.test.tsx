@@ -275,4 +275,21 @@ describe('EmotionCycleChart', () => {
     expect(section?.textContent).toContain('冰点')
     expect(section?.textContent).toContain('高潮')
   })
+
+  // ── 分段 series 行为测试 ────────────────────────────────
+  it('阶段变化时每条线被拆成多个段 series（确保每段颜色生效）', () => {
+    // 全局得分 20→80（弱修复→强修复→高潮），会拆成 3 段
+    const TRANSITION: EmotionIndicators[] = [
+      makeEmotion('20260725', { emotion_score: 25.0, emotion_phase: '弱修复' }),
+      makeEmotion('20260726', { emotion_score: 65.0, emotion_phase: '强修复' }),
+      makeEmotion('20260727', { emotion_score: 85.0, emotion_phase: '高潮' }),
+    ]
+    // 不应抛错
+    const { container } = render(
+      <EmotionCycleChart series={TRANSITION} endDate="20260727" days={10} />,
+    )
+    expect(
+      container.querySelector('[aria-label="情绪周期折线图"]'),
+    ).toBeInTheDocument()
+  })
 })
