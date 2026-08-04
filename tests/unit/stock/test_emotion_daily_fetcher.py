@@ -742,9 +742,10 @@ class TestEmotionFetcherHistoricalBranch:
         assert r.board_break_rebound_count is None
         assert r.rebound_success_ratio is None
         assert r.resilience_level is None
-        assert r.height_level is None
-        assert r.trend_5d is None
-        assert r.trend_20d is None
+        # 历史分支现从 DB 计算 height/trend（无历史时降级为默认值，非 None）
+        assert r.height_level == "中位"  # 无历史 → percentile None → 默认中位
+        assert r.trend_5d == "数据不足"  # 无历史 → 数据点 <3
+        assert r.trend_20d == "数据不足"
 
         # authenticity 仍可计算（来自 broken_ratio）
         assert r.authenticity_level is not None
@@ -810,6 +811,87 @@ class TestEmotionFetcherHistoricalBranch:
         assert r.broken_limit_ratio == pytest.approx(0.4)
         assert r.max_consecutive_boards == 2
         assert r.top_board_leaders == ["000002"]  # 唯一 2 板龙头
+
+    @pytest.mark.asyncio
+    async def test_historical_branch_computes_emotion_cycle(self, tmp_db) -> None:
+        """历史分支现从 DB 计算情绪周期字段（v025），不再硬编码 None。
+
+        镜像 test_emotion_phase_written 的 seed（history + 昨日 limit_stocks +
+        今日 stock_daily），但走 _run_historical 分支（_is_today=False）。
+        验证：溢价从 DB 算出（2.0），风格得分/情绪得分/阶段非 None，
+        akshare 实时字段仍 None（历史日不调 akshare）。
+        """
+        from domain.stock.models import LimitStock, StockDaily
+        from infrastructure.stock.cache_repository import CacheRepository
+        from infrastructure.stock.emotion_daily_fetcher_adapter import (
+            EmotionDailyFetcherAdapter,
+        )
+        from infrastructure.stock.sqlite_data_source import SqliteStockDataSource
+
+        adapter = EmotionDailyFetcherAdapter(
+            data_source=SqliteStockDataSource(conn=get_connection()),
+        )
+        repo = CacheRepository(conn=get_connection())
+
+        # 1. 历史 emotion_daily（近 10 日，用于 day_3d_ago + percentile + trend）
+        _seed_history_emotion(repo, end_date="20260729", days=10)
+
+        # 2. 昨日 limit_stocks + 今日 stock_daily（用于溢价 + 韧性）
+        yesterday_stocks = [
+            LimitStock(trade_date="20260729", stock_code="600000", stock_name="A",
+                       limit_type="up", consecutive_boards=2,
+                       first_limit_time="10:00:00", last_limit_time="10:00:00",
+                       open_count=0, is_valid_limit_up=True),
+            LimitStock(trade_date="20260729", stock_code="600001", stock_name="B",
+                       limit_type="up", consecutive_boards=1,
+                       first_limit_time="10:30:00", last_limit_time="10:30:00",
+                       open_count=0, is_valid_limit_up=True),
+        ]
+        repo.upsert_limit_stocks(trade_date="20260729", stocks=yesterday_stocks)
+        today_stocks = [
+            StockDaily(trade_date="20260730", stock_code="600000",
+                       open=10.0, close=10.6, high=10.8, low=9.9,
+                       volume=1e6, pct_chg=6.0, turnover=1e7),
+            StockDaily(trade_date="20260730", stock_code="600001",
+                       open=10.0, close=9.8, high=10.1, low=9.7,
+                       volume=5e5, pct_chg=-2.0, turnover=5e6),
+        ]
+        repo.upsert_stock_daily(trade_date="20260730", rows=today_stocks)
+
+        # 3. 今日 limit_stocks（用于 valid_count + max_boards）
+        _seed_limit_stocks(repo, trade_date="20260730")
+
+        # 4. 历史分支不调 akshare；spy 捕获 upsert 的 EmotionIndicators
+        with patch("infrastructure.stock.akshare_client.ak") as mock_ak:
+            with patch.object(
+                repo, "upsert_emotion_daily", wraps=repo.upsert_emotion_daily
+            ) as spy:
+                count = await adapter.run(trade_date="20260730", repo=repo)
+            # 历史分支跳过 akshare 实时接口（避免污染历史行）
+            mock_ak.stock_market_activity_legu.assert_not_called()
+
+        assert count == 1
+        captured = spy.call_args.kwargs["rows"][0]
+
+        # 昨日涨停今日溢价：(6.0 + -2.0) / 2 = 2.0（从 DB 计算，非 None）
+        assert captured.yesterday_limit_up_today_premium == pytest.approx(2.0)
+
+        # 三风格得分 + 全局得分 + 阶段：全部从 DB 算出
+        # （趋势无 akshare 宽度降级为 50，仍非 None；打板/反包从 DB 准确算）
+        assert captured.board_style_score is not None
+        assert 0 <= captured.board_style_score <= 100
+        assert captured.trend_style_score is not None
+        assert 0 <= captured.trend_style_score <= 100
+        assert captured.emotion_score is not None
+        assert 0 <= captured.emotion_score <= 100
+        assert captured.emotion_phase in {
+            "冰点", "强分歧", "弱分歧", "弱修复", "强修复", "高潮"
+        }
+
+        # akshare 实时源字段：历史日仍 None（不被污染）
+        assert captured.total_volume is None
+        assert captured.adv_count is None
+        assert captured.top20_volume_avg_chg is None
 
 
 # ── Task 3：情绪周期（昨日涨停溢价 + 风格得分 + 阶段）──────────────

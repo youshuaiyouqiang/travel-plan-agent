@@ -562,23 +562,154 @@ async def _fetch_top20(trade_date: str) -> Top20VolumeSnapshot | None:
         return None
 
 
+async def _compute_derived_fields(
+    trade_date: str,
+    yesterday: EmotionIndicators | None,
+    deps: "_FetcherDeps",
+    *,
+    effective_limit_up_count: int,
+    akshare_adv_count: int | None,
+    akshare_decl_count: int | None,
+    akshare_top20_avg_chg: float | None,
+    akshare_top20_up_count: int | None,
+) -> dict[str, Any]:
+    """收集 DB 数据 + 可选 akshare 输入，计算 emotion_daily 的可派生字段。
+
+    供 ``_run_historical``（传 None 降级）和历史回填脚本（传用户提供的
+    adv/decl）共用。所有 I/O 通过 ``deps`` 读取，本函数不直接调 akshare。
+
+    DB 派生（始终可算）：昨日涨停今日溢价、断板反包韧性、高度（涨停数分位）、
+    5/20 日涨停趋势、打板/反包风格得分。
+    akshare 依赖（None 时降级）：趋势风格得分（无 adv_decl_ratio 时降 50 中性）、
+    强度/市场风格（top20 None → None）、广度（adv/decl None → None）。
+
+    Args:
+        trade_date: 今日交易日（YYYYMMDD）。
+        yesterday: 昨日 EmotionIndicators（溢价 + 韧性 + day_3d_ago 依赖）；可 None。
+        deps: 依赖（select_limit_stocks / select_stock_daily /
+            get_emotion_indicators_trend）。
+        effective_limit_up_count: 今日涨停数（DB 聚合）。
+        akshare_adv_count: 上涨家数；historical 传 None。
+        akshare_decl_count: 下跌家数；historical 传 None。
+        akshare_top20_avg_chg: 成交额前 20 平均涨幅；historical 传 None。
+        akshare_top20_up_count: 成交额前 20 上涨数；historical 传 None。
+
+    Returns:
+        含 17 个 key 的 dict（board_break_total_count ... emotion_phase），
+        值可能为 None（降级或数据缺失）。
+    """
+    # 溢价 + 韧性（DB：昨日 limit_stocks + 今日 stock_daily）
+    yesterday_premium = _compute_yesterday_premium(trade_date, yesterday, deps)
+    resilience_result = _compute_resilience(trade_date, yesterday, deps)
+
+    # 历史趋势（DB：近 21 日 emotion_daily，过滤今日，转 ASC 旧→新）
+    history = await deps.get_emotion_indicators_trend(trade_date, 21)
+    history_asc = [h for h in reversed(history) if h.trade_date != trade_date]
+    history_limit_ups = [h.limit_up_count for h in history_asc]
+    percentile = compute_limit_up_percentile(
+        effective_limit_up_count, history_limit_ups
+    )
+    height_level = compute_height_level(percentile)
+    # compute_trend 期望 list[float]；内联推导式让 mypy 按上下文推断为 list[float]
+    # （命名变量 history_limit_ups 是 list[int]，切片传入会触发 list 不变报错）
+    trend_5d = compute_trend([h.limit_up_count for h in history_asc[:5]])
+    trend_20d = compute_trend([h.limit_up_count for h in history_asc[:20]])
+    day_3d_ago = history_asc[-3] if len(history_asc) >= 3 else None
+
+    # 广度（akshare adv/decl；None 时降级）
+    if akshare_adv_count is not None and akshare_decl_count is not None:
+        breadth_level = compute_breadth_level(
+            akshare_adv_count, akshare_decl_count
+        )
+        if akshare_decl_count > 0:
+            adv_decl_ratio: float | None = akshare_adv_count / akshare_decl_count
+        elif akshare_adv_count > 0:
+            adv_decl_ratio = 999.0
+        else:
+            adv_decl_ratio = None
+    else:
+        breadth_level = None
+        adv_decl_ratio = None
+
+    # 强度 + 市场风格（akshare top20；None 时降级）
+    strength_level: str | None = None
+    if (
+        akshare_top20_avg_chg is not None
+        and akshare_top20_up_count is not None
+    ):
+        strength_level = compute_strength_level(
+            akshare_top20_avg_chg, akshare_top20_up_count
+        )
+    market_style: str | None = None
+    if strength_level is not None:
+        market_style = compute_market_style(strength_level, height_level)
+
+    # v025 三风格得分 + 全局得分 + 阶段
+    board_score = compute_board_style_score(
+        yesterday_premium=yesterday_premium,
+        limit_up_count=effective_limit_up_count,
+        limit_up_count_3d_ago=(
+            day_3d_ago.limit_up_count if day_3d_ago is not None else None
+        ),
+        limit_up_percentile=percentile,
+    )
+    trend_score = compute_trend_style_score(
+        top20_avg_chg=akshare_top20_avg_chg,
+        adv_count=akshare_adv_count,
+        adv_count_3d_ago=(
+            day_3d_ago.adv_count if day_3d_ago is not None else None
+        ),
+        adv_decl_ratio=adv_decl_ratio,
+    )
+    rebound_score = compute_rebound_style_score(
+        rebound_ratio=resilience_result["rebound_success_ratio"],
+        rebound_ratio_3d_ago=(
+            day_3d_ago.rebound_success_ratio
+            if day_3d_ago is not None else None
+        ),
+    )
+    emotion_score_val = compute_emotion_score(
+        board_score, trend_score, rebound_score
+    )
+    emotion_phase = compute_raw_phase(
+        emotion_score_val,
+        day_3d_ago.emotion_score if day_3d_ago is not None else None,
+    )
+
+    return {
+        "yesterday_limit_up_today_premium": yesterday_premium,
+        "board_break_total_count": resilience_result["board_break_total_count"],
+        "board_break_rebound_count": resilience_result["board_break_rebound_count"],
+        "rebound_success_ratio": resilience_result["rebound_success_ratio"],
+        "resilience_level": resilience_result["resilience_level"],
+        "adv_decl_ratio": adv_decl_ratio,
+        "breadth_level": breadth_level,
+        "height_level": height_level,
+        "trend_5d": trend_5d,
+        "trend_20d": trend_20d,
+        "strength_level": strength_level,
+        "market_style": market_style,
+        "board_style_score": board_score,
+        "trend_style_score": trend_score,
+        "rebound_style_score": rebound_score,
+        "emotion_score": emotion_score_val,
+        "emotion_phase": emotion_phase,
+    }
+
+
 async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
-    """历史日期分支：仅写 limit_stocks_daily 聚合字段，实时派生维度置 None。
+    """历史日期分支：从 DB 计算可派生字段，akshare 实时源字段置 None。
 
     动机（Bug①）：akshare 实时接口（stock_market_activity_legu /
     stock_zh_index_spot_em / stock_fund_flow_individual）不接受日期参数，
-    永远返回"今天"截面。如果 fetcher 对历史日期继续走 akshare，会把"今天"
-    的实时数据写到错误的日期——污染历史行的 adv_count / decl_count /
-    total_volume / strength / height / trend 等维度。
+    永远返回"今天"截面。此分支跳过 akshare，仅依赖 DB 缓存：
+    - limit_stocks_daily 聚合：limit_up_count / valid / max_boards / broken_ratio
+    - stock_daily + 昨日 limit_stocks：昨日涨停今日溢价 + 断板反包韧性
+    - 历史 emotion_daily：高度分位 + 5/20 日趋势 + 三风格得分 + 阶段
 
-    此分支跳过 akshare 调用，仅依赖 limit_stocks_daily 真实缓存聚合：
-    - limit_up_count / limit_down_count(置 0) / valid_limit_up_count
-    - broken_limit_ratio（仅当 db 有 broken 行时非零）
-    - max_consecutive_boards + top_board_leaders
-    - authenticity_level（基于 broken_ratio）
-
-    其余 18 个 v023 维度字段全部置 None，表示"数据缺失"；等 fetcher 在"今日"
-    自然覆盖时（当日限速当日跑 fetcher）填入。
+    akshare 专属字段（total_volume / adv_count / decl_count / top20_* /
+    strength / market_style / breadth）历史日不可得，置 None；趋势风格得分
+    因无宽度数据降级为 50 中性（compute_trend_style_score None 输入语义）。
     """
     limit_stocks = deps.select_limit_stocks(trade_date)
     if not limit_stocks:
@@ -607,6 +738,19 @@ async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
     )
     authenticity_level = compute_authenticity_level(broken_ratio)
 
+    # DB 派生字段（溢价 / 韧性 / 高度 / 趋势 / v025 得分 + 阶段）
+    yesterday = await deps.get_emotion_indicators_before(trade_date)
+    fields = await _compute_derived_fields(
+        trade_date,
+        yesterday,
+        deps,
+        effective_limit_up_count=db_limit_up_count,
+        akshare_adv_count=None,
+        akshare_decl_count=None,
+        akshare_top20_avg_chg=None,
+        akshare_top20_up_count=None,
+    )
+
     row = EmotionIndicators(
         trade_date=trade_date,
         limit_up_count=db_limit_up_count,
@@ -614,14 +758,14 @@ async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
         valid_limit_up_count=valid_count,
         broken_limit_ratio=broken_ratio,
         max_consecutive_boards=max_boards,
-        yesterday_limit_up_today_premium=None,
-        total_volume=None,
+        yesterday_limit_up_today_premium=fields["yesterday_limit_up_today_premium"],
+        total_volume=None,  # akshare 实时源；历史日期无数据
         volume_change_pct=None,
         phase=None,
         phase_confidence=None,
         phase_reason=None,
         top_board_leaders=top_board_leaders,
-        # v023 6 维度字段：历史日期无实时源数据，全部 None
+        # akshare 实时源字段：历史日期不可得，全部 None
         adv_count=None,
         decl_count=None,
         adv_decl_ratio=None,
@@ -631,27 +775,35 @@ async def _run_historical(trade_date: str, deps: "_FetcherDeps") -> int:
         top20_volume_limit_up_count=None,
         strength_level=None,
         market_style=None,
-        board_break_total_count=None,
-        board_break_rebound_count=None,
-        rebound_success_ratio=None,
-        top5d_avg_chg=None,
-        resilience_level=None,
+        # DB 派生字段（韧性）
+        board_break_total_count=fields["board_break_total_count"],
+        board_break_rebound_count=fields["board_break_rebound_count"],
+        rebound_success_ratio=fields["rebound_success_ratio"],
+        top5d_avg_chg=None,  # 需 5 日个股 K 线，暂不计算
+        resilience_level=fields["resilience_level"],
         authenticity_level=authenticity_level,
-        height_level=None,
-        trend_5d=None,
-        trend_20d=None,
-        # v025 情绪周期字段：历史日期无实时源 + 无 stock_daily，全部 None
-        board_style_score=None,
-        trend_style_score=None,
-        rebound_style_score=None,
-        emotion_score=None,
-        emotion_phase=None,
+        # DB 派生字段（高度 / 趋势）
+        height_level=fields["height_level"],
+        trend_5d=fields["trend_5d"],
+        trend_20d=fields["trend_20d"],
+        # v025 情绪周期字段（从 DB 计算；趋势降级 50）
+        board_style_score=fields["board_style_score"],
+        trend_style_score=fields["trend_style_score"],
+        rebound_style_score=fields["rebound_style_score"],
+        emotion_score=fields["emotion_score"],
+        emotion_phase=fields["emotion_phase"],
     )
     deps.upsert_emotion_daily(trade_date=trade_date, rows=[row])
     logger.info(
         "emotion_daily_fetcher.run (historical): trade_date=%s limit_up=%d "
-        "valid=%d max_boards=%d leaders=%s (akshare-derived fields=None)",
+        "valid=%d max_boards=%d leaders=%s premium=%s board_score=%s "
+        "trend_score=%s rebound_score=%s emotion_score=%s phase=%s "
+        "(akshare real-time fields=None)",
         trade_date, db_limit_up_count, valid_count, max_boards,
         top_board_leaders,
+        fields["yesterday_limit_up_today_premium"],
+        fields["board_style_score"], fields["trend_style_score"],
+        fields["rebound_style_score"], fields["emotion_score"],
+        fields["emotion_phase"],
     )
     return 1
