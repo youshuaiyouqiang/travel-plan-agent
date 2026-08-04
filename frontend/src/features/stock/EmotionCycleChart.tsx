@@ -1,20 +1,30 @@
 /**
  * 情绪周期折线图组件（Task 5）。
  *
- * 设计要点（开发文档 §2 / §8.1）：
- * - 三条折线均按各自阶段分段着色：
- *   全局（粗）/ 打板（中细）/ 趋势（细）
+ * 视觉规范（v3.3 重绘）：线段形状本身表达阶段语义，不再按真实得分画线。
+ * - 三条折线（全局 / 打板 / 趋势，线宽统一）各自按各自阶段绘制概念性曲线
  * - 每条线的阶段独立判定——全局用后端存储的 emotion_phase，
  *   打板/趋势在前端用 computePhase（与后端 compute_raw_phase 同算法）
- *   从各自 style_score + 3 日前得分算出，visualMap piecewise 分段着色
- * - 配色：冰点深蓝 / 强分歧深绿 / 弱分歧浅绿 / 弱修复浅红 / 强修复深红 / 高潮紫
- *   下跌用绿/蓝、上涨用红、高潮用紫（与 A 股红涨绿跌一致）
- * - connectNulls: true——任一风格某日得分为 null 时连线不断开（None 点跳过）
- * - smooth: false——保留真实转折点毛刺；symbol: 'none'——只留线条
+ *   从各自 style_score + 3 日前得分算出
+ * - 每段（连续相同阶段）按"固定每日增量 + 幅度上限"生成概念性 Y 值：
+ *   段内每日增量只由阶段决定（与段长无关，同阶段恒定坡度），段总位移
+ *   不超过该阶段幅度上限；Y 值不 clamp（截断会削平坡度），由 Y 轴按
+ *   数据范围自适应——线段方向、陡峭程度、长度三级全部符合规范；
+ *   tooltip 与徽章仍显示真实阶段 + 真实得分
+ * - 分级规范（向下为亏钱效应、向上为赚钱效应，上下镜像对称）：
+ *     冰点：最陡、最长、向下、蓝色（巨大亏钱效应）
+ *     强分歧：较陡、较长、向下、深绿（仍有巨大亏钱效应）
+ *     弱分歧：最缓、最短、向下、浅绿（最弱的分歧）
+ *     高潮 = 冰点的镜像：最陡、最长、向上、紫色
+ *     强修复 = 强分歧的镜像：较陡、较长、向上、深红
+ *     弱修复 = 弱分歧的镜像：最缓、最短、向上、浅红
+ * - 配色：冰点蓝 / 强分歧深绿 / 弱分歧浅绿 / 弱修复浅红 / 强修复深红 / 高潮紫
+ *   下跌用蓝/绿、上涨用红、高潮用紫（与 A 股红涨绿跌一致）
+ * - smooth: false——保留转折点；symbol: 'none'——只留线条
  * - 底部时间轴滑块（与 SectorHeatmap 一致）：数据 > 可见天数时显示
  * - 右侧标注当前阶段 + 得分（三条线各自）；顶部标题显示可见日期范围
  * - 空数据 / loading / error 状态兜底
- * - 老行 emotion_phase 为 null 时编码 -1，visualMap 映射灰色（该段不着色）
+ * - 老行 emotion_phase 为 null 时该段斜率 0（持平）、降级灰色
  *
  * 反包风格不单独画线，融入全局情绪周期（等权参与合成）。
  */
@@ -23,18 +33,57 @@ import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import type { EmotionIndicators } from './types'
 
-/** 线段配色：下跌绿/蓝、上涨红、高潮紫（与 A 股红涨绿跌一致）。 */
+/**
+ * 线段配色（用户 v3.3 定义）：冰点蓝 / 强分歧深绿 / 弱分歧浅绿，
+ * 高潮紫 / 强修复深红 / 弱修复浅红。下跌用蓝/绿、上涨用红、高潮用紫。
+ */
 const PHASE_COLOR: Record<string, string> = {
-  冰点: '#1e3a8a', // 深蓝：最深跌
-  强分歧: '#15803d', // 深绿：急跌
-  弱分歧: '#86efac', // 浅绿：缓跌
-  弱修复: '#f87171', // 浅红：缓涨
-  强修复: '#dc2626', // 深红：急涨
-  高潮: '#9333ea', // 紫：过热峰
+  冰点: '#2563eb', // 蓝：巨大亏钱效应
+  强分歧: '#15803d', // 深绿：仍有巨大亏钱效应
+  弱分歧: '#86efac', // 浅绿：最弱的分歧
+  弱修复: '#f87171', // 浅红：最弱的修复
+  强修复: '#dc2626', // 深红：强修复（与强分歧镜像）
+  高潮: '#9333ea', // 紫：高潮（与冰点镜像）
+}
+
+/**
+ * 各阶段段幅度上限（一段连续相同阶段的总 Y 位移上限，绝对值）。
+ *
+ * 规范（用户 v3.3 定义）：长度三级 —— 冰点/高潮最长，强分歧/强修复次之，
+ * 弱分歧/弱修复最短；上下镜像对称（高潮=冰点向上、强修复=强分歧向上、
+ * 弱修复=弱分歧向上）。
+ */
+const PHASE_AMPLITUDE: Record<string, number> = {
+  冰点: 50, // 最长
+  强分歧: 34, // 较长
+  弱分歧: 18, // 最短
+  弱修复: 18, // 最短
+  强修复: 34, // 较长
+  高潮: 50, // 最长
+}
+
+/**
+ * 各阶段每日 Y 增量（带符号，向下为负、向上为正），与段长无关——同一
+ * 阶段在任何位置的陡峭程度完全一致。陡峭程度三级，差距足够大以保证
+ * 视觉直观（用户 v3.3 定义）：
+ * - 向下：冰点 -15（最陡）> 强分歧 -9 > 弱分歧 -4（最缓）
+ * - 向上：高潮 +15（最陡）> 强修复 +9 > 弱修复 +4（最缓）
+ * - 上下镜像对称（高潮=冰点向上、强修复=强分歧向上、弱修复=弱分歧向上）
+ */
+const PHASE_DAILY_DELTA: Record<string, number> = {
+  冰点: -15, // 最陡向下
+  强分歧: -9, // 次之向下
+  弱分歧: -4, // 最缓向下
+  弱修复: 4, // 最缓向上
+  强修复: 9, // 次之向上
+  高潮: 15, // 最陡向上
 }
 
 /** 未知阶段（null / 数据不足）的降级色。 */
 const FALLBACK_COLOR = '#cbd5e1'
+
+/** 统一线宽（用户 v3.3 定义：情绪周期内所有线条粗细一致）。 */
+const LINE_WIDTH = 2.5
 
 /** 阶段名称列表（用于图例）。 */
 const PHASE_NAMES = ['冰点', '强分歧', '弱分歧', '弱修复', '强修复', '高潮'] as const
@@ -88,6 +137,53 @@ function computePhase(score: number, score3dAgo: number | null): string {
     return '弱修复'
   }
   return momentum > 0 ? '弱修复' : '冰点'
+}
+
+/**
+ * 按"固定每日增量 + 段幅度上限"生成概念性 Y 值曲线。
+ *
+ * 不再用真实得分画线（真实得分变化不符合阶段形状规范）。先把阶段序列切成
+ * 若干"连续相同阶段"的段，每段独立绘制：
+ * - 段内每日增量固定（PHASE_DAILY_DELTA），与段长无关 —— 同一阶段在任何
+ *   位置的陡峭程度完全一致：向下冰点最陡 > 强分歧 > 弱分歧；向上高潮最陡
+ *   > 强修复 > 弱修复；上下镜像对称
+ * - 段总位移以 PHASE_AMPLITUDE 为上限：持续天数足够时走完上限后持平
+ *   （段长度三级：冰点/高潮最长 > 强分歧/强修复 > 弱分歧/弱修复）；
+ *   段更短时按固定坡度走，走不满上限（线段随持续天数自然变短）
+ * - Y 值不做 clamp——截断会削平坡度造成"同阶段不同陡峭度"的假象；
+ *   曲线自由累积，由 Y 轴按数据范围自适应缩放兜底
+ * - null / 未知阶段视为增量 0（持平）、降级灰色
+ *
+ * @param phases - 每日阶段序列（可为 null）
+ * @param startValue - 起点 Y 值（默认 50，居中便于上下展开）
+ * @returns 概念性 Y 值数组（长度与 phases 相同，无 null）
+ */
+function buildConceptualScores(
+  phases: Array<string | null>,
+  startValue = 50,
+): number[] {
+  const scores: number[] = []
+  let y = startValue
+  let i = 0
+  while (i < phases.length) {
+    // 切出一段连续相同阶段 [i, j)
+    let j = i + 1
+    while (j < phases.length && phases[j] === phases[i]) j++
+    const runLen = j - i
+    const phase = phases[i]
+    // 每日增量固定（带符号，向下为负）：只由阶段决定，与段长无关，
+    // 保证同一阶段在任何位置的陡峭程度完全一致
+    const dailyDelta = phase != null ? (PHASE_DAILY_DELTA[phase] ?? 0) : 0
+    let remaining = phase != null ? (PHASE_AMPLITUDE[phase] ?? 0) : 0
+    for (let k = 0; k < runLen; k++) {
+      const step = Math.sign(dailyDelta) * Math.min(Math.abs(dailyDelta), remaining)
+      y += step // 不 clamp：截断会削平坡度，Y 轴自适应缩放兜底
+      remaining -= Math.abs(step)
+      scores.push(y)
+    }
+    i = j
+  }
+  return scores
 }
 
 /** 三条线各自的阶段信息。 */
@@ -191,28 +287,34 @@ export function EmotionCycleChart({
         z: number
         silent: boolean
         tooltip: { show: boolean }
+        endLabel?: {
+          show: boolean
+          formatter: string
+          color: string
+          fontSize: number
+          distance: number
+        }
       }> = []
       if (scores.length === 0) return result
-      // 拆分逻辑：扫描 [0, n]，每当 phase 变化时关闭当前段。
-      // 关键：当前段数据范围 [segStart, i]（**含 i**），让段 A 末点 =
-      // 段 B 首点（同一 X 索引 i）。这样在 X=i 转折处两条 line "重合"，
-      // 视觉上是连续折线，X=i-1→i 段 A 染色，X=i→i+1 段 B 染色。
-      // 末段在 i === n-1 时关闭（仅含到 n-1，避免越界）。
+      // 拆分逻辑：扫描 [0, n)，每当 phase 在 i 处变化时，在 i-1 处关闭当前段。
+      // 关键：当前段数据范围 [segStart, i-1]，下一段从 **i-1** 开始（含转折点），
+      // 让段 A 末点 = 段 B 首点（同一 X 索引 i-1），视觉上仍是连续折线。
+      // 这样每个区间 k→k+1 都由"第 k+1 天所属的新段"绘制、用第 k+1 天的阶段
+      // 着色——与 buildConceptualScores 中"第 k+1 天的阶段决定 k→k+1 步进"
+      // 的规则一致，颜色与坡度不再错位。
       const points: Array<[number, number | null, string | null]> = scores.map(
         (s, idx) => [idx, s, phases[idx] ?? null],
       )
       let segStart = 0
       let segPhase: string | null = points[0]?.[2] ?? null
-      // 末段在 i === n-1 后无下一阶段变化，循环到 n 时再统一关闭
       for (let i = 1; i <= points.length; i++) {
         const p = i < points.length ? points[i]?.[2] : null
         const isBoundary = i === points.length || p !== segPhase
         if (!isBoundary) continue
-        // 段数据点 [segStart, i]（含 i，i 是段 B 的首点 = 段 A 末点）
-        // 但末段（i === n）只取 [segStart, n-1]
+        // 段数据点 [segStart, i-1]：末段（i === n）自然含到 n-1；
+        // 非末段在转折点前一天 i-1 关闭，新段从 i-1 起绘（含 i-1→i 区间）
         const data: Array<[number, number | null]> = []
-        const end = i === points.length ? i - 1 : i
-        for (let j = segStart; j <= end; j++) {
+        for (let j = segStart; j <= i - 1; j++) {
           const pt = points[j]
           if (pt) data.push([pt[0], pt[1]])
         }
@@ -232,25 +334,54 @@ export function EmotionCycleChart({
           silent: true,
           tooltip: { show: false },
         })
-        // 下一段从 i 开始（i 已是共享的转折点）
-        segStart = i
+        // 下一段从 i-1 开始（i-1 是共享的转折点，i-1→i 区间用新阶段着色）
+        segStart = i - 1
         segPhase = p
+      }
+      // 线名尾标：只挂在该线最后一个非空段上（即整条线的右端末点），
+      // 用于区分三条线宽一致的线（用户 v3.3 定义）。颜色固定深灰，
+      // 避免与阶段配色混淆。
+      for (let k = result.length - 1; k >= 0; k--) {
+        const seg = result[k]
+        if (seg && seg.data.length > 0) {
+          seg.endLabel = {
+            show: true,
+            formatter: baseName,
+            color: '#334155',
+            fontSize: 11,
+            distance: 6,
+          }
+          break
+        }
       }
       return result
     }
 
-    const globalScores = visible.map((e) => e.emotion_score)
-    const boardScores = visible.map((e) => e.board_style_score)
-    const trendScores = visible.map((e) => e.trend_style_score)
+    // 三条线各自用各自 phase（全局/打板/趋势独立判定），按"固定每日增量
+    // + 段幅度上限"生成概念性 Y 值曲线——线段方向、陡峭程度、长度三级全部
+    // 符合用户 v3.3 视觉规范。tooltip 与徽章仍显示真实阶段 + 真实得分。
     const globalPhases = visiblePhases.map((p) => p?.globalPhase ?? null)
     const boardPhases = visiblePhases.map((p) => p?.boardPhase ?? null)
     const trendPhases = visiblePhases.map((p) => p?.trendPhase ?? null)
 
+    const globalScores = buildConceptualScores(globalPhases)
+    const boardScores = buildConceptualScores(boardPhases)
+    const trendScores = buildConceptualScores(trendPhases)
+
+    // 三条线线宽统一（用户 v3.3 定义：情绪周期内所有线条粗细一致）
     const seriesArr = [
-      ...buildSegments('全局', globalScores, globalPhases, 3.5),
-      ...buildSegments('打板', boardScores, boardPhases, 2.0),
-      ...buildSegments('趋势', trendScores, trendPhases, 1.5),
+      ...buildSegments('全局', globalScores, globalPhases, LINE_WIDTH),
+      ...buildSegments('打板', boardScores, boardPhases, LINE_WIDTH),
+      ...buildSegments('趋势', trendScores, trendPhases, LINE_WIDTH),
     ]
+
+    // Y 轴按数据范围自适应：概念曲线不做 clamp（截断会削平坡度），
+    // 改为取三条线的极值向上下各留 10 余量、对齐到 10 的整数倍
+    const allScores = [...globalScores, ...boardScores, ...trendScores]
+    const dataMin = Math.min(...allScores)
+    const dataMax = Math.max(...allScores)
+    const yMin = Math.floor((dataMin - 10) / 10) * 10
+    const yMax = Math.ceil((dataMax + 10) / 10) * 10
 
     return {
       tooltip: {
@@ -265,29 +396,23 @@ export function EmotionCycleChart({
           const idx = arr[0].dataIndex
           const dt = tradeDates[idx] ?? ''
           const ph = visiblePhases[idx]
-          const globalPhaseStr = ph?.globalPhase ?? '—'
-          const lines = [`<b>${fmtDateShort(dt)}</b> · 全局阶段：${globalPhaseStr}`]
-          // 段 series（name 含 "·"）被 silent，只显示主 series 风格的信息
-          const seen = new Set<string>()
-          for (const p of arr) {
-            const baseName = p.seriesName.split('·')[0] ?? p.seriesName
-            if (seen.has(baseName)) continue
-            seen.add(baseName)
-            const e = visible[idx]
-            let score: number | null = null
-            let phaseStr = '—'
-            if (baseName === '全局') {
-              score = e?.emotion_score ?? null
-              phaseStr = ph?.globalPhase ?? '—'
-            } else if (baseName === '打板') {
-              score = e?.board_style_score ?? null
-              phaseStr = ph?.boardPhase ?? '—'
-            } else if (baseName === '趋势') {
-              score = e?.trend_style_score ?? null
-              phaseStr = ph?.trendPhase ?? '—'
-            }
-            const valStr = score == null ? '—' : score.toFixed(1)
-            lines.push(`${baseName}：${valStr}（${phaseStr}）`)
+          const e = visible[idx]
+          // 三条线各自 phase 独立 → tooltip 显示各自阶段 + 真实得分
+          // （图上 Y 值是概念性斜率曲线，不等于真实得分，故同时展示真实得分）
+          const lines = [`<b>${fmtDateShort(dt)}</b>`]
+          const entries: Array<{
+            label: string
+            phase: string | null
+            score: number | null
+          }> = [
+            { label: '全局', phase: ph?.globalPhase ?? null, score: e?.emotion_score ?? null },
+            { label: '打板', phase: ph?.boardPhase ?? null, score: e?.board_style_score ?? null },
+            { label: '趋势', phase: ph?.trendPhase ?? null, score: e?.trend_style_score ?? null },
+          ]
+          for (const it of entries) {
+            const phaseStr = it.phase ?? '—'
+            const valStr = it.score == null ? '—' : it.score.toFixed(1)
+            lines.push(`${it.label}：${phaseStr}（实际 ${valStr}）`)
           }
           return lines.join('<br/>')
         },
@@ -306,8 +431,10 @@ export function EmotionCycleChart({
       },
       yAxis: {
         type: 'value',
-        min: 0,
-        max: 100,
+        // 自适应范围（概念曲线不 clamp，截断会削平坡度造成同阶段不同
+        // 陡峭度的假象）；刻度无业务含义，tooltip 展示真实得分
+        min: yMin,
+        max: yMax,
         axisLine: { lineStyle: { color: '#cbd5e1' } },
         axisLabel: { fontSize: 11, color: '#475569' },
         splitLine: { lineStyle: { color: '#f1f5f9' } },
@@ -332,8 +459,9 @@ export function EmotionCycleChart({
           )}
         </h3>
         <p className="mt-1 text-xs text-slate-500">
-          三线均按各自阶段分段着色（红涨绿跌） · 直观展现三种赚钱风格的共生与竞争
-          · 线宽：全局 3.5 / 打板 2.0 / 趋势 1.5
+          线段形状表达阶段语义：冰点最陡最长向下（蓝）/ 高潮最陡最长向上（紫），
+          强分歧（深绿）·强修复（深红）次之，弱分歧（浅绿）·弱修复（浅红）最缓最短
+          · 三条线线宽一致，线尾标注线名 · 悬停查看真实得分
         </p>
         {/* 当前阶段标注：三条线各自 */}
         {latest && latestPhases && (
