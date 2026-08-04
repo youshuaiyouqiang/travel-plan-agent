@@ -70,7 +70,14 @@ function computePhase(score: number, score3dAgo: number | null): string {
   const momentum = score3dAgo != null ? score - score3dAgo : 0
 
   if (score >= 80) return '高潮'
-  if (score >= 60) return momentum > 0 ? '强修复' : '高潮'
+  if (score >= 60) {
+    // 60-80 是"赚钱区间"：momentum>0 向高潮走=强修复(红)；
+    // momentum<-5 急跌=赚钱效应收敛=弱分歧(浅绿)；平稳=强修复(红)。
+    // 与后端 domain.stock.emotion_cycle.compute_raw_phase 保持一致
+    if (momentum > 0) return '强修复'
+    if (momentum < -5) return '弱分歧'
+    return '强修复'
+  }
   if (score >= 40) {
     if (momentum > 5) return '强修复'
     if (momentum < -5) return '弱分歧'

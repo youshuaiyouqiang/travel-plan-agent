@@ -272,10 +272,20 @@ class TestComputeRawPhase:
         assert compute_raw_phase(70.0, 60.0) == "强修复"  # momentum=10
         assert compute_raw_phase(65.0, 64.0) == "强修复"  # momentum=1 > 0
 
-    def test_compute_raw_phase_高潮_高位减速(self) -> None:
-        """60–80 + 动量 ≤ 0 → 高潮（高位见顶 / 减速）。"""
-        assert compute_raw_phase(70.0, 75.0) == "高潮"  # momentum=-5 ≤ 0
-        assert compute_raw_phase(65.0, 70.0) == "高潮"  # momentum=-5 ≤ 0
+    def test_compute_raw_phase_弱分歧_高位急跌(self) -> None:
+        """60–80 + 动量 < -5 → 弱分歧（赚钱效应收敛、急跌）。
+
+        修复：原算法 score ∈ [60, 80) 且 momentum ≤ 0 → 高潮（紫色），
+        但语义错——这是"从高潮掉下来"，应该是"弱分歧"（浅绿，
+        赚钱效应收敛）。"高潮"只保留给 score ≥ 80。
+        """
+        assert compute_raw_phase(70.0, 80.0) == "弱分歧"  # momentum=-10 < -5
+        assert compute_raw_phase(65.0, 75.0) == "弱分歧"  # momentum=-10 < -5
+
+    def test_compute_raw_phase_强修复_高位平稳(self) -> None:
+        """60–80 + 动量 ∈ [-5, 0] → 强修复（保持赚钱）。"""
+        assert compute_raw_phase(70.0, 75.0) == "强修复"  # momentum=-5
+        assert compute_raw_phase(65.0, 65.0) == "强修复"  # momentum=0
 
     def test_compute_raw_phase_弱修复_中位加速(self) -> None:
         """40–60 + 动量 > +5 → 强修复（中位加速）。"""
@@ -318,12 +328,12 @@ class TestComputeRawPhase:
     def test_compute_raw_phase_无历史降级(self) -> None:
         """score_3d_ago=None 动量视为 0，按得分粗判。
 
-        70 → momentum=0, not >0 → 高潮
+        70 → momentum=0, in [-5,0] → 强修复（修复：原算法判"高潮"是 bug）
         50 → momentum=0, in [-5,5] → 弱修复
         30 → momentum=0, not <-5 → 弱修复
         15 → momentum=0, not >0 → 冰点
         """
-        assert compute_raw_phase(70.0, None) == "高潮"
+        assert compute_raw_phase(70.0, None) == "强修复"
         assert compute_raw_phase(50.0, None) == "弱修复"
         assert compute_raw_phase(30.0, None) == "弱修复"
         assert compute_raw_phase(15.0, None) == "冰点"

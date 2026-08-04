@@ -225,7 +225,13 @@ def compute_raw_phase(
     if emotion_score >= 80:
         return "高潮"
     if emotion_score >= 60:
-        return "强修复" if momentum > 0 else "高潮"
+        # 60-80 是"赚钱区间"：momentum>0 向高潮走=强修复(红)；
+        # momentum<-5 急跌=赚钱效应收敛=弱分歧(浅绿)；平稳=强修复(红)。
+        if momentum > 0:
+            return "强修复"
+        if momentum < -5:
+            return "弱分歧"
+        return "强修复"
     if emotion_score >= 40:
         if momentum > 5:
             return "强修复"
