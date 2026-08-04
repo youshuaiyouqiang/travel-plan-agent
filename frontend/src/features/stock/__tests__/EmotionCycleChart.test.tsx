@@ -3,14 +3,14 @@
  *
  * 核心验证（开发文档 §9.3）：
  * - 三条折线渲染：全局/打板/趋势
- * - 全局线分段着色：visualMap piecewise 按 emotion_phase 编码着色
- * - 打板/趋势固定色：橙/青，不随阶段变色
+ * - 三线均按各自阶段分段着色：visualMap piecewise 按阶段编码着色
+ *   全局用后端 emotion_phase；打板/趋势前端 computePhase 从各自得分算
  * - None 得分不断线：connectNulls 生效
- * - 当前阶段标注：顶部显示当前阶段名称 + 得分
+ * - 当前阶段标注：顶部显示三条线各自的阶段名称 + 得分
  * - 空数据显示占位
  * - loading/error 状态兜底
  * - 滑块可见性：数据 > 可见天数时显示滑块
- * - 老行 null 阶段降级：emotion_phase null 编码 −1，该段不着色不报错
+ * - 老行 null 阶段降级：emotion_phase null 编码 −1，映射灰色不着色不报错
  */
 import { render } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
@@ -122,7 +122,7 @@ describe('EmotionCycleChart', () => {
   })
 
   // ── 当前阶段标注测试 ────────────────────────────────────
-  it('顶部显示当前阶段名称与全局得分', () => {
+  it('顶部显示三条线各自的当前阶段名称与得分', () => {
     const { container } = render(
       <EmotionCycleChart
         series={MULTI_DAY_SAMPLE}
@@ -130,12 +130,15 @@ describe('EmotionCycleChart', () => {
         days={10}
       />,
     )
-    // 最新一日（20260731）阶段为"强分歧"，得分为 30.0
+    // 最新一日（20260731）全局阶段为"强分歧"，得分为 30.0
     const section = container.querySelector(
       'section[aria-label="情绪周期折线图"]',
     )
     expect(section?.textContent).toContain('强分歧')
     expect(section?.textContent).toContain('30')
+    // 打板/趋势徽章 label 也应出现
+    expect(section?.textContent).toContain('打板')
+    expect(section?.textContent).toContain('趋势')
   })
 
   // ── 配色图例测试 ────────────────────────────────────────
@@ -235,5 +238,41 @@ describe('EmotionCycleChart', () => {
     // 可见窗口包含全部 7 天，从 07-25 到 07-31
     expect(heading?.textContent).toContain('07-25')
     expect(heading?.textContent).toContain('07-31')
+  })
+
+  // ── 打板/趋势独立阶段着色测试 ────────────────────────────
+  it('打板/趋势得分变化时各自独立判定阶段，不报错', () => {
+    // 打板得分从 85→20，趋势得分从 20→85——两线反向运动
+    // 验证前端 computePhase 对打板/趋势独立运作，三线各自着色
+    const DIVERGED: EmotionIndicators[] = [
+      makeEmotion('20260725', {
+        emotion_score: 85.0, emotion_phase: '高潮',
+        board_style_score: 85.0, trend_style_score: 20.0,
+      }),
+      makeEmotion('20260726', {
+        emotion_score: 60.0, emotion_phase: '强修复',
+        board_style_score: 60.0, trend_style_score: 40.0,
+      }),
+      makeEmotion('20260727', {
+        emotion_score: 40.0, emotion_phase: '弱修复',
+        board_style_score: 40.0, trend_style_score: 60.0,
+      }),
+      makeEmotion('20260728', {
+        emotion_score: 20.0, emotion_phase: '弱修复',
+        board_style_score: 20.0, trend_style_score: 85.0,
+      }),
+    ]
+    const { container } = render(
+      <EmotionCycleChart series={DIVERGED} endDate="20260728" days={10} />,
+    )
+    expect(
+      container.querySelector('[aria-label="情绪周期折线图"]'),
+    ).toBeInTheDocument()
+    // 最新一日趋势=85（高潮）应出现在徽章中；6 阶段图例含"冰点"
+    const section = container.querySelector(
+      'section[aria-label="情绪周期折线图"]',
+    )
+    expect(section?.textContent).toContain('冰点')
+    expect(section?.textContent).toContain('高潮')
   })
 })

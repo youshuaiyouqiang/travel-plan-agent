@@ -2,15 +2,19 @@
  * 情绪周期折线图组件（Task 5）。
  *
  * 设计要点（开发文档 §2 / §8.1）：
- * - 三条折线：全局情绪得分（粗，按阶段分段着色）/ 打板风格（橙细）/ 趋势风格（青细）
- * - 全局线分段着色：visualMap piecewise 按每日 emotion_phase 编码着色
+ * - 三条折线均按各自阶段分段着色：
+ *   全局（粗）/ 打板（中细）/ 趋势（细）
+ * - 每条线的阶段独立判定——全局用后端存储的 emotion_phase，
+ *   打板/趋势在前端用 computePhase（与后端 compute_raw_phase 同算法）
+ *   从各自 style_score + 3 日前得分算出，visualMap piecewise 分段着色
+ * - 配色：冰点深蓝 / 强分歧深绿 / 弱分歧浅绿 / 弱修复浅红 / 强修复深红 / 高潮紫
  *   下跌用绿/蓝、上涨用红、高潮用紫（与 A 股红涨绿跌一致）
  * - connectNulls: true——任一风格某日得分为 null 时连线不断开（None 点跳过）
  * - smooth: false——保留真实转折点毛刺；symbol: 'none'——只留线条
  * - 底部时间轴滑块（与 SectorHeatmap 一致）：数据 > 可见天数时显示
- * - 右侧标注当前阶段 + 得分；顶部标题显示可见日期范围
+ * - 右侧标注当前阶段 + 得分（三条线各自）；顶部标题显示可见日期范围
  * - 空数据 / loading / error 状态兜底
- * - 老行 emotion_phase 为 null 时编码 -1，visualMap 不匹配任何 piece（该段不着色）
+ * - 老行 emotion_phase 为 null 时编码 -1，visualMap 映射灰色（该段不着色）
  *
  * 反包风格不单独画线，融入全局情绪周期（等权参与合成）。
  */
@@ -29,7 +33,7 @@ const PHASE_CODE: Record<string, number> = {
   高潮: 5,
 }
 
-/** 全局线段配色：下跌绿/蓝、上涨红、高潮紫（与 A 股红涨绿跌一致）。 */
+/** 线段配色：下跌绿/蓝、上涨红、高潮紫（与 A 股红涨绿跌一致）。 */
 const PHASE_COLOR: Record<string, string> = {
   冰点: '#1e3a8a', // 深蓝：最深跌
   强分歧: '#15803d', // 深绿：急跌
@@ -39,13 +43,20 @@ const PHASE_COLOR: Record<string, string> = {
   高潮: '#9333ea', // 紫：过热峰
 }
 
-/** 阶段名称列表（用于图例 + Y 轴参考线）。 */
+/** 未知阶段（null / 数据不足）的降级色。 */
+const FALLBACK_COLOR = '#cbd5e1'
+
+/** 阶段名称列表（用于图例 + visualMap pieces）。 */
 const PHASE_NAMES = ['冰点', '强分歧', '弱分歧', '弱修复', '强修复', '高潮'] as const
 
-/** 打板参考线色（橙）。 */
-const BOARD_COLOR = '#f97316'
-/** 趋势参考线色（青）。 */
-const TREND_COLOR = '#0891b2'
+/** visualMap pieces（6 阶段 + 1 降级灰）。 */
+const PHASE_PIECES = [
+  ...PHASE_NAMES.map((name) => ({
+    value: PHASE_CODE[name],
+    color: PHASE_COLOR[name],
+  })),
+  { value: -1, color: FALLBACK_COLOR },
+]
 
 export interface EmotionCycleChartProps {
   /** 多日情绪指标（来自 /charts/emotion，建议传 60 天供滑块浏览）。 */
@@ -66,10 +77,42 @@ function fmtDateShort(s: string): string {
   return `${s.slice(4, 6)}-${s.slice(6, 8)}`
 }
 
-/** 取阶段编码（null/未知阶段 → -1，visualMap 不匹配 piece，该段不着色）。 */
+/** 取阶段编码（null/未知阶段 → -1，visualMap 映射灰色）。 */
 function phaseCode(phase: string | null | undefined): number {
   if (phase == null) return -1
   return PHASE_CODE[phase] ?? -1
+}
+
+/**
+ * 前端阶段判定——与后端 domain.stock.emotion_cycle.compute_raw_phase 同算法。
+ *
+ * 一阶（得分）判断赚不赚，二阶（动量 = 今日 − 3 日前）判断跟风增减，
+ * 组合确定 6 阶段之一。score3dAgo 为 null 时动量视为 0。
+ *
+ * 用于打板/趋势线的分段着色（全局线直接用后端存储的 emotion_phase）。
+ */
+function computePhase(score: number, score3dAgo: number | null): string {
+  const momentum = score3dAgo != null ? score - score3dAgo : 0
+
+  if (score >= 80) return '高潮'
+  if (score >= 60) return momentum > 0 ? '强修复' : '高潮'
+  if (score >= 40) {
+    if (momentum > 5) return '强修复'
+    if (momentum < -5) return '弱分歧'
+    return '弱修复'
+  }
+  if (score >= 20) {
+    if (momentum < -5) return '强分歧'
+    return '弱修复'
+  }
+  return momentum > 0 ? '弱修复' : '冰点'
+}
+
+/** 三条线各自的阶段信息。 */
+interface LinePhases {
+  globalPhase: string | null
+  boardPhase: string | null
+  trendPhase: string | null
 }
 
 export function EmotionCycleChart({
@@ -101,10 +144,38 @@ export function EmotionCycleChart({
   const visibleEndDate = visible[visible.length - 1]?.trade_date ?? endDate
   const showSlider = totalDays > visibleDays
 
+  // ── 预计算所有数据点的三条线阶段（用全量数组做 3 日前回溯） ──
+  const allPhases = useMemo<LinePhases[]>(
+    () =>
+      allSorted.map((e, i) => {
+        const idx3dAgo = i - 3
+        const board3dAgo =
+          idx3dAgo >= 0 ? allSorted[idx3dAgo].board_style_score : null
+        const trend3dAgo =
+          idx3dAgo >= 0 ? allSorted[idx3dAgo].trend_style_score : null
+        return {
+          globalPhase: e.emotion_phase,
+          boardPhase:
+            e.board_style_score != null
+              ? computePhase(e.board_style_score, board3dAgo)
+              : null,
+          trendPhase:
+            e.trend_style_score != null
+              ? computePhase(e.trend_style_score, trend3dAgo)
+              : null,
+        }
+      }),
+    [allSorted],
+  )
+
+  const visiblePhases = useMemo(
+    () => allPhases.slice(clampedStart, clampedStart + visibleDays),
+    [allPhases, clampedStart, visibleDays],
+  )
+
   // 最新一日（全量数据末尾，用于"当前阶段"标注）
   const latest = allSorted[allSorted.length - 1]
-  const currentPhase = latest?.emotion_phase ?? null
-  const currentScore = latest?.emotion_score ?? null
+  const latestPhases = allPhases[allPhases.length - 1]
 
   // ECharts 配置
   const option = useMemo<EChartsOption | undefined>(() => {
@@ -112,24 +183,16 @@ export function EmotionCycleChart({
 
     const tradeDates = visible.map((e) => e.trade_date)
 
-    // 全局线数据：[x索引, 得分, 阶段编码]；得分 null 用 null（connectNulls 跳过）
-    const globalData: [number, number | null, number][] = visible.map((e, i) => [
-      i,
-      e.emotion_score,
-      phaseCode(e.emotion_phase),
-    ])
-
-    // 打板线数据
-    const boardScores: [number, number | null][] = visible.map((e, i) => [
-      i,
-      e.board_style_score,
-    ])
-
-    // 趋势线数据
-    const trendScores: [number, number | null][] = visible.map((e, i) => [
-      i,
-      e.trend_style_score,
-    ])
+    // 三条线数据：[x索引, 得分, 阶段编码]；得分 null 用 null（connectNulls 跳过）
+    const globalData: [number, number | null, number][] = visible.map(
+      (e, i) => [i, e.emotion_score, phaseCode(visiblePhases[i]?.globalPhase)],
+    )
+    const boardData: [number, number | null, number][] = visible.map(
+      (e, i) => [i, e.board_style_score, phaseCode(visiblePhases[i]?.boardPhase)],
+    )
+    const trendData: [number, number | null, number][] = visible.map(
+      (e, i) => [i, e.trend_style_score, phaseCode(visiblePhases[i]?.trendPhase)],
+    )
 
     return {
       tooltip: {
@@ -138,14 +201,14 @@ export function EmotionCycleChart({
           const arr = params as Array<{
             dataIndex: number
             seriesName: string
-            value: number | [number, number | null, number] | [number, number | null]
+            value: number | [number, number | null, number]
           }>
           if (arr.length === 0) return ''
           const idx = arr[0].dataIndex
           const dt = tradeDates[idx] ?? ''
-          const e = visible[idx]
-          const phaseStr = e?.emotion_phase ?? '—'
-          const lines = [`<b>${fmtDateShort(dt)}</b> · 阶段：${phaseStr}`]
+          const ph = visiblePhases[idx]
+          const globalPhaseStr = ph?.globalPhase ?? '—'
+          const lines = [`<b>${fmtDateShort(dt)}</b> · 全局阶段：${globalPhaseStr}`]
           for (const p of arr) {
             let val: number | null = null
             if (Array.isArray(p.value)) {
@@ -154,7 +217,11 @@ export function EmotionCycleChart({
               val = p.value
             }
             const valStr = val == null ? '—' : val.toFixed(1)
-            lines.push(`${p.seriesName}：${valStr}`)
+            let phaseStr = '—'
+            if (p.seriesName === '全局') phaseStr = ph?.globalPhase ?? '—'
+            else if (p.seriesName === '打板') phaseStr = ph?.boardPhase ?? '—'
+            else if (p.seriesName === '趋势') phaseStr = ph?.trendPhase ?? '—'
+            lines.push(`${p.seriesName}：${valStr}（${phaseStr}）`)
           }
           return lines.join('<br/>')
         },
@@ -165,17 +232,30 @@ export function EmotionCycleChart({
         textStyle: { fontSize: 11, color: '#475569' },
       },
       grid: { left: 50, right: 50, top: 40, bottom: 50 },
-      // 分段着色：仅作用于全局线（seriesIndex 0），按第 3 维（阶段编码）上色
-      visualMap: {
-        type: 'piecewise',
-        dimension: 2,
-        seriesIndex: 0,
-        show: false,
-        pieces: PHASE_NAMES.map((name) => ({
-          value: PHASE_CODE[name],
-          color: PHASE_COLOR[name],
-        })),
-      },
+      // 三条线各自分段着色：每个 visualMap 对应一个 seriesIndex
+      visualMap: [
+        {
+          type: 'piecewise',
+          dimension: 2,
+          seriesIndex: 0,
+          show: false,
+          pieces: PHASE_PIECES,
+        },
+        {
+          type: 'piecewise',
+          dimension: 2,
+          seriesIndex: 1,
+          show: false,
+          pieces: PHASE_PIECES,
+        },
+        {
+          type: 'piecewise',
+          dimension: 2,
+          seriesIndex: 2,
+          show: false,
+          pieces: PHASE_PIECES,
+        },
+      ],
       xAxis: {
         type: 'category',
         data: tradeDates.map(fmtDateShort),
@@ -199,30 +279,29 @@ export function EmotionCycleChart({
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 3.5 },
-          // lineStyle.color 不设，由 visualMap 接管分段着色
+          lineStyle: { width: 3.5, color: FALLBACK_COLOR },
         },
         {
           name: '打板',
           type: 'line',
-          data: boardScores,
+          data: boardData,
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 1.5, color: BOARD_COLOR },
+          lineStyle: { width: 2.0, color: FALLBACK_COLOR },
         },
         {
           name: '趋势',
           type: 'line',
-          data: trendScores,
+          data: trendData,
           connectNulls: true,
           smooth: false,
           symbol: 'none',
-          lineStyle: { width: 1.5, color: TREND_COLOR },
+          lineStyle: { width: 1.5, color: FALLBACK_COLOR },
         },
       ],
     }
-  }, [visible])
+  }, [visible, visiblePhases])
 
   return (
     <section
@@ -240,32 +319,26 @@ export function EmotionCycleChart({
           )}
         </h3>
         <p className="mt-1 text-xs text-slate-500">
-          全局线按阶段分段着色（红涨绿跌） · 打板/趋势作对照 · 三种赚钱风格的共生与竞争
+          三线均按各自阶段分段着色（红涨绿跌） · 直观展现三种赚钱风格的共生与竞争
         </p>
-        {/* 当前阶段 + 得分标注 */}
-        {currentPhase && (
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400">当前阶段：</span>
-            <span
-              className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium"
-              style={{
-                borderColor: PHASE_COLOR[currentPhase] ?? '#94a3b8',
-                color: PHASE_COLOR[currentPhase] ?? '#475569',
-                backgroundColor: `${PHASE_COLOR[currentPhase] ?? '#94a3b8'}1a`,
-              }}
-            >
-              <span
-                className="inline-block h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: PHASE_COLOR[currentPhase] ?? '#94a3b8' }}
-                aria-hidden="true"
-              />
-              {currentPhase}
-            </span>
-            {currentScore != null && (
-              <span className="text-slate-500">
-                全局得分：<span className="font-semibold text-slate-700">{currentScore.toFixed(1)}</span>
-              </span>
-            )}
+        {/* 当前阶段标注：三条线各自 */}
+        {latest && latestPhases && (
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+            <CurrentPhaseBadge
+              label="全局"
+              phase={latestPhases.globalPhase}
+              score={latest.emotion_score}
+            />
+            <CurrentPhaseBadge
+              label="打板"
+              phase={latestPhases.boardPhase}
+              score={latest.board_style_score}
+            />
+            <CurrentPhaseBadge
+              label="趋势"
+              phase={latestPhases.trendPhase}
+              score={latest.trend_style_score}
+            />
           </div>
         )}
         {/* 阶段配色图例 */}
@@ -280,23 +353,6 @@ export function EmotionCycleChart({
               {name}
             </span>
           ))}
-          <span className="mx-1 text-slate-300">|</span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="inline-block h-1.5 w-4 rounded-full"
-              style={{ backgroundColor: BOARD_COLOR }}
-              aria-hidden="true"
-            />
-            打板
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span
-              className="inline-block h-1.5 w-4 rounded-full"
-              style={{ backgroundColor: TREND_COLOR }}
-              aria-hidden="true"
-            />
-            趋势
-          </span>
         </div>
       </header>
 
@@ -359,5 +415,41 @@ export function EmotionCycleChart({
         </>
       )}
     </section>
+  )
+}
+
+/** 当前阶段徽章（label + 阶段色圆点 + 阶段名 + 得分）。 */
+function CurrentPhaseBadge({
+  label,
+  phase,
+  score,
+}: {
+  label: string
+  phase: string | null
+  score: number | null
+}) {
+  const color = phase != null ? (PHASE_COLOR[phase] ?? '#94a3b8') : '#94a3b8'
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-slate-400">{label}</span>
+      <span
+        className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium"
+        style={{
+          borderColor: color,
+          color,
+          backgroundColor: `${color}1a`,
+        }}
+      >
+        <span
+          className="inline-block h-1.5 w-1.5 rounded-full"
+          style={{ backgroundColor: color }}
+          aria-hidden="true"
+        />
+        {phase ?? '—'}
+      </span>
+      {score != null && (
+        <span className="font-semibold text-slate-700">{score.toFixed(1)}</span>
+      )}
+    </span>
   )
 }
