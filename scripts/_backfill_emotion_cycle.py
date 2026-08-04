@@ -244,6 +244,12 @@ async def _run(apply: bool) -> int:
         es = f"{row.emotion_score:.1f}" if row.emotion_score is not None else "None"
         print(f"{trade_date:<10} {adv:>5} {decl:>5}  "
               f"{bs:>6} {ts:>6} {rs:>7} {es:>6}  {row.emotion_phase}")
+        # 关键：每算完一行立即落库，否则下一行 day_3d_ago 读不到刚算出的
+        # emotion_score → compute_raw_phase 把 momentum 当 0，阶段全错
+        # （Bug 修复：原写法在循环结束才统一落库，导致 7-23 的 emotion_score
+        # 在 7-28 计算时还不存在，7-28→弱修复实际应为弱分歧）
+        if apply:
+            repo.upsert_emotion_daily(trade_date=trade_date, rows=[row])
 
     # 落库前检查今日 8.3 行不受影响
     today_row = _preview_row(repo, "20260803")
@@ -254,14 +260,7 @@ async def _run(apply: bool) -> int:
         print("\n[dry-run] 未落库；传 --apply 实际写入")
         return 0
 
-    # 落库
-    print("\n[APPLY] 开始写入 emotion_daily ...")
-    for row in computed_rows:
-        repo.upsert_emotion_daily(trade_date=row.trade_date, rows=[row])
-        print(f"  写入 {row.trade_date}: score={row.emotion_score} "
-              f"phase={row.emotion_phase}")
-
-    # 落库后校验
+    # 落库后校验（每行已在循环内即时写入）
     print("\n[verify] 落库后读回校验：")
     print(f"{'trade_date':<10} {'adv':>5} {'decl':>5}  "
           f"{'score':>6}  phase")
